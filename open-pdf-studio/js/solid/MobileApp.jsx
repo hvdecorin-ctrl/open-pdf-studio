@@ -3,6 +3,8 @@ import { useTranslation } from '../i18n/useTranslation.js';
 import { state } from '../core/state.js';
 import { openFileDialog } from '../core/platform.js';
 import { loadPDF } from '../pdf/loader.js';
+import { createTab } from '../ui/chrome/tabs.js';
+import { initDomElements } from '../ui/dom-elements.js';
 import LoadingOverlay from './components/LoadingOverlay.jsx';
 
 export default function MobileApp() {
@@ -24,6 +26,10 @@ export default function MobileApp() {
     try {
       const path = await openFileDialog();
       if (path) {
+        createTab(path);
+        // Re-init DOM elements after Solid renders the canvas (deferred via microtask)
+        await new Promise(r => setTimeout(r, 0));
+        initDomElements();
         await loadPDF(path);
       }
     } catch (e) {
@@ -103,17 +109,16 @@ export default function MobileApp() {
           </div>
         </Show>
 
-        <Show when={hasDocument()}>
-          <div id="pdf-container" class="mobile-pdf-container">
-            <div id="canvas-wrapper">
-              <div id="canvas-container" class="single-page-container">
-                <canvas id="pdf-canvas"></canvas>
-                <canvas id="annotation-canvas"></canvas>
-              </div>
-              <div id="continuous-container" class="continuous-container"></div>
+        <div id="placeholder" style="display:none"></div>
+        <div id="pdf-container" class="mobile-pdf-container" classList={{ visible: hasDocument() }}>
+          <div id="canvas-wrapper">
+            <div id="canvas-container" class="single-page-container">
+              <canvas id="pdf-canvas"></canvas>
+              <canvas id="annotation-canvas"></canvas>
             </div>
+            <div id="continuous-container" class="continuous-container"></div>
           </div>
-        </Show>
+        </div>
       </div>
 
       {/* Bottom toolbar */}

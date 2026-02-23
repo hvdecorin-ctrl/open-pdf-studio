@@ -10,9 +10,15 @@ export const isTauri = () => {
 };
 
 // Detect mobile platform (Android/iOS) — cached at first call
+// Add ?mobile to the URL to force mobile layout for testing in browser
 let _isMobile = null;
 export function isMobile() {
   if (_isMobile !== null) return _isMobile;
+  // Allow forcing mobile mode via URL param for dev/testing
+  if (new URLSearchParams(window.location.search).has('mobile')) {
+    _isMobile = true;
+    return _isMobile;
+  }
   try {
     if (isTauri() && window.__TAURI__.os) {
       const osType = window.__TAURI__.os.type();
