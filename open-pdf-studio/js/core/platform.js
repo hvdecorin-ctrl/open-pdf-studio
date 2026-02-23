@@ -4,6 +4,24 @@
  * Uses the global __TAURI__ object instead of ES module imports
  */
 
+// Extract a display-friendly file name from a path or content:// URI
+export function extractFileName(pathOrUri) {
+  if (!pathOrUri) return 'Document';
+  // content:// URIs: try to decode and extract last segment
+  if (pathOrUri.startsWith('content://')) {
+    const decoded = decodeURIComponent(pathOrUri);
+    // Try common patterns: .../document/primary:Download/file.pdf or raw:/storage/.../file.pdf
+    const match = decoded.match(/[/:]([^/:]+\.pdf)$/i);
+    if (match) return match[1];
+    // Fallback: last path segment
+    const segments = decoded.split(/[/:]+/).filter(Boolean);
+    return segments[segments.length - 1] || 'Document';
+  }
+  // Regular filesystem path
+  const parts = pathOrUri.replace(/\\/g, '/').split('/');
+  return parts[parts.length - 1] || 'Document';
+}
+
 // Check if running in Tauri
 export const isTauri = () => {
   return typeof window !== 'undefined' && window.__TAURI__ !== undefined;

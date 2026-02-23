@@ -1,7 +1,7 @@
 import { createSignal, onMount, onCleanup, Show, For } from 'solid-js';
 import { useTranslation } from '../i18n/useTranslation.js';
 import { state } from '../core/state.js';
-import { isTauri, openFileDialog } from '../core/platform.js';
+import { isTauri, openFileDialog, extractFileName } from '../core/platform.js';
 import { loadPDF } from '../pdf/loader.js';
 import { fitWidth, fitPage, goToPage, rotatePage, setZoom } from '../pdf/renderer.js';
 import { createTab } from '../ui/chrome/tabs.js';
@@ -83,8 +83,7 @@ export default function MobileApp() {
           initDomElements();
           await loadPDF(path);
           await fitPage();
-          const parts = path.replace(/\\/g, '/').split('/');
-          addRecentFile(path, parts[parts.length - 1]);
+          addRecentFile(path, extractFileName(path));
           setRecentFiles(getRecentFiles());
         }
       } catch (e) {
@@ -126,6 +125,12 @@ export default function MobileApp() {
         addRecentFile(recent.path, recent.name);
         setRecentFiles(getRecentFiles());
       } catch (e) {
+        // On Android, content:// URI permissions expire after app restart
+        if (recent.path.startsWith('content://')) {
+          alert('This file can no longer be accessed. Please open it again using the file picker.');
+        } else {
+          alert('Failed to open file: ' + (e.message || e));
+        }
         console.warn('Failed to open recent file:', e);
       }
     }

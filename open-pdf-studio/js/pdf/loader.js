@@ -111,9 +111,13 @@ export async function loadPDF(filePath, preloadedData = null) {
       originalBytesCache.set(filePath, typedArray.slice());
     } else if (isTauri()) {
       // Lock the file to prevent other apps from writing while we have it open
-      await lockFile(filePath);
+      // (skip on Android — content:// URIs don't support filesystem locking)
+      const { isMobile } = await import('../core/platform.js');
+      if (!isMobile()) {
+        await lockFile(filePath);
+      }
 
-      // Read file using Tauri fs plugin
+      // Read file using Tauri fs plugin (handles content:// URIs on Android)
       const data = await readBinaryFile(filePath);
       typedArray = new Uint8Array(data);
 

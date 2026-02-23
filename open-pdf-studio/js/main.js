@@ -52,7 +52,7 @@ import App from './solid/App.jsx';
 import { addRecentFile } from './mobile/recent-files.js';
 
 // Tauri API
-import { isTauri, isMobile, isDevMode, getOpenedFile, loadSession, saveSession, fileExists, isDefaultPdfApp, openDefaultAppsSettings } from './core/platform.js';
+import { isTauri, isMobile, isDevMode, getOpenedFile, loadSession, saveSession, fileExists, isDefaultPdfApp, openDefaultAppsSettings, extractFileName } from './core/platform.js';
 
 // Disable default browser context menu
 function disableDefaultContextMenu() {
@@ -122,14 +122,14 @@ async function init() {
             if (filePath.startsWith('file://')) {
               filePath = decodeURIComponent(filePath.replace('file://', ''));
             }
-            if (filePath.toLowerCase().endsWith('.pdf')) {
+            // Accept content:// URIs directly (Android picker uses opaque IDs that don't end in .pdf)
+            if (filePath.startsWith('content://') || filePath.toLowerCase().endsWith('.pdf')) {
               createTab(filePath);
               await new Promise(r => setTimeout(r, 0));
               initDomElements();
               await loadPDF(filePath);
               await fitPage();
-              const parts = filePath.replace(/\\/g, '/').split('/');
-              addRecentFile(filePath, parts[parts.length - 1]);
+              addRecentFile(filePath, extractFileName(filePath));
             }
           }
         } catch (e) {
