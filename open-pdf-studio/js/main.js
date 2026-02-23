@@ -24,6 +24,7 @@ import { setupEventListeners } from './ui/setup.js';
 
 // PDF operations (for handling file drops from command line args)
 import { loadPDF } from './pdf/loader.js';
+import { fitPage } from './pdf/renderer.js';
 
 // Text selection
 import { initTextSelection } from './text/text-selection.js';
@@ -46,6 +47,9 @@ import './i18n/config.js';
 // Solid.js
 import { render } from 'solid-js/web';
 import App from './solid/App.jsx';
+
+// Recent files (mobile)
+import { addRecentFile } from './mobile/recent-files.js';
 
 // Tauri API
 import { isTauri, isMobile, isDevMode, getOpenedFile, loadSession, saveSession, fileExists, isDefaultPdfApp, openDefaultAppsSettings } from './core/platform.js';
@@ -104,6 +108,37 @@ async function init() {
   // Setup session save on window close (desktop only — Android lifecycle handles this)
   if (!mobile) {
     setupSessionSaveOnClose();
+  }
+
+  // Listen for deep-link events on mobile (Android intent to open PDF)
+  if (mobile && isTauri() && window.__TAURI__?.event) {
+    try {
+      window.__TAURI__.event.listen('deep-link://new-url', async (event) => {
+        try {
+          const urls = event.payload;
+          if (urls && urls.length > 0) {
+            let filePath = urls[0];
+            // Strip file:// prefix if present
+            if (filePath.startsWith('file://')) {
+              filePath = decodeURIComponent(filePath.replace('file://', ''));
+            }
+            if (filePath.toLowerCase().endsWith('.pdf')) {
+              createTab(filePath);
+              await new Promise(r => setTimeout(r, 0));
+              initDomElements();
+              await loadPDF(filePath);
+              await fitPage();
+              const parts = filePath.replace(/\\/g, '/').split('/');
+              addRecentFile(filePath, parts[parts.length - 1]);
+            }
+          }
+        } catch (e) {
+          console.warn('Failed to handle deep-link:', e);
+        }
+      });
+    } catch (e) {
+      console.warn('Failed to setup deep-link listener:', e);
+    }
   }
 
   // Check for file passed as command line argument

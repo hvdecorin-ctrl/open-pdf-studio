@@ -31,5 +31,7 @@ whoami = "1"
 base64 = "0.22"
 open = "5"
 
+tauri-plugin-deep-link = "2"
+
 [target.'cfg(not(target_os = "android"))'.dependencies]
 tauri-plugin-updater = "2"

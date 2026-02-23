@@ -5,6 +5,7 @@ import { DEFAULT_PREFERENCES } from '../../../core/constants.js';
 import { state } from '../../../core/state.js';
 import { savePreferences, applyTheme } from '../../../core/preferences.js';
 import { useTranslation } from '../../../i18n/useTranslation.js';
+import { isMobile } from '../../../core/platform.js';
 
 import GeneralTab from './GeneralTab.jsx';
 import AnnotationsTab from './AnnotationsTab.jsx';
@@ -14,6 +15,8 @@ import MarkupTab from './MarkupTab.jsx';
 import BehaviorTab from './BehaviorTab.jsx';
 import FileAssocTab from './FileAssocTab.jsx';
 import VirtualPrinterTab from './VirtualPrinterTab.jsx';
+
+const DESKTOP_ONLY_TABS = ['fileassoc', 'vprinter'];
 
 const TAB_IDS = [
   { id: 'general', key: 'tabs.general' },
@@ -87,7 +90,7 @@ export default function PreferencesDialog(props) {
     >
       <div class="preferences-content">
         <div class="pref-tabs">
-          <For each={TAB_IDS}>
+          <For each={isMobile() ? TAB_IDS.filter(t => !DESKTOP_ONLY_TABS.includes(t.id)) : TAB_IDS}>
             {(tab) => (
               <button
                 class="pref-tab"

@@ -105,24 +105,22 @@ export async function loadPDF(filePath, preloadedData = null) {
 
     let typedArray;
 
-    if (isTauri()) {
-      if (preloadedData) {
-        // Use pre-loaded bytes (e.g. from virtual printer capture via Rust read_file)
-        typedArray = preloadedData instanceof Uint8Array ? preloadedData : new Uint8Array(preloadedData);
-      } else {
-        // Lock the file to prevent other apps from writing while we have it open
-        await lockFile(filePath);
+    if (preloadedData) {
+      // Use pre-loaded bytes (e.g. from virtual printer capture, or browser file input)
+      typedArray = preloadedData instanceof Uint8Array ? preloadedData : new Uint8Array(preloadedData);
+      originalBytesCache.set(filePath, typedArray.slice());
+    } else if (isTauri()) {
+      // Lock the file to prevent other apps from writing while we have it open
+      await lockFile(filePath);
 
-        // Read file using Tauri fs plugin
-        const data = await readBinaryFile(filePath);
-        typedArray = new Uint8Array(data);
-      }
+      // Read file using Tauri fs plugin
+      const data = await readBinaryFile(filePath);
+      typedArray = new Uint8Array(data);
 
       // Cache a copy of original bytes for saver (pdf.js transfers the buffer
       // to a web worker, which detaches the original Uint8Array making it length 0)
       originalBytesCache.set(filePath, typedArray.slice());
     } else {
-      // Fallback for browser environment (e.g., via fetch for local dev)
       throw new Error('File system access not available');
     }
 

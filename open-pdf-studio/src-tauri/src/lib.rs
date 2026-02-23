@@ -471,7 +471,8 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_os::init())
-        .plugin(tauri_plugin_process::init());
+        .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_deep_link::init());
 
     // Updater plugin is desktop-only (Play Store handles updates on Android)
     #[cfg(not(target_os = "android"))]
