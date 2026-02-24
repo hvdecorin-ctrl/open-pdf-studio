@@ -1,18 +1,30 @@
 /* RTL (Right-to-Left) Layout Overrides for Arabic and Farsi */
 
+/*
+ * HOW RTL WORKS IN THIS CODEBASE:
+ *
+ * The global [dir="rtl"] rule sets `direction: rtl` on the root element.
+ * This AUTOMATICALLY reverses all `flex-direction: row` containers —
+ * flex items flow right-to-left instead of left-to-right.
+ *
+ * DO NOT add `flex-direction: row-reverse` for RTL — that creates a
+ * double reversal (row-reverse + direction:rtl = back to LTR).
+ *
+ * Only physical property swaps (border-left/right, margin-left/right)
+ * are needed here, since those don't respond to `direction`.
+ *
+ * Use `direction: ltr` on specific containers that should NOT reverse
+ * (e.g., directional navigation buttons, window controls).
+ */
+
 /* Global text direction */
 [dir="rtl"] {
   direction: rtl;
   text-align: right;
 }
 
-/* Layout: swap left panel to right side */
-[dir="rtl"] .content {
-  flex-direction: row-reverse;
-}
-
+/* Layout: left panel swaps to right side automatically via direction: rtl */
 [dir="rtl"] .left-panel {
-  flex-direction: row-reverse;
   border-right: none;
   border-left: none;
 }
@@ -21,39 +33,24 @@
   order: -1;
 }
 
-/* Properties panel: swap to left side */
+/* Properties panel: swap border to right side */
 [dir="rtl"] .properties-panel {
   border-left: none;
   border-right: 1px solid var(--theme-panel-border);
 }
 
-/* Titlebar */
-[dir="rtl"] .titlebar {
-  flex-direction: row-reverse;
+/* PDF viewer: must always render LTR — PDF content has its own text direction */
+[dir="rtl"] #pdf-container {
+  direction: ltr;
+  text-align: left;
 }
 
-[dir="rtl"] .titlebar-icon {
-  margin-right: 0;
-  margin-left: 8px;
+/* Titlebar: keep LTR layout so window controls stay on the right (Windows standard) */
+[dir="rtl"] .title-bar {
+  direction: ltr;
 }
 
-[dir="rtl"] .titlebar-left {
-  flex-direction: row-reverse;
-}
-
-[dir="rtl"] .titlebar-right {
-  flex-direction: row-reverse;
-}
-
-[dir="rtl"] .window-controls {
-  flex-direction: row-reverse;
-}
-
-/* Ribbon */
-[dir="rtl"] .ribbon-tabs {
-  flex-direction: row-reverse;
-}
-
+/* Ribbon: border swaps for group separators */
 [dir="rtl"] .ribbon-content {
   direction: rtl;
 }
@@ -82,27 +79,15 @@
   margin-right: auto;
 }
 
-/* Document tabs */
-[dir="rtl"] .document-tabs {
-  flex-direction: row-reverse;
-}
-
+/* Document tabs: swap close button margin */
 [dir="rtl"] .doc-tab .tab-close {
   margin-left: 0;
   margin-right: 6px;
 }
 
-/* Status bar */
-[dir="rtl"] .status-bar {
-  flex-direction: row-reverse;
-}
-
-[dir="rtl"] .status-bar-left {
-  flex-direction: row-reverse;
-}
-
-[dir="rtl"] .status-bar-right {
-  flex-direction: row-reverse;
+/* Status bar: page navigation keeps LTR order (directional arrows) */
+[dir="rtl"] .status-bar-center {
+  direction: ltr;
 }
 
 /* Context menu */
@@ -121,73 +106,33 @@
   transform: scaleX(-1);
 }
 
-/* Left panel tabs */
+/* Left panel tabs: swap border */
 [dir="rtl"] .left-panel-tabs {
   border-right: none;
   border-left: 1px solid var(--theme-panel-border);
 }
 
 /* Find bar */
-[dir="rtl"] .find-bar {
-  flex-direction: row-reverse;
-}
-
 [dir="rtl"] .find-bar input[type="text"] {
   text-align: right;
 }
 
-/* Dialogs */
-[dir="rtl"] .dialog-footer {
-  flex-direction: row-reverse;
-}
-
-/* Preferences */
-[dir="rtl"] .preferences-content {
-  flex-direction: row-reverse;
-}
-
+/* Preferences: swap tab border */
 [dir="rtl"] .pref-tabs {
   border-right: none;
   border-left: 1px solid var(--theme-pref-border);
-}
-
-[dir="rtl"] .pref-row {
-  flex-direction: row-reverse;
 }
 
 [dir="rtl"] .pref-row label {
   text-align: right;
 }
 
-[dir="rtl"] .pref-footer-right {
-  flex-direction: row-reverse;
-}
-
 /* Properties panel sections */
-[dir="rtl"] .prop-row {
-  flex-direction: row-reverse;
-}
-
 [dir="rtl"] .prop-row label {
   text-align: right;
 }
 
-/* Form fields bar */
-[dir="rtl"] .form-fields-bar {
-  flex-direction: row-reverse;
-}
-
-/* PDF/A bar */
-[dir="rtl"] .pdfa-bar {
-  flex-direction: row-reverse;
-}
-
-/* Default app bar */
-[dir="rtl"] .default-app-bar {
-  flex-direction: row-reverse;
-}
-
-/* Scrollbars - move to left side for RTL */
+/* Scrollbars - keep LTR direction for scroll behavior */
 [dir="rtl"] ::-webkit-scrollbar {
   direction: ltr;
 }

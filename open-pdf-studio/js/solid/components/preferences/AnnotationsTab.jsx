@@ -61,6 +61,44 @@ export default function AnnotationsTab(props) {
             </fieldset>
 
             <fieldset class="pref-fieldset">
+              <legend>{t('annotations.objectSnapping')}</legend>
+              <div class="pref-row pref-checkbox-row">
+                <label class="pref-checkbox-label">
+                  <input type="checkbox" checked={p.enableObjectSnap[0]()} onChange={e => p.enableObjectSnap[1](e.target.checked)} />
+                  <span>{t('annotations.enableObjectSnap')}</span>
+                </label>
+              </div>
+              <div class="pref-row pref-checkbox-row">
+                <label class="pref-checkbox-label">
+                  <input type="checkbox" checked={p.snapToEndpoints[0]()} onChange={e => p.snapToEndpoints[1](e.target.checked)} disabled={!p.enableObjectSnap[0]()} />
+                  <span>{t('annotations.snapToEndpoints')}</span>
+                </label>
+              </div>
+              <div class="pref-row pref-checkbox-row">
+                <label class="pref-checkbox-label">
+                  <input type="checkbox" checked={p.snapToMidpoints[0]()} onChange={e => p.snapToMidpoints[1](e.target.checked)} disabled={!p.enableObjectSnap[0]()} />
+                  <span>{t('annotations.snapToMidpoints')}</span>
+                </label>
+              </div>
+              <div class="pref-row pref-checkbox-row">
+                <label class="pref-checkbox-label">
+                  <input type="checkbox" checked={p.snapToCenters[0]()} onChange={e => p.snapToCenters[1](e.target.checked)} disabled={!p.enableObjectSnap[0]()} />
+                  <span>{t('annotations.snapToCenters')}</span>
+                </label>
+              </div>
+              <div class="pref-row pref-checkbox-row">
+                <label class="pref-checkbox-label">
+                  <input type="checkbox" checked={p.snapToEdges[0]()} onChange={e => p.snapToEdges[1](e.target.checked)} disabled={!p.enableObjectSnap[0]()} />
+                  <span>{t('annotations.snapToEdges')}</span>
+                </label>
+              </div>
+              <div class="pref-row">
+                <label>{t('annotations.objectSnapRadius')}</label>
+                <PrefComboBox value={p.objectSnapRadius[0]} setValue={p.objectSnapRadius[1]} options={[5,8,10,15,20]} min={3} max={30} fallback={10} suffix="px" />
+              </div>
+            </fieldset>
+
+            <fieldset class="pref-fieldset">
               <legend>{t('annotations.highlightDefaults')}</legend>
               <div class="pref-row">
                 <label>{t('annotations.color')}</label>

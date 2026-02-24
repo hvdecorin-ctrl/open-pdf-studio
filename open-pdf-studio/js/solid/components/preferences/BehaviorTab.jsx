@@ -54,6 +54,44 @@ export default function BehaviorTab(props) {
       </fieldset>
 
       <fieldset class="pref-fieldset">
+        <legend>{t('behavior.objectSnapping')}</legend>
+        <div class="pref-row pref-checkbox-row">
+          <label class="pref-checkbox-label">
+            <input type="checkbox" checked={p.enableObjectSnap[0]()} onChange={e => p.enableObjectSnap[1](e.target.checked)} />
+            <span>{t('behavior.enableObjectSnap')}</span>
+          </label>
+        </div>
+        <div class="pref-row pref-checkbox-row">
+          <label class="pref-checkbox-label">
+            <input type="checkbox" checked={p.snapToEndpoints[0]()} onChange={e => p.snapToEndpoints[1](e.target.checked)} disabled={!p.enableObjectSnap[0]()} />
+            <span>{t('behavior.snapToEndpoints')}</span>
+          </label>
+        </div>
+        <div class="pref-row pref-checkbox-row">
+          <label class="pref-checkbox-label">
+            <input type="checkbox" checked={p.snapToMidpoints[0]()} onChange={e => p.snapToMidpoints[1](e.target.checked)} disabled={!p.enableObjectSnap[0]()} />
+            <span>{t('behavior.snapToMidpoints')}</span>
+          </label>
+        </div>
+        <div class="pref-row pref-checkbox-row">
+          <label class="pref-checkbox-label">
+            <input type="checkbox" checked={p.snapToCenters[0]()} onChange={e => p.snapToCenters[1](e.target.checked)} disabled={!p.enableObjectSnap[0]()} />
+            <span>{t('behavior.snapToCenters')}</span>
+          </label>
+        </div>
+        <div class="pref-row pref-checkbox-row">
+          <label class="pref-checkbox-label">
+            <input type="checkbox" checked={p.snapToEdges[0]()} onChange={e => p.snapToEdges[1](e.target.checked)} disabled={!p.enableObjectSnap[0]()} />
+            <span>{t('behavior.snapToEdges')}</span>
+          </label>
+        </div>
+        <div class="pref-row">
+          <label>{t('behavior.objectSnapRadius')}</label>
+          <input type="number" min="3" max="30" value={p.objectSnapRadius[0]()} onInput={e => p.objectSnapRadius[1](parseInt(e.target.value) || 10)} disabled={!p.enableObjectSnap[0]()} />
+        </div>
+      </fieldset>
+
+      <fieldset class="pref-fieldset">
         <legend>{t('behavior.creation')}</legend>
         <div class="pref-row pref-checkbox-row">
           <label class="pref-checkbox-label">

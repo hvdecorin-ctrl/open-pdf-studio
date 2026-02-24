@@ -114,7 +114,7 @@ export default function TitleBar() {
       </div>
 
       <div class="title-bar-center" data-tauri-drag-region>
-        <span class="app-title">{tCommon('appName')}</span>
+        <span class="app-title">{tCommon('appName')} v{__APP_VERSION__}</span>
         <span class="file-name">{fileName()}</span>
       </div>
 

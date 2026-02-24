@@ -1,7 +1,9 @@
 import { createSignal, onMount, onCleanup, For, Show } from 'solid-js';
 import { PALETTE_COLUMNS } from '../../stores/formatStore.js';
+import { useTranslation } from '../../../i18n/useTranslation.js';
 
 export default function ColorPalettePicker(props) {
+  const { t } = useTranslation('properties');
   const [open, setOpen] = createSignal(false);
   let wrapperRef;
   let hiddenInput;
@@ -30,7 +32,7 @@ export default function ColorPalettePicker(props) {
 
   const hexDisplay = () => {
     const c = props.color?.();
-    if (!c && props.showNone) return 'None';
+    if (!c && props.showNone) return t('colorNone');
     return (c || '#000000').toUpperCase();
   };
 
@@ -59,7 +61,7 @@ export default function ColorPalettePicker(props) {
                 <circle cx="12" cy="12" r="10"/>
                 <line x1="4" y1="4" x2="20" y2="20"/>
               </svg>
-              None
+              {t('colorNone')}
             </button>
           </Show>
           <div class="color-palette" style="display: flex; gap: 2px; padding: 2px;">
@@ -106,7 +108,7 @@ export default function ColorPalettePicker(props) {
               <circle cx="12" cy="12" r="10"/>
               <path d="M12 2a10 10 0 0 1 0 20"/>
             </svg>
-            More Colors...
+            {t('moreColors')}
           </button>
         </div>
         <input

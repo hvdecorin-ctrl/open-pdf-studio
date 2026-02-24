@@ -151,7 +151,7 @@ export default function StatusBar() {
           </button>
 
           <span class="status-page-info">
-            Page <input type="number" class="status-page-input" value={state.currentPage} min="1" onKeyDown={handlePageInput} onBlur={handlePageBlur} /> / <span>{totalPages()}</span>
+            {t('page')} <input type="number" class="status-page-input" value={state.currentPage} min="1" onKeyDown={handlePageInput} onBlur={handlePageBlur} /> / <span>{totalPages()}</span>
           </span>
 
           <button class="status-nav-btn" title={t('nextPage')} onClick={goNext}>

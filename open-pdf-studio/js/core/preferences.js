@@ -4,9 +4,10 @@ import { setColorPickerValue, setLineWidthValue, setCurrentTheme } from '../soli
 import { updateStatusMessage } from '../ui/chrome/status-bar.js';
 import { openDialog } from '../solid/stores/dialogStore.js';
 import { changeLanguage } from '../i18n/useTranslation.js';
+import { isTauri, getUsername } from './platform.js';
 
 // Load preferences from localStorage
-export function loadPreferences() {
+export async function loadPreferences() {
   try {
     const saved = localStorage.getItem('pdfEditorPreferences');
     if (saved) {
@@ -18,6 +19,17 @@ export function loadPreferences() {
     console.error('Failed to load preferences:', e);
     state.preferences = { ...DEFAULT_PREFERENCES };
   }
+
+  // If authorName is empty (first launch or reset), resolve to OS login username
+  if (!state.preferences.authorName) {
+    try {
+      const username = isTauri() ? await getUsername() : 'User';
+      state.preferences.authorName = username;
+    } catch (e) {
+      state.preferences.authorName = 'User';
+    }
+  }
+
   applyPreferences();
 }
 
@@ -28,16 +40,6 @@ export function savePreferences() {
     applyPreferences();
   } catch (e) {
     console.error('Failed to save preferences:', e);
-  }
-}
-
-// Get system username
-function getSystemUsername() {
-  try {
-    const os = window.require('os');
-    return os.userInfo().username || 'User';
-  } catch (e) {
-    return 'User';
   }
 }
 
@@ -94,13 +96,8 @@ export function applyPreferences() {
     applyTheme(state.preferences.theme);
   }
 
-  // Update default author - use system username if not customized
-  const savedAuthor = state.preferences.authorName;
-  if (!savedAuthor || savedAuthor === 'User') {
-    state.defaultAuthor = getSystemUsername();
-  } else {
-    state.defaultAuthor = savedAuthor;
-  }
+  // Update default author from preferences
+  state.defaultAuthor = state.preferences.authorName || 'User';
 
   // Update color picker default
   setColorPickerValue(state.preferences.defaultAnnotationColor);
@@ -219,7 +216,14 @@ export function setAsDefaultStyle(annotation) {
 }
 
 // Reset preferences to defaults
-export function resetPreferencesToDefaults() {
+export async function resetPreferencesToDefaults() {
   state.preferences = { ...DEFAULT_PREFERENCES };
+  // Restore OS username as default author
+  try {
+    const username = isTauri() ? await getUsername() : 'User';
+    state.preferences.authorName = username;
+  } catch (e) {
+    state.preferences.authorName = 'User';
+  }
   savePreferences();
 }

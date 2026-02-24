@@ -80,17 +80,17 @@
   vertical-align: middle;
 }
 .ribbon-tab.contextual-tab {
-  color: #b35900;
-  border-top: 2px solid #e68a00;
+  color: var(--theme-ctx-tab-text);
+  border-top: 2px solid var(--theme-ctx-tab-border);
 }
 .ribbon-tab.contextual-tab:hover {
-  background: #fff3e0;
-  color: #b35900;
+  background: var(--theme-ctx-tab-hover-bg);
+  color: var(--theme-ctx-tab-text);
 }
 .ribbon-tab.contextual-tab.active {
   background: var(--theme-ribbon-tab-active-bg);
-  color: #b35900;
-  border-top: 2px solid #e68a00;
+  color: var(--theme-ctx-tab-active-text);
+  border-top: 2px solid var(--theme-ctx-tab-border);
   border-bottom: 1px solid var(--theme-ribbon-tab-active-bg);
 }
 

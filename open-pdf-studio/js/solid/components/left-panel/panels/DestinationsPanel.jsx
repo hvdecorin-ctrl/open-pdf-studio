@@ -1,12 +1,15 @@
 import { For, Show } from 'solid-js';
 import { activeTab } from '../../../stores/leftPanelStore.js';
 import { items, countText, emptyMessage } from '../../../stores/panels/destinationsStore.js';
+import { useTranslation } from '../../../../i18n/useTranslation.js';
 
 export default function DestinationsPanel() {
+  const { t } = useTranslation('properties');
+
   return (
     <div class={`left-panel-content${activeTab() === 'destinations' ? ' active' : ''}`} id="destinations-panel">
       <div class="left-panel-header">
-        <span>Destinations</span>
+        <span>{t('leftPanel.destinations')}</span>
       </div>
       <div class="destinations-container">
         <Show when={emptyMessage()}>

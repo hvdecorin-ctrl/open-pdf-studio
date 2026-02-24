@@ -19,23 +19,13 @@ export const HANDLE_TYPES = {
   CALLOUT_KNEE: 'callout_knee'
 };
 
-// Get system username for default author
-export function getSystemUsername() {
-  try {
-    const os = window.require('os');
-    return os.userInfo().username || 'User';
-  } catch (e) {
-    return 'User';
-  }
-}
-
 // Default application preferences
 export const DEFAULT_PREFERENCES = {
   // Theme
   theme: 'system',
 
-  // General
-  authorName: getSystemUsername(),
+  // General — authorName defaults to '' (resolved to OS username at load time)
+  authorName: '',
 
   // Snapping
   angleSnapDegrees: 30,
@@ -45,6 +35,14 @@ export const DEFAULT_PREFERENCES = {
   gridSize: 10,
   enableGridSnap: false,
   showGrid: false,
+
+  // Object snapping
+  enableObjectSnap: true,
+  snapToEndpoints: true,
+  snapToMidpoints: true,
+  snapToCenters: true,
+  snapToEdges: true,
+  objectSnapRadius: 10,
 
   // Appearance
   defaultAnnotationColor: '#FF0000',

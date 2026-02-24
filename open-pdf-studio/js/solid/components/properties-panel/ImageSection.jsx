@@ -1,10 +1,12 @@
 import { Show } from 'solid-js';
-import { annotProps, sectionVis, updateAnnotProp, resetImageSize } from '../../stores/propertiesStore.js';
+import { annotProps, sectionVis, updateAnnotProp, resetImageSize, cycleSelectNext } from '../../stores/propertiesStore.js';
 import CollapsibleSection from './CollapsibleSection.jsx';
+import PrefComboBox from '../preferences/PrefComboBox.jsx';
 import { useTranslation } from '../../../i18n/useTranslation.js';
 
 export default function ImageSection() {
   const { t } = useTranslation('properties');
+  const { t: tCommon } = useTranslation('common');
   const isLocked = () => annotProps.locked;
 
   return (
@@ -25,14 +27,30 @@ export default function ImageSection() {
         </div>
 
         <div class="property-group">
-          <label>{t('image.rotation')}</label>
-          <input type="number" min="-360" max="360" step="1"
-            value={annotProps.imageRotation} disabled={isLocked()}
-            onInput={(e) => updateAnnotProp('imageRotation', e.target.value)} />
+          <label>{t('image.lockAspectRatio')}</label>
+          <select value={annotProps.lockAspectRatio ? 'yes' : 'no'}
+            disabled={isLocked()}
+            onDblClick={cycleSelectNext}
+            onChange={(e) => updateAnnotProp('lockAspectRatio', e.target.value === 'yes')}>
+            <option value="no">{tCommon('no')}</option>
+            <option value="yes">{tCommon('yes')}</option>
+          </select>
         </div>
 
-        <div class="property-group property-group-full">
-          <button type="button" class="property-btn secondary"
+        <div class="property-group">
+          <label>{t('image.rotation')}</label>
+          <PrefComboBox
+            value={() => annotProps.imageRotation}
+            setValue={(val) => updateAnnotProp('imageRotation', val)}
+            options={[0, 45, 90, 135, 180, 225, 270, 315]}
+            min={-360} max={360} fallback={0} suffix="°"
+            disabled={isLocked}
+          />
+        </div>
+
+        <div class="property-group">
+          <label></label>
+          <button type="button" class="prop-action-btn"
             disabled={isLocked()}
             onClick={() => resetImageSize()}>
             {t('image.resetToOriginal')}

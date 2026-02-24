@@ -115,8 +115,14 @@ export default function CommentTab() {
             <RibbonButton size="small" id="tool-undo" title={t('comment.undo')} icon={undoIcon} label={t('comment.undo')}
               disabled={noPdf() || isPdfAReadOnly()} onClick={() => undo()} />
             <RibbonButton size="small" id="tool-clear" title={t('comment.clearPageAnnotations')} icon={clearPageIcon} label={t('comment.clearPage')}
-              disabled={noPdf() || isPdfAReadOnly()} onClick={() => {
-                if (confirm(t('comment.clearPageConfirm'))) {
+              disabled={noPdf() || isPdfAReadOnly()} onClick={async () => {
+                let confirmed = false;
+                if (window.__TAURI__?.dialog?.ask) {
+                  confirmed = await window.__TAURI__.dialog.ask(t('comment.clearPageConfirm'), { title: t('comment.clearPage'), kind: 'warning' });
+                } else {
+                  confirmed = confirm(t('comment.clearPageConfirm'));
+                }
+                if (confirmed) {
                   recordClearPage(state.currentPage, state.annotations);
                   state.annotations = state.annotations.filter(a => a.page !== state.currentPage);
                   hideProperties();

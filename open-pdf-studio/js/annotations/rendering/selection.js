@@ -67,13 +67,13 @@ export function drawSelectionHandles(ctx, annotation) {
         ctx.translate(-boxSelCenterX, -boxSelCenterY);
       }
       ctx.strokeRect(annotation.x - 2, annotation.y - 2, annotation.width + 4, annotation.height + 4);
-      // Draw line from top center to rotation handle (green color)
+      // Draw line from right center to rotation handle (green color)
       ctx.strokeStyle = '#22c55e';
       ctx.setLineDash([]);
       ctx.lineWidth = 1 / sc;
       ctx.beginPath();
-      ctx.moveTo(annotation.x + annotation.width/2, annotation.y - 2);
-      ctx.lineTo(annotation.x + annotation.width/2, annotation.y - 25 / sc);
+      ctx.moveTo(annotation.x + annotation.width + 2, annotation.y + annotation.height / 2);
+      ctx.lineTo(annotation.x + annotation.width + 25 / sc, annotation.y + annotation.height / 2);
       ctx.stroke();
       ctx.restore();
       break;

@@ -1,5 +1,5 @@
 import { Show } from 'solid-js';
-import { annotProps, sectionVis, updateAnnotProp } from '../../stores/propertiesStore.js';
+import { annotProps, sectionVis, updateAnnotProp, cycleSelectNext } from '../../stores/propertiesStore.js';
 import CollapsibleSection from './CollapsibleSection.jsx';
 import { useTranslation } from '../../../i18n/useTranslation.js';
 
@@ -43,6 +43,7 @@ export default function GeneralSection() {
         <div class="property-group">
           <label>{t('general.locked')}</label>
           <select value={annotProps.locked ? 'yes' : 'no'}
+            onDblClick={cycleSelectNext}
             onChange={(e) => updateAnnotProp('locked', e.target.value === 'yes')}>
             <option value="no">{tCommon('no')}</option>
             <option value="yes">{tCommon('yes')}</option>
@@ -53,6 +54,7 @@ export default function GeneralSection() {
           <label>{t('general.printable')}</label>
           <select value={annotProps.printable ? 'yes' : 'no'}
             disabled={isLocked()}
+            onDblClick={cycleSelectNext}
             onChange={(e) => updateAnnotProp('printable', e.target.value === 'yes')}>
             <option value="yes">{tCommon('yes')}</option>
             <option value="no">{tCommon('no')}</option>
@@ -63,6 +65,7 @@ export default function GeneralSection() {
           <label>{t('general.readOnly')}</label>
           <select value={annotProps.readOnly ? 'yes' : 'no'}
             disabled={isLocked()}
+            onDblClick={cycleSelectNext}
             onChange={(e) => updateAnnotProp('readOnly', e.target.value === 'yes')}>
             <option value="no">{tCommon('no')}</option>
             <option value="yes">{tCommon('yes')}</option>
@@ -73,6 +76,7 @@ export default function GeneralSection() {
           <label>{t('general.marked')}</label>
           <select value={annotProps.marked ? 'yes' : 'no'}
             disabled={isLocked()}
+            onDblClick={cycleSelectNext}
             onChange={(e) => updateAnnotProp('marked', e.target.value === 'yes')}>
             <option value="no">{tCommon('no')}</option>
             <option value="yes">{tCommon('yes')}</option>
@@ -91,6 +95,7 @@ export default function GeneralSection() {
         <div class="property-group">
           <label>{t('general.status')}</label>
           <select value={annotProps.status}
+            onDblClick={cycleSelectNext}
             onChange={(e) => updateAnnotProp('status', e.target.value)}>
             <option value="none">{tCommon('none')}</option>
             <option value="accepted">{t('general.accepted')}</option>

@@ -1,25 +1,5 @@
 import { createMutable } from 'solid-js/store';
 import { DEFAULT_PREFERENCES } from './constants.js';
-import { isTauri, getUsername } from './platform.js';
-
-// Get system username for default author
-async function getSystemUsername() {
-  if (isTauri()) {
-    try {
-      return await getUsername();
-    } catch (e) {
-      return 'User';
-    }
-  }
-  return 'User';
-}
-
-// Initialize default author asynchronously
-let defaultAuthorValue = 'User';
-getSystemUsername().then(username => {
-  defaultAuthorValue = username;
-  state.defaultAuthor = username;
-});
 
 /**
  * Creates a new document state object
@@ -136,8 +116,8 @@ export const state = createMutable({
   // Preferences
   preferences: { ...DEFAULT_PREFERENCES },
 
-  // Default author - uses system username
-  defaultAuthor: defaultAuthorValue,
+  // Default author — resolved from OS username by loadPreferences()
+  defaultAuthor: 'User',
 
   // Shift key state (for angle snapping during rotation)
   shiftKeyPressed: false,

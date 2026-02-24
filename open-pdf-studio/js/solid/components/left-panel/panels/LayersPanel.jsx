@@ -1,12 +1,15 @@
 import { For, Show } from 'solid-js';
 import { activeTab } from '../../../stores/leftPanelStore.js';
 import { items, countText, emptyMessage } from '../../../stores/panels/layersStore.js';
+import { useTranslation } from '../../../../i18n/useTranslation.js';
 
 export default function LayersPanel() {
+  const { t } = useTranslation('properties');
+
   return (
     <div class={`left-panel-content${activeTab() === 'layers' ? ' active' : ''}`} id="layers-panel">
       <div class="left-panel-header">
-        <span>Layers</span>
+        <span>{t('leftPanel.layers')}</span>
       </div>
       <div class="layers-container">
         <Show when={emptyMessage()}>

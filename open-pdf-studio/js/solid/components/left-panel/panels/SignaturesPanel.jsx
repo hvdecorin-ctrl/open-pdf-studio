@@ -1,6 +1,7 @@
 import { For, Show } from 'solid-js';
 import { activeTab } from '../../../stores/leftPanelStore.js';
 import { items, countText, emptyMessage } from '../../../stores/panels/signaturesStore.js';
+import { useTranslation } from '../../../../i18n/useTranslation.js';
 
 function SignatureIcon(props) {
   return (
@@ -28,10 +29,13 @@ function SignatureIcon(props) {
 }
 
 export default function SignaturesPanel() {
+  const { t } = useTranslation('properties');
+  const { t: tCommon } = useTranslation('common');
+
   return (
     <div class={`left-panel-content${activeTab() === 'signatures' ? ' active' : ''}`} id="signatures-panel">
       <div class="left-panel-header">
-        <span>Digital Signatures</span>
+        <span>{t('leftPanel.signatures')}</span>
       </div>
       <div class="signatures-container">
         <Show when={emptyMessage()}>
@@ -47,19 +51,19 @@ export default function SignaturesPanel() {
                 <div class="signature-list-info">
                   <div class="signature-list-name">{sig.name}</div>
                   <Show when={sig.reason}>
-                    <div class="signature-list-detail">Reason: {sig.reason}</div>
+                    <div class="signature-list-detail">{t('leftPanel.reason')}: {sig.reason}</div>
                   </Show>
                   <Show when={sig.location}>
-                    <div class="signature-list-detail">Location: {sig.location}</div>
+                    <div class="signature-list-detail">{t('leftPanel.location')}: {sig.location}</div>
                   </Show>
                   <Show when={sig.date}>
-                    <div class="signature-list-detail">Date: {sig.date}</div>
+                    <div class="signature-list-detail">{t('leftPanel.date')}: {sig.date}</div>
                   </Show>
                   <Show when={sig.contactInfo}>
-                    <div class="signature-list-detail">Contact: {sig.contactInfo}</div>
+                    <div class="signature-list-detail">{t('leftPanel.contact')}: {sig.contactInfo}</div>
                   </Show>
                   <Show when={sig.page}>
-                    <div class="signature-list-detail">Page {sig.page}</div>
+                    <div class="signature-list-detail">{tCommon('page')} {sig.page}</div>
                   </Show>
                   <div class={`signature-list-status ${sig.status}`}>{sig.statusText}</div>
                 </div>

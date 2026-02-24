@@ -314,14 +314,14 @@ export function applyResize(annotation, handleType, deltaX, deltaY, originalAnn,
 
     case 'image':
     case 'stamp':
-    case 'signature':
-      // Maintain aspect ratio when shift is held
+    case 'signature': {
+      // Maintain aspect ratio when shift is held or lockAspectRatio is enabled
       const aspectRatio = originalAnn.originalWidth / originalAnn.originalHeight;
+      const lockRatio = shiftKey || annotation.lockAspectRatio;
 
       switch (handleType) {
         case HANDLE_TYPES.TOP_LEFT:
-          if (shiftKey) {
-            // Maintain aspect ratio
+          if (lockRatio) {
             const newWidth = originalAnn.width - deltaX;
             const newHeight = newWidth / aspectRatio;
             annotation.x = originalAnn.x + originalAnn.width - newWidth;
@@ -336,7 +336,7 @@ export function applyResize(annotation, handleType, deltaX, deltaY, originalAnn,
           }
           break;
         case HANDLE_TYPES.TOP_RIGHT:
-          if (shiftKey) {
+          if (lockRatio) {
             const newWidth = originalAnn.width + deltaX;
             const newHeight = newWidth / aspectRatio;
             annotation.y = originalAnn.y + originalAnn.height - newHeight;
@@ -349,7 +349,7 @@ export function applyResize(annotation, handleType, deltaX, deltaY, originalAnn,
           }
           break;
         case HANDLE_TYPES.BOTTOM_LEFT:
-          if (shiftKey) {
+          if (lockRatio) {
             const newWidth = originalAnn.width - deltaX;
             const newHeight = newWidth / aspectRatio;
             annotation.x = originalAnn.x + originalAnn.width - newWidth;
@@ -362,7 +362,7 @@ export function applyResize(annotation, handleType, deltaX, deltaY, originalAnn,
           }
           break;
         case HANDLE_TYPES.BOTTOM_RIGHT:
-          if (shiftKey) {
+          if (lockRatio) {
             const newWidth = originalAnn.width + deltaX;
             const newHeight = newWidth / aspectRatio;
             annotation.width = newWidth;
@@ -373,24 +373,55 @@ export function applyResize(annotation, handleType, deltaX, deltaY, originalAnn,
           }
           break;
         case HANDLE_TYPES.TOP:
-          annotation.y = originalAnn.y + deltaY;
-          annotation.height = originalAnn.height - deltaY;
+          if (lockRatio) {
+            const newHeight = originalAnn.height - deltaY;
+            const newWidth = newHeight * aspectRatio;
+            annotation.y = originalAnn.y + deltaY;
+            annotation.height = newHeight;
+            annotation.width = newWidth;
+          } else {
+            annotation.y = originalAnn.y + deltaY;
+            annotation.height = originalAnn.height - deltaY;
+          }
           break;
         case HANDLE_TYPES.BOTTOM:
-          annotation.height = originalAnn.height + deltaY;
+          if (lockRatio) {
+            const newHeight = originalAnn.height + deltaY;
+            const newWidth = newHeight * aspectRatio;
+            annotation.height = newHeight;
+            annotation.width = newWidth;
+          } else {
+            annotation.height = originalAnn.height + deltaY;
+          }
           break;
         case HANDLE_TYPES.LEFT:
-          annotation.x = originalAnn.x + deltaX;
-          annotation.width = originalAnn.width - deltaX;
+          if (lockRatio) {
+            const newWidth = originalAnn.width - deltaX;
+            const newHeight = newWidth / aspectRatio;
+            annotation.x = originalAnn.x + deltaX;
+            annotation.width = newWidth;
+            annotation.height = newHeight;
+          } else {
+            annotation.x = originalAnn.x + deltaX;
+            annotation.width = originalAnn.width - deltaX;
+          }
           break;
         case HANDLE_TYPES.RIGHT:
-          annotation.width = originalAnn.width + deltaX;
+          if (lockRatio) {
+            const newWidth = originalAnn.width + deltaX;
+            const newHeight = newWidth / aspectRatio;
+            annotation.width = newWidth;
+            annotation.height = newHeight;
+          } else {
+            annotation.width = originalAnn.width + deltaX;
+          }
           break;
       }
       // Ensure minimum size
       if (annotation.width < 20) annotation.width = 20;
       if (annotation.height < 20) annotation.height = 20;
       break;
+    }
 
     case 'comment':
       // Initialize width/height if not set
@@ -580,7 +611,7 @@ export function applyRotation(annotation, mouseX, mouseY, originalAnn) {
   const angle = Math.atan2(mouseY - centerY, mouseX - centerX) * (180 / Math.PI);
 
   // Adjust angle (rotation handle is to the right, so no offset needed)
-  annotation.rotation = angle;
+  annotation.rotation = Math.round(angle);
 
   // Snap to 15 degree increments when shift is held
   if (state.shiftKeyPressed && state.preferences.enableAngleSnap) {

@@ -1,5 +1,5 @@
 import { Show, For, createMemo } from 'solid-js';
-import { annotProps, sectionVis, updateAnnotProp } from '../../stores/propertiesStore.js';
+import { annotProps, sectionVis, updateAnnotProp, cycleSelectNext } from '../../stores/propertiesStore.js';
 import CollapsibleSection from './CollapsibleSection.jsx';
 import ColorPalettePicker from './ColorPalettePicker.jsx';
 import { systemFontList } from '../../stores/fontStore.js';
@@ -44,6 +44,7 @@ export default function TextFormatSection() {
         <div class="property-group">
           <label>{t('textFormat.font')}</label>
           <select value={annotProps.fontFamily} disabled={isLocked()}
+            onDblClick={cycleSelectNext}
             onChange={(e) => updateAnnotProp('fontFamily', e.target.value)}>
             <For each={fonts()}>
               {(font) => <option value={font} style={{ 'font-family': `'${font}', sans-serif` }}>{font}</option>}
@@ -54,6 +55,7 @@ export default function TextFormatSection() {
         <div class="property-group">
           <label>{t('textFormat.fontSize')}</label>
           <select value={annotProps.textFontSize} disabled={isLocked()}
+            onDblClick={cycleSelectNext}
             onChange={(e) => updateAnnotProp('textFontSize', e.target.value)}>
             <For each={fontSizeOptions()}>
               {(size) => <option value={size}>{size} pt</option>}

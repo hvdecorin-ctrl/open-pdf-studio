@@ -1,6 +1,7 @@
 import { For, Show } from 'solid-js';
 import { activeTab } from '../../../stores/leftPanelStore.js';
 import { groups, countText, emptyMessage } from '../../../stores/panels/formFieldsStore.js';
+import { useTranslation } from '../../../../i18n/useTranslation.js';
 
 const FIELD_TYPE_ICONS = {
   text: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7V4h16v3"/><line x1="12" y1="4" x2="12" y2="20"/><line x1="8" y1="20" x2="16" y2="20"/></svg>',
@@ -12,10 +13,12 @@ const FIELD_TYPE_ICONS = {
 };
 
 export default function FormFieldsPanel() {
+  const { t } = useTranslation('properties');
+
   return (
     <div class={`left-panel-content${activeTab() === 'form-fields' ? ' active' : ''}`} id="form-fields-panel">
       <div class="left-panel-header">
-        <span>Form Fields</span>
+        <span>{t('leftPanel.formFields')}</span>
       </div>
       <div class="form-fields-container">
         <Show when={emptyMessage()}>

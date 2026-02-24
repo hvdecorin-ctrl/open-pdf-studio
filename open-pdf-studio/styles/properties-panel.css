@@ -610,9 +610,29 @@
   justify-self: start;
 }
 
-/* Select dropdown styling */
+/* Select dropdown styling - custom chevron matching PrefComboBox */
 .property-group select {
   cursor: pointer;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 6px center;
+  background-size: 12px 12px;
+  padding-right: 24px;
+}
+
+[data-theme="dark"] .property-group select {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238b8b8b' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+}
+
+[data-theme="blue"] .property-group select {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2398c1d9' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+}
+
+[data-theme="highContrast"] .property-group select {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23cccccc' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
 }
 
 .property-group select:focus,
@@ -620,6 +640,30 @@
   outline: none;
   border-color: var(--theme-active);
   box-shadow: 0 0 0 1px rgba(37, 99, 235, 0.1);
+}
+
+/* Action button in property groups */
+.prop-action-btn {
+  flex: 1;
+  padding: 2px 6px;
+  border: 1px solid var(--theme-border);
+  background: var(--theme-surface);
+  color: var(--theme-text);
+  cursor: pointer;
+  font-size: 11px;
+  font-family: inherit;
+  height: 22px;
+  border-radius: 2px;
+}
+
+.prop-action-btn:hover {
+  background: var(--theme-hover);
+  border-color: var(--theme-text-secondary);
+}
+
+.prop-action-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 /* Properties panel width */

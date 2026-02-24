@@ -1,6 +1,7 @@
 import { Show } from 'solid-js';
-import { annotProps, sectionVis, updateAnnotProp } from '../../stores/propertiesStore.js';
+import { annotProps, sectionVis, updateAnnotProp, cycleSelectNext } from '../../stores/propertiesStore.js';
 import CollapsibleSection from './CollapsibleSection.jsx';
+import PrefComboBox from '../preferences/PrefComboBox.jsx';
 import { useTranslation } from '../../../i18n/useTranslation.js';
 
 export default function ParagraphSection() {
@@ -43,6 +44,7 @@ export default function ParagraphSection() {
         <div class="property-group">
           <label>{t('paragraph.lineSpacing')}</label>
           <select value={annotProps.lineSpacing} disabled={isLocked()}
+            onDblClick={cycleSelectNext}
             onChange={(e) => updateAnnotProp('lineSpacing', e.target.value)}>
             <option value="1">1x</option>
             <option value="1.15">1.15x</option>
@@ -55,12 +57,13 @@ export default function ParagraphSection() {
 
         <div class="property-group">
           <label>{t('paragraph.rotation')}</label>
-          <div style="display: flex; align-items: center; gap: 4px;">
-            <input type="number" min="-360" max="360" step="1" style="flex: 1;"
-              value={annotProps.rotation} disabled={isLocked()}
-              onInput={(e) => updateAnnotProp('rotation', e.target.value)} />
-            <span style="font-size: 11px; color: var(--theme-text-secondary);">&deg;</span>
-          </div>
+          <PrefComboBox
+            value={() => annotProps.rotation}
+            setValue={(val) => updateAnnotProp('rotation', val)}
+            options={[0, 45, 90, 135, 180, 225, 270, 315]}
+            min={-360} max={360} fallback={0} suffix="°"
+            disabled={isLocked}
+          />
         </div>
       </CollapsibleSection>
     </Show>

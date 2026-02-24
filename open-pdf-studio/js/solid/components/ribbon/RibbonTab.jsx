@@ -1,7 +1,7 @@
 export default function RibbonTab(props) {
   return (
     <button
-      class={`ribbon-tab${props.isActive ? ' active' : ''}${props.isFileTab ? ' file-tab' : ''}${props.isContextual ? ' contextual-tab contextual-tabs' : ''}`}
+      class={`ribbon-tab${props.isActive ? ' active' : ''}${props.isFileTab ? ' file-tab' : ''}${props.isContextual ? ' contextual-tab contextual-tabs visible' : ''}`}
       data-tab={props.dataTab}
       id={props.id}
       onClick={props.onClick}

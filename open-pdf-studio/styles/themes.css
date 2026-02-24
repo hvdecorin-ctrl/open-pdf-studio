@@ -62,6 +62,12 @@
   --theme-ribbon-input-label: #8b8b8b;
   --theme-ribbon-dropdown-arrow: #8b8b8b;
 
+  /* Contextual tabs (Format, Arrange) */
+  --theme-ctx-tab-border: #e94560;
+  --theme-ctx-tab-text: #e94560;
+  --theme-ctx-tab-hover-bg: rgba(233, 69, 96, 0.15);
+  --theme-ctx-tab-active-text: #ff6b8a;
+
   /* Backstage */
   --theme-backstage-bg: #1e293b;
   --theme-backstage-sidebar: #16213e;
@@ -191,6 +197,11 @@
   --theme-ribbon-input-label: #9ca3af;
   --theme-ribbon-dropdown-arrow: #9ca3af;
 
+  --theme-ctx-tab-border: #e94560;
+  --theme-ctx-tab-text: #b3213c;
+  --theme-ctx-tab-hover-bg: rgba(233, 69, 96, 0.1);
+  --theme-ctx-tab-active-text: #b3213c;
+
   --theme-backstage-bg: #fafafa;
   --theme-backstage-sidebar: #f5f5f5;
   --theme-backstage-sidebar-border: #d1d5db;
@@ -312,6 +323,11 @@
   --theme-ribbon-input-label: #778da9;
   --theme-ribbon-dropdown-arrow: #778da9;
 
+  --theme-ctx-tab-border: #00b4d8;
+  --theme-ctx-tab-text: #48cae4;
+  --theme-ctx-tab-hover-bg: rgba(0, 180, 216, 0.15);
+  --theme-ctx-tab-active-text: #90e0ef;
+
   --theme-backstage-bg: #1b263b;
   --theme-backstage-sidebar: #0d1b2a;
   --theme-backstage-sidebar-border: #2c4a6b;
@@ -432,6 +448,11 @@
   --theme-ribbon-input-focus-bg: #000000;
   --theme-ribbon-input-label: #cccccc;
   --theme-ribbon-dropdown-arrow: #ffffff;
+
+  --theme-ctx-tab-border: #ffff00;
+  --theme-ctx-tab-text: #ffff00;
+  --theme-ctx-tab-hover-bg: rgba(255, 255, 0, 0.15);
+  --theme-ctx-tab-active-text: #ffff00;
 
   --theme-backstage-bg: #000000;
   --theme-backstage-sidebar: #0a0a0a;

@@ -887,4 +887,7 @@ export function redrawContinuous() {
 
   // Update quick access button states
   updateQuickAccessButtons();
+
+  // Show/hide contextual ribbon tabs based on selection
+  updateContextualTabs();
 }

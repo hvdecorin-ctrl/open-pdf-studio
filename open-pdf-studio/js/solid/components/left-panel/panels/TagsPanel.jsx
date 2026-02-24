@@ -1,6 +1,7 @@
 import { For, Show, createSignal } from 'solid-js';
 import { activeTab } from '../../../stores/leftPanelStore.js';
 import { tree, countText, emptyMessage } from '../../../stores/panels/tagsStore.js';
+import { useTranslation } from '../../../../i18n/useTranslation.js';
 
 function TagNode(props) {
   const [expanded, setExpanded] = createSignal(true);
@@ -40,10 +41,12 @@ function TagNode(props) {
 }
 
 export default function TagsPanel() {
+  const { t } = useTranslation('properties');
+
   return (
     <div class={`left-panel-content${activeTab() === 'tags' ? ' active' : ''}`} id="tags-panel">
       <div class="left-panel-header">
-        <span>Tags</span>
+        <span>{t('leftPanel.tags')}</span>
       </div>
       <div class="tags-container">
         <Show when={emptyMessage()}>

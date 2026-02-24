@@ -14,7 +14,7 @@ export default function GeneralTab(props) {
           <label>{t('general.interfaceLanguage')}</label>
           <select style="width:180px;" value={p.language[0]()} onChange={e => p.language[1](e.target.value)}>
             <For each={LANGUAGES}>
-              {(lang) => <option value={lang.code}>{lang.code === 'auto' ? 'Auto-detect' : lang.name}</option>}
+              {(lang) => <option value={lang.code}>{lang.code === 'auto' ? 'Auto-detect' : `${lang.englishName} (${lang.name})`}</option>}
             </For>
           </select>
         </div>

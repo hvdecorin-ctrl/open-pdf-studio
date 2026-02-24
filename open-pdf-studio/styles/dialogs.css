@@ -416,16 +416,27 @@
   display: inline-flex;
   align-items: stretch;
   width: 100px;
-  height: 24px;
+  height: 22px;
   border: 1px solid var(--theme-border, #acacac);
   background: var(--theme-surface, #fff);
-  border-radius: 0;
+  border-radius: 2px;
 }
 
 .pref-combo:focus-within {
   border-color: var(--theme-active, #0078d7);
 }
 
+.property-group .pref-combo {
+  flex: 1;
+  width: auto;
+}
+
+.pref-combo.disabled {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+.pref-combo input[type="text"].pref-combo-input,
 .pref-row .pref-combo input[type="text"].pref-combo-input {
   flex: 1;
   min-width: 0;
@@ -438,7 +449,7 @@
   font-family: inherit;
   background: transparent;
   color: var(--theme-text, #333);
-  text-align: right;
+  text-align: left;
   box-sizing: border-box;
 }
 
@@ -456,34 +467,25 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 16px;
+  width: auto;
   height: 100%;
   border: none;
-  border-left: 1px solid var(--theme-border, #acacac);
-  background: var(--theme-bg, #f0f0f0);
+  background: transparent;
   cursor: pointer;
-  padding: 0;
+  padding: 0 6px 0 0;
   flex-shrink: 0;
   border-radius: 0;
 }
 
-.pref-combo-arrow:hover {
-  background: var(--theme-hover, #e0e0e0);
-}
-
 .pref-combo-arrow svg {
-  width: 8px;
-  height: 8px;
-  color: var(--theme-text, #333);
+  width: 12px;
+  height: 12px;
+  color: var(--theme-text-secondary, #666);
 }
 
 .pref-combo-dropdown {
   display: none;
-  position: absolute;
-  top: 100%;
-  left: -1px;
-  right: -1px;
-  z-index: 10;
+  z-index: 9999;
   border: 1px solid var(--theme-border, #acacac);
   border-top: none;
   background: var(--theme-surface, #fff);
@@ -501,7 +503,7 @@
   font-size: 11px;
   cursor: pointer;
   color: var(--theme-text, #333);
-  text-align: right;
+  text-align: left;
 }
 
 .pref-combo-option:hover {

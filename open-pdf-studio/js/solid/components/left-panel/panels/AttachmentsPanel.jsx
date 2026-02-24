@@ -1,20 +1,22 @@
 import { For, Show, createSignal } from 'solid-js';
 import { activeTab } from '../../../stores/leftPanelStore.js';
 import { items, countText, emptyMessage, selectedKey, toolbarDisabled } from '../../../stores/panels/attachmentsStore.js';
+import { useTranslation } from '../../../../i18n/useTranslation.js';
 
 export default function AttachmentsPanel() {
+  const { t } = useTranslation('properties');
   const [dragOver, setDragOver] = createSignal(false);
   const disabled = () => toolbarDisabled();
 
   return (
     <div class={`left-panel-content${activeTab() === 'attachments' ? ' active' : ''}`} id="attachments-panel">
       <div class="left-panel-header">
-        <span>Attachments</span>
+        <span>{t('leftPanel.attachments')}</span>
       </div>
       <div class="attachments-toolbar">
         <button
           class="attachments-toolbar-btn"
-          title="Add attachment"
+          title={t('leftPanel.addAttachment')}
           disabled={disabled().add}
           onClick={() => import('../../../../ui/panels/attachments.js').then(m => m.addAttachment())}
         >
@@ -22,7 +24,7 @@ export default function AttachmentsPanel() {
         </button>
         <button
           class="attachments-toolbar-btn"
-          title="Open attachment"
+          title={t('leftPanel.openAttachment')}
           disabled={disabled().open}
           onClick={() => import('../../../../ui/panels/attachments.js').then(m => m.openSelectedAttachment())}
         >
@@ -30,7 +32,7 @@ export default function AttachmentsPanel() {
         </button>
         <button
           class="attachments-toolbar-btn"
-          title="Save attachment"
+          title={t('leftPanel.saveAttachment')}
           disabled={disabled().save}
           onClick={() => import('../../../../ui/panels/attachments.js').then(m => m.saveSelectedAttachment())}
         >
@@ -38,7 +40,7 @@ export default function AttachmentsPanel() {
         </button>
         <button
           class="attachments-toolbar-btn"
-          title="Save all attachments"
+          title={t('leftPanel.saveAllAttachments')}
           disabled={disabled().saveAll}
           onClick={() => import('../../../../ui/panels/attachments.js').then(m => m.saveAllAttachments())}
         >
@@ -46,7 +48,7 @@ export default function AttachmentsPanel() {
         </button>
         <button
           class="attachments-toolbar-btn"
-          title="Delete attachment"
+          title={t('leftPanel.deleteAttachment')}
           disabled={disabled().delete}
           onClick={() => import('../../../../ui/panels/attachments.js').then(m => m.deleteSelectedAttachment())}
         >

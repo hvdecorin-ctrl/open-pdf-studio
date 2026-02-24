@@ -4,6 +4,7 @@ import { state } from '../../core/state.js';
 import { recordPropertyChange } from '../../core/undo-manager.js';
 import { redrawAnnotations, redrawContinuous } from '../../annotations/rendering.js';
 import { formatDate, getTypeDisplayName } from '../../utils/helpers.js';
+import i18next from '../../i18n/config.js';
 
 // Panel visibility
 const [panelVisible, setPanelVisible] = createSignal(false);
@@ -50,6 +51,7 @@ const [annotProps, setAnnotProps] = createStore({
   imageWidth: 0,
   imageHeight: 0,
   imageRotation: 0,
+  lockAspectRatio: false,
   startHead: 'none',
   endHead: 'open',
   headSize: 12,
@@ -80,6 +82,7 @@ const [sectionVis, setSectionVis] = createStore({
   textGroup: false,
   fontSizeGroup: false,
   opacityGroup: true,
+  rotationGroup: false,
 });
 
 // Document info store
@@ -122,6 +125,7 @@ function computeSectionVisibility(type) {
   const hasFillColor = ['highlight', 'box', 'circle', 'textbox', 'callout', 'arrow', 'line'].includes(type);
   const hideColor = ['line', 'arrow', 'box', 'circle', 'draw', 'highlight', 'image', 'textbox', 'callout'].includes(type);
   const hasBorderStyle = ['textbox', 'callout', 'arrow', 'line'].includes(type);
+  const hasRotation = ['box', 'circle', 'polygon', 'cloud', 'highlight', 'redaction', 'comment', 'stamp', 'signature'].includes(type);
 
   setSectionVis({
     general: true,
@@ -143,6 +147,7 @@ function computeSectionVisibility(type) {
     textGroup: isTextContent,
     fontSizeGroup: type === 'text',
     opacityGroup: true,
+    rotationGroup: hasRotation,
   });
 }
 
@@ -186,6 +191,7 @@ export function storeShowProperties(annotation) {
     imageWidth: annotation.type === 'image' ? Math.round(annotation.width) : 0,
     imageHeight: annotation.type === 'image' ? Math.round(annotation.height) : 0,
     imageRotation: annotation.type === 'image' ? Math.round(annotation.rotation || 0) : 0,
+    lockAspectRatio: annotation.type === 'image' ? (annotation.lockAspectRatio || false) : false,
     startHead: annotation.startHead || 'none',
     endHead: annotation.endHead || 'open',
     headSize: annotation.headSize || 12,
@@ -227,6 +233,7 @@ export function storeHideProperties() {
     textGroup: false,
     fontSizeGroup: false,
     opacityGroup: false,
+    rotationGroup: false,
   });
 
   populateDocInfo();
@@ -245,7 +252,7 @@ export function storeShowMultiSelection(selected) {
 
   setAnnotProps({
     type: '',
-    typeDisplay: `${selected.length} annotations selected`,
+    typeDisplay: i18next.t('multiSelect', { count: selected.length, ns: 'properties' }),
     subject: '',
     author: '',
     created: '',
@@ -278,6 +285,7 @@ export function storeShowMultiSelection(selected) {
     imageWidth: 0,
     imageHeight: 0,
     imageRotation: 0,
+    lockAspectRatio: false,
     startHead: 'none',
     endHead: 'open',
     headSize: 12,
@@ -306,6 +314,7 @@ export function storeShowMultiSelection(selected) {
     textGroup: false,
     fontSizeGroup: false,
     opacityGroup: true,
+    rotationGroup: false,
   });
 
   setPanelMode('multi');
@@ -365,7 +374,7 @@ export function storeShowTextEditProperties(info) {
     locked: false,
     printable: true,
     page: info.page || 1,
-    subject: 'PDF Text',
+    subject: i18next.t('pdfText', { ns: 'properties' }),
     author: '',
     createdAt: '',
     modifiedAt: ''
@@ -377,7 +386,7 @@ export function storeShowTextEditProperties(info) {
   storeShowProperties(pseudoAnnotation);
 
   // Override type display and hide irrelevant sections
-  setAnnotProps('typeDisplay', 'PDF Text');
+  setAnnotProps('typeDisplay', i18next.t('pdfText', { ns: 'properties' }));
   setAnnotProps('textFontSize', Math.round(info.fontSize || 12));
 
   setSectionVis({
@@ -400,6 +409,7 @@ export function storeShowTextEditProperties(info) {
     textGroup: false,
     fontSizeGroup: false,
     opacityGroup: false,
+    rotationGroup: false,
   });
 
   setPanelMode('textEdit');
@@ -413,7 +423,7 @@ export async function populateDocInfo() {
     setDocInfo('filename', parts[parts.length - 1]);
     setDocInfo('filepath', filePath);
   } else {
-    setDocInfo('filename', 'No file open');
+    setDocInfo('filename', i18next.t('docInfo.noFileOpen', { ns: 'properties' }));
     setDocInfo('filepath', '-');
   }
 
@@ -447,7 +457,7 @@ export async function populateDocInfo() {
   const total = state.annotations.length;
   const onPage = state.annotations.filter(a => a.page === state.currentPage).length;
   setDocInfo('annotCount', String(total));
-  setDocInfo('annotPage', `${onPage} (page ${state.currentPage})`);
+  setDocInfo('annotPage', i18next.t('docInfo.onPageCount', { count: onPage, page: state.currentPage, ns: 'properties' }));
 }
 
 // Update a single annotation property (write to store + annotation + undo + redraw)
@@ -502,9 +512,39 @@ export function updateAnnotProp(key, value) {
     case 'textAlign': currentAnnotation.textAlign = value; break;
     case 'lineSpacing': currentAnnotation.lineSpacing = parseFloat(value); break;
     case 'rotation': currentAnnotation.rotation = parseInt(value) || 0; break;
-    case 'imageWidth': currentAnnotation.width = parseInt(value) || 20; break;
-    case 'imageHeight': currentAnnotation.height = parseInt(value) || 20; break;
+    case 'imageWidth': {
+      const newW = parseInt(value) || 20;
+      currentAnnotation.width = newW;
+      if (currentAnnotation.lockAspectRatio && currentAnnotation.originalWidth && currentAnnotation.originalHeight) {
+        const ratio = currentAnnotation.originalWidth / currentAnnotation.originalHeight;
+        const newH = Math.round(newW / ratio);
+        currentAnnotation.height = Math.max(20, newH);
+        setAnnotProps('imageHeight', currentAnnotation.height);
+      }
+      break;
+    }
+    case 'imageHeight': {
+      const newH = parseInt(value) || 20;
+      currentAnnotation.height = newH;
+      if (currentAnnotation.lockAspectRatio && currentAnnotation.originalWidth && currentAnnotation.originalHeight) {
+        const ratio = currentAnnotation.originalWidth / currentAnnotation.originalHeight;
+        const newW = Math.round(newH * ratio);
+        currentAnnotation.width = Math.max(20, newW);
+        setAnnotProps('imageWidth', currentAnnotation.width);
+      }
+      break;
+    }
     case 'imageRotation': currentAnnotation.rotation = parseInt(value) || 0; break;
+    case 'lockAspectRatio': {
+      currentAnnotation.lockAspectRatio = value;
+      if (value && currentAnnotation.type === 'image' && currentAnnotation.originalWidth && currentAnnotation.originalHeight) {
+        const ratio = currentAnnotation.originalWidth / currentAnnotation.originalHeight;
+        const newH = Math.round(currentAnnotation.width / ratio);
+        currentAnnotation.height = Math.max(20, newH);
+        setAnnotProps('imageHeight', currentAnnotation.height);
+      }
+      break;
+    }
     case 'startHead': currentAnnotation.startHead = value; break;
     case 'endHead': currentAnnotation.endHead = value; break;
     case 'headSize': currentAnnotation.headSize = parseInt(value); break;
@@ -545,6 +585,14 @@ export function deleteReply(index) {
   setAnnotProps('modified', formatDate(currentAnnotation.modifiedAt));
 }
 
+// Cycle a <select> to the next option on double-click
+export function cycleSelectNext(e) {
+  const sel = e.currentTarget;
+  const nextIdx = (sel.selectedIndex + 1) % sel.options.length;
+  sel.selectedIndex = nextIdx;
+  sel.dispatchEvent(new Event('change', { bubbles: true }));
+}
+
 // Reset image to original size
 export function resetImageSize() {
   if (!currentAnnotation || currentAnnotation.type !== 'image') return;
@@ -570,7 +618,8 @@ export function updateOpacity(value, ctrlKey) {
 export function getLineWidthLabel() {
   const type = annotProps.type;
   return ['textbox', 'callout', 'box', 'circle', 'polygon', 'cloud'].includes(type)
-    ? 'Border Width' : 'Line Width';
+    ? i18next.t('appearance.borderWidth', { ns: 'properties' })
+    : i18next.t('appearance.lineWidth', { ns: 'properties' });
 }
 
 // Get the current annotation reference

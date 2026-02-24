@@ -1,8 +1,12 @@
 import { For, Show } from 'solid-js';
 import { activeTab } from '../../../stores/leftPanelStore.js';
 import { items, countText, emptyMessage } from '../../../stores/panels/annotationsStore.js';
+import { useTranslation } from '../../../../i18n/useTranslation.js';
 
 export default function AnnotationsPanel() {
+  const { t } = useTranslation('properties');
+  const { t: tCommon } = useTranslation('common');
+
   const handleFilterChange = (e) => {
     import('../../../../ui/panels/annotations-list.js').then(m => m.updateAnnotationsList(e.target.value));
   };
@@ -10,11 +14,11 @@ export default function AnnotationsPanel() {
   return (
     <div class={`left-panel-content${activeTab() === 'annotations' ? ' active' : ''}`} id="annotations-panel">
       <div class="left-panel-header">
-        <span>Annotations</span>
+        <span>{t('leftPanel.annotations')}</span>
         <div class="annotations-filter">
           <select onChange={handleFilterChange}>
-            <option value="all">All Pages</option>
-            <option value="current">Current Page</option>
+            <option value="all">{t('leftPanel.allPages')}</option>
+            <option value="current">{t('leftPanel.currentPage')}</option>
           </select>
         </div>
       </div>
@@ -54,7 +58,7 @@ export default function AnnotationsPanel() {
                   </div>
                 </div>
               }>
-                <div class="annotations-list-page-header">Page {item.page}</div>
+                <div class="annotations-list-page-header">{tCommon('page')} {item.page}</div>
               </Show>
             )}
           </For>

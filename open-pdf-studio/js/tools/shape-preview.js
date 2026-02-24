@@ -4,6 +4,7 @@ import { getColorPickerValue, getLineWidthValue } from '../solid/stores/ribbonSt
 import { redrawAnnotations, drawCloudShape } from '../annotations/rendering.js';
 import { snapAngle } from '../utils/helpers.js';
 import { calculateDistance, formatMeasurement } from '../annotations/measurement.js';
+import { drawSnapIndicator } from './snap-engine.js';
 
 export function drawArrowhead(ctx, x, y, angle, size, style) {
   const halfAngle = Math.PI / 6; // 30 degrees
@@ -383,6 +384,11 @@ export function drawShapePreview(currentX, currentY, e) {
       annotationCtx.globalAlpha = 1;
       break;
     }
+  }
+
+  // Draw snap indicator if snapping is active
+  if (state.lastSnapResult && state.lastSnapResult.snapped) {
+    drawSnapIndicator(annotationCtx, state.lastSnapResult, state.scale);
   }
 
   annotationCtx.restore();

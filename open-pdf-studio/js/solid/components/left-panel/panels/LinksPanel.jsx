@@ -1,8 +1,10 @@
 import { For, Show, createSignal } from 'solid-js';
 import { activeTab } from '../../../stores/leftPanelStore.js';
 import { groups, countText, emptyMessage, selectedIndex, toolbarDisabled } from '../../../stores/panels/linksStore.js';
+import { useTranslation } from '../../../../i18n/useTranslation.js';
 
 export default function LinksPanel() {
+  const { t } = useTranslation('properties');
   const disabled = () => toolbarDisabled();
 
   const handleFilterChange = (e) => {
@@ -12,20 +14,20 @@ export default function LinksPanel() {
   return (
     <div class={`left-panel-content${activeTab() === 'links' ? ' active' : ''}`} id="links-panel">
       <div class="left-panel-header">
-        <span>Links</span>
+        <span>{t('leftPanel.links')}</span>
         <div class="links-filter">
           <select onChange={handleFilterChange}>
-            <option value="all">All Pages</option>
-            <option value="current">Current Page</option>
-            <option value="external">External Only</option>
-            <option value="internal">Internal Only</option>
+            <option value="all">{t('leftPanel.allPages')}</option>
+            <option value="current">{t('leftPanel.currentPage')}</option>
+            <option value="external">{t('leftPanel.externalOnly')}</option>
+            <option value="internal">{t('leftPanel.internalOnly')}</option>
           </select>
         </div>
       </div>
       <div class="links-toolbar">
         <button
           class="links-toolbar-btn"
-          title="Go to link source page"
+          title={t('leftPanel.gotoLink')}
           disabled={disabled().goto}
           onClick={() => import('../../../../ui/panels/links.js').then(m => m.gotoSelectedLink())}
         >
@@ -33,7 +35,7 @@ export default function LinksPanel() {
         </button>
         <button
           class="links-toolbar-btn"
-          title="Open external URL"
+          title={t('leftPanel.openUrl')}
           disabled={disabled().open}
           onClick={() => import('../../../../ui/panels/links.js').then(m => m.openSelectedLink())}
         >
@@ -41,7 +43,7 @@ export default function LinksPanel() {
         </button>
         <button
           class="links-toolbar-btn"
-          title="Copy link URL"
+          title={t('leftPanel.copyUrl')}
           disabled={disabled().copy}
           onClick={() => import('../../../../ui/panels/links.js').then(m => m.copySelectedLink())}
         >
@@ -49,7 +51,7 @@ export default function LinksPanel() {
         </button>
         <button
           class="links-toolbar-btn"
-          title="Export all links to CSV"
+          title={t('leftPanel.exportLinks')}
           disabled={disabled().export}
           onClick={() => import('../../../../ui/panels/links.js').then(m => m.exportLinksToCSV())}
         >
@@ -73,6 +75,7 @@ export default function LinksPanel() {
 
 function LinkPageGroup(props) {
   const [collapsed, setCollapsed] = createSignal(false);
+  const { t: tCommon } = useTranslation('common');
 
   return (
     <div class="links-page-group">
@@ -81,7 +84,7 @@ function LinkPageGroup(props) {
         onClick={() => setCollapsed(!collapsed())}
       >
         <span class="collapse-arrow">{collapsed() ? '\u25B6' : '\u25BC'}</span>
-        <span>Page {props.group.pageNum}</span>
+        <span>{tCommon('page')} {props.group.pageNum}</span>
       </div>
       <div class={`links-page-items${collapsed() ? ' collapsed' : ''}`}>
         <For each={props.group.items}>

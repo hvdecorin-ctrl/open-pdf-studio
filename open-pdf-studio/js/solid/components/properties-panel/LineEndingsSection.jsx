@@ -1,5 +1,5 @@
 import { Show } from 'solid-js';
-import { annotProps, sectionVis, updateAnnotProp } from '../../stores/propertiesStore.js';
+import { annotProps, sectionVis, updateAnnotProp, cycleSelectNext } from '../../stores/propertiesStore.js';
 import CollapsibleSection from './CollapsibleSection.jsx';
 import { useTranslation } from '../../../i18n/useTranslation.js';
 
@@ -14,6 +14,7 @@ export default function LineEndingsSection() {
         <div class="property-group">
           <label>{t('lineEndings.start')}</label>
           <select value={annotProps.startHead} disabled={isLocked()}
+            onDblClick={cycleSelectNext}
             onChange={(e) => updateAnnotProp('startHead', e.target.value)}>
             <option value="none">{tCommon('none')}</option>
             <option value="open">{t('lineEndings.openArrow')}</option>
@@ -28,6 +29,7 @@ export default function LineEndingsSection() {
         <div class="property-group">
           <label>{t('lineEndings.end')}</label>
           <select value={annotProps.endHead} disabled={isLocked()}
+            onDblClick={cycleSelectNext}
             onChange={(e) => updateAnnotProp('endHead', e.target.value)}>
             <option value="none">{tCommon('none')}</option>
             <option value="open">{t('lineEndings.openArrow')}</option>

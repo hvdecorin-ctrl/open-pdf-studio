@@ -5,7 +5,7 @@ import { DEFAULT_PREFERENCES } from '../../../core/constants.js';
 import { state } from '../../../core/state.js';
 import { savePreferences, applyTheme } from '../../../core/preferences.js';
 import { useTranslation } from '../../../i18n/useTranslation.js';
-import { isMobile } from '../../../core/platform.js';
+import { isMobile, isTauri, getUsername } from '../../../core/platform.js';
 
 import GeneralTab from './GeneralTab.jsx';
 import AnnotationsTab from './AnnotationsTab.jsx';
@@ -88,10 +88,23 @@ export default function PreferencesDialog(props) {
     close();
   }
 
-  function handleReset() {
-    if (confirm(t('resetConfirm'))) {
+  async function handleReset() {
+    let confirmed = false;
+    if (isTauri() && window.__TAURI__?.dialog) {
+      confirmed = await window.__TAURI__.dialog.ask(t('resetConfirm'), { title: t('resetToDefaults'), kind: 'warning' });
+    } else {
+      confirmed = confirm(t('resetConfirm'));
+    }
+    if (confirmed) {
       for (const key of Object.keys(DEFAULT_PREFERENCES)) {
         prefs[key][1](DEFAULT_PREFERENCES[key]);
+      }
+      // Resolve OS username for authorName since default is empty
+      try {
+        const username = isTauri() ? await getUsername() : 'User';
+        prefs.authorName[1](username);
+      } catch (e) {
+        prefs.authorName[1]('User');
       }
     }
   }

@@ -2,8 +2,11 @@ import { For } from 'solid-js';
 import { pageCount } from '../../../stores/panels/thumbnailStore.js';
 import { activeTab } from '../../../stores/leftPanelStore.js';
 import ThumbnailItem from '../ThumbnailItem.jsx';
+import { useTranslation } from '../../../../i18n/useTranslation.js';
 
 export default function ThumbnailsPanel() {
+  const { t } = useTranslation('properties');
+
   const pages = () => {
     const count = pageCount();
     return Array.from({ length: count }, (_, i) => i + 1);
@@ -28,7 +31,7 @@ export default function ThumbnailsPanel() {
   return (
     <div class={`left-panel-content${activeTab() === 'thumbnails' ? ' active' : ''}`} id="thumbnails-panel">
       <div class="left-panel-header">
-        <span>Page Thumbnails</span>
+        <span>{t('leftPanel.thumbnails')}</span>
       </div>
       <div class="thumbnails-container" id="thumbnails-container">
         <For each={pages()}>

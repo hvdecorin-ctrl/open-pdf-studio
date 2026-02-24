@@ -74,7 +74,7 @@ async function init() {
   }
 
   // Load user preferences (before render so theme is applied)
-  loadPreferences();
+  await loadPreferences();
 
   // Single render call — mounts the entire UI tree
   // render() is synchronous, so DOM elements exist immediately after

@@ -2,6 +2,7 @@ import { For, Show, createSignal } from 'solid-js';
 import { activeTab } from '../../../stores/leftPanelStore.js';
 import { tree, countText, emptyMessage, selectedId, toolbarDisabled } from '../../../stores/panels/bookmarksStore.js';
 import { showBookmarkMenu } from '../../../stores/contextMenuStore.js';
+import { useTranslation } from '../../../../i18n/useTranslation.js';
 
 function BookmarkNode(props) {
   const indent = () => props.depth * 16;
@@ -57,17 +58,18 @@ function BookmarkNode(props) {
 }
 
 export default function BookmarksPanel() {
+  const { t } = useTranslation('properties');
   const disabled = () => toolbarDisabled();
 
   return (
     <div class={`left-panel-content${activeTab() === 'bookmarks' ? ' active' : ''}`} id="bookmarks-panel">
       <div class="left-panel-header">
-        <span>Bookmarks</span>
+        <span>{t('leftPanel.bookmarks')}</span>
       </div>
       <div class="bookmarks-toolbar">
         <button
           class="bookmarks-toolbar-btn"
-          title="Add bookmark"
+          title={t('leftPanel.addBookmark')}
           disabled={disabled().add}
           onClick={() => import('../../../../ui/panels/bookmarks.js').then(m => m.addBookmark())}
         >
@@ -75,7 +77,7 @@ export default function BookmarksPanel() {
         </button>
         <button
           class="bookmarks-toolbar-btn"
-          title="Add child bookmark"
+          title={t('leftPanel.addChildBookmark')}
           disabled={disabled().addChild}
           onClick={() => import('../../../../ui/panels/bookmarks.js').then(m => m.addChildBookmark())}
         >
@@ -83,7 +85,7 @@ export default function BookmarksPanel() {
         </button>
         <button
           class="bookmarks-toolbar-btn"
-          title="Edit bookmark"
+          title={t('leftPanel.editBookmark')}
           disabled={disabled().edit}
           onClick={() => import('../../../../ui/panels/bookmarks.js').then(m => m.editBookmark())}
         >
@@ -91,7 +93,7 @@ export default function BookmarksPanel() {
         </button>
         <button
           class="bookmarks-toolbar-btn"
-          title="Delete bookmark"
+          title={t('leftPanel.deleteBookmark')}
           disabled={disabled().delete}
           onClick={() => import('../../../../ui/panels/bookmarks.js').then(m => m.deleteBookmark())}
         >
