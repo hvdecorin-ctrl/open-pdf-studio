@@ -97,6 +97,15 @@ jobs:
         if: matrix.platform == 'windows-latest'
         run: cargo install trusted-signing-cli
 
+      - name: Create signing wrapper script (Windows only)
+        if: matrix.platform == 'windows-latest'
+        shell: pwsh
+        run: |
+          $script = "@echo off`r`ntrusted-signing-cli sign -e $env:AZURE_ENDPOINT %1"
+          Set-Content -Path "$env:USERPROFILE\.cargo\bin\sign.cmd" -Value $script
+        env:
+          AZURE_ENDPOINT: ${{ secrets.AZURE_ENDPOINT }}
+
       - name: Install frontend dependencies
         run: npm install
 

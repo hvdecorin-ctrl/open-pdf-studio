@@ -41,7 +41,7 @@
       "icons/icon.ico"
     ],
     "windows": {
-      "signCommand": "cmd /C trusted-signing-cli sign -e %AZURE_ENDPOINT% %1",
+      "signCommand": "sign.cmd %1",
       "nsis": {
         "template": "./nsis/installer.nsi",
         "installerHooks": "./nsis/hooks.nsh",
