@@ -27,7 +27,7 @@
     "vite-plugin-solid": "^2.11.10"
   },
   "overrides": {
-    "yallist": "3.1.0"
+    "lru-cache": "7.18.3"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.10.1",
