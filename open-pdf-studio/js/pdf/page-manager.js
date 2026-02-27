@@ -110,7 +110,7 @@ export async function pastePage(afterPageNum) {
 }
 
 // Get the cache key for the current document's bytes
-function getCacheKey() {
+export function getCacheKey() {
   const doc = getActiveDocument();
   if (!doc) return null;
   if (doc.filePath) return doc.filePath;
@@ -118,7 +118,7 @@ function getCacheKey() {
 }
 
 // Reload PDF.js from new bytes, preserving annotations and rotations
-async function reloadFromBytes(newBytes, annotations, rotations, targetPage) {
+export async function reloadFromBytes(newBytes, annotations, rotations, targetPage) {
   const doc = getActiveDocument();
   if (!doc) return;
 

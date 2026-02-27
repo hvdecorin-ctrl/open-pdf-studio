@@ -810,6 +810,166 @@ function initInsertPageDialogDrag() {
 }
 
 // ============================================
+// Crop Margins Dialog
+// ============================================
+
+const cropMarginsDialog = document.getElementById('crop-margins-dialog');
+
+export function showCropMarginsDialog() {
+  if (!state.pdfDoc) {
+    alert('No document is open.');
+    return;
+  }
+  if (!cropMarginsDialog) return;
+
+  // Reset to defaults
+  const applySelect = document.getElementById('crop-margins-apply');
+  if (applySelect) applySelect.value = 'current';
+
+  const rangeInput = document.getElementById('crop-margins-range');
+  if (rangeInput) rangeInput.value = '';
+
+  const rangeRow = document.getElementById('crop-margins-range-row');
+  if (rangeRow) rangeRow.style.display = 'none';
+
+  const paddingInput = document.getElementById('crop-margins-padding');
+  if (paddingInput) paddingInput.value = '5';
+
+  const thresholdSlider = document.getElementById('crop-margins-threshold');
+  if (thresholdSlider) thresholdSlider.value = '250';
+
+  const thresholdValue = document.getElementById('crop-margins-threshold-value');
+  if (thresholdValue) thresholdValue.textContent = '250';
+
+  // Update info text
+  updateCropMarginsInfo();
+
+  // Reset dialog position to center
+  const dialog = cropMarginsDialog.querySelector('.crop-margins-dialog');
+  if (dialog) {
+    dialog.style.left = '50%';
+    dialog.style.top = '50%';
+    dialog.style.transform = 'translate(-50%, -50%)';
+    dialog.style.position = 'absolute';
+  }
+
+  cropMarginsDialog.classList.add('visible');
+}
+
+export function hideCropMarginsDialog() {
+  if (cropMarginsDialog) {
+    cropMarginsDialog.classList.remove('visible');
+  }
+}
+
+function updateCropMarginsInfo() {
+  const info = document.getElementById('crop-margins-info');
+  if (!info || !state.pdfDoc) return;
+  const total = state.pdfDoc.numPages;
+  info.textContent = `${total} page${total !== 1 ? 's' : ''} in document. CropBox preserves the original content — fully reversible with Undo.`;
+}
+
+export function initCropMarginsDialog() {
+  if (!cropMarginsDialog) return;
+
+  const closeBtn = document.getElementById('crop-margins-close-btn');
+  const cancelBtn = document.getElementById('crop-margins-cancel-btn');
+  const okBtn = document.getElementById('crop-margins-ok-btn');
+  const applySelect = document.getElementById('crop-margins-apply');
+  const thresholdSlider = document.getElementById('crop-margins-threshold');
+  const thresholdValue = document.getElementById('crop-margins-threshold-value');
+
+  if (closeBtn) closeBtn.addEventListener('click', hideCropMarginsDialog);
+  if (cancelBtn) cancelBtn.addEventListener('click', hideCropMarginsDialog);
+
+  // Toggle range row visibility
+  if (applySelect) {
+    applySelect.addEventListener('change', () => {
+      const rangeRow = document.getElementById('crop-margins-range-row');
+      if (rangeRow) {
+        rangeRow.style.display = applySelect.value === 'range' ? 'flex' : 'none';
+      }
+    });
+  }
+
+  // Threshold slider live value
+  if (thresholdSlider && thresholdValue) {
+    thresholdSlider.addEventListener('input', () => {
+      thresholdValue.textContent = thresholdSlider.value;
+    });
+  }
+
+  if (okBtn) {
+    okBtn.addEventListener('click', async () => {
+      const applyTo = document.getElementById('crop-margins-apply')?.value || 'current';
+      const rangeStr = document.getElementById('crop-margins-range')?.value || '';
+      const paddingMm = Math.max(0, Math.min(50, parseInt(document.getElementById('crop-margins-padding')?.value) || 5));
+      const threshold = parseInt(document.getElementById('crop-margins-threshold')?.value) || 250;
+
+      hideCropMarginsDialog();
+
+      const { cropMargins } = await import('../../pdf/crop-margins.js');
+      const result = await cropMargins(applyTo, rangeStr, paddingMm, threshold);
+
+      if (result.cropped === 0 && result.skipped > 0) {
+        alert('No content detected — all selected pages appear to be blank.');
+      } else if (result.skipped > 0) {
+        alert(`Cropped ${result.cropped} page(s). Skipped ${result.skipped} blank page(s).`);
+      }
+    });
+  }
+
+  // Make dialog draggable
+  initCropMarginsDialogDrag();
+
+  // Close with Escape
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && cropMarginsDialog?.classList.contains('visible')) {
+      hideCropMarginsDialog();
+    }
+  });
+}
+
+function initCropMarginsDialogDrag() {
+  if (!cropMarginsDialog) return;
+
+  const dialog = cropMarginsDialog.querySelector('.crop-margins-dialog');
+  const header = cropMarginsDialog.querySelector('.crop-margins-header');
+  if (!dialog || !header) return;
+
+  let isDragging = false;
+  let dragOffsetX = 0;
+  let dragOffsetY = 0;
+
+  header.addEventListener('mousedown', (e) => {
+    if (e.target.closest('.crop-margins-close-btn')) return;
+    isDragging = true;
+    const rect = dialog.getBoundingClientRect();
+    dragOffsetX = e.clientX - rect.left;
+    dragOffsetY = e.clientY - rect.top;
+    e.preventDefault();
+  });
+
+  document.addEventListener('mousemove', (e) => {
+    if (!isDragging) return;
+    const overlayRect = cropMarginsDialog.getBoundingClientRect();
+    let newX = e.clientX - overlayRect.left - dragOffsetX;
+    let newY = e.clientY - overlayRect.top - dragOffsetY;
+    const dialogRect = dialog.getBoundingClientRect();
+    newX = Math.max(0, Math.min(newX, overlayRect.width - dialogRect.width));
+    newY = Math.max(0, Math.min(newY, overlayRect.height - dialogRect.height));
+    dialog.style.left = newX + 'px';
+    dialog.style.top = newY + 'px';
+    dialog.style.transform = 'none';
+    dialog.style.position = 'absolute';
+  });
+
+  document.addEventListener('mouseup', () => {
+    isDragging = false;
+  });
+}
+
+// ============================================
 // Extract Pages Dialog
 // ============================================
 

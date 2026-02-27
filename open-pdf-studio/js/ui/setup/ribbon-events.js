@@ -14,7 +14,7 @@ import {
   distributeRight, distributeTop, distributeMiddle, distributeBottom
 } from '../../annotations/alignment.js';
 import { initFormatRibbon } from '../chrome/format-ribbon.js';
-import { showInsertPageDialog, showExtractPagesDialog, showMergePdfsDialog } from '../chrome/dialogs.js';
+import { showInsertPageDialog, showExtractPagesDialog, showMergePdfsDialog, showCropMarginsDialog } from '../chrome/dialogs.js';
 import { deletePages } from '../../pdf/page-manager.js';
 import { setTool } from '../../tools/manager.js';
 
@@ -101,6 +101,11 @@ export function setupRibbonEvents() {
   // Add Text button (Home ribbon shortcut for text annotation tool)
   document.getElementById('add-text')?.addEventListener('click', () => {
     setTool('text');
+  });
+
+  // Crop Margins button
+  document.getElementById('crop-margins')?.addEventListener('click', () => {
+    showCropMarginsDialog();
   });
 
   // Watermark buttons

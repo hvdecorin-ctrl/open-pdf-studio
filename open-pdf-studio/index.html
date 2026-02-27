@@ -277,6 +277,15 @@
               </div>
               <span class="ribbon-btn-label">Add Text</span>
             </button>
+            <button class="ribbon-btn" id="crop-margins" title="Crop Margins">
+              <div class="ribbon-btn-icon">
+                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 2v4H2m20 0h-4M6 22v-4H2m20 0h-4"/>
+                  <rect x="6" y="6" width="12" height="12" stroke-width="2" stroke-dasharray="3 2" fill="none"/>
+                </svg>
+              </div>
+              <span class="ribbon-btn-label">Crop</span>
+            </button>
           </div>
           <div class="ribbon-group-label">Edit</div>
         </div>
@@ -2489,6 +2498,49 @@
         <div class="insert-page-footer-right">
           <button class="pref-btn pref-btn-primary" id="insert-page-ok-btn">OK</button>
           <button class="pref-btn pref-btn-secondary" id="insert-page-cancel-btn">Cancel</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Crop Margins Dialog -->
+  <div class="crop-margins-overlay" id="crop-margins-dialog">
+    <div class="crop-margins-dialog">
+      <div class="crop-margins-header">
+        <h2>Crop Margins</h2>
+        <button class="crop-margins-close-btn" id="crop-margins-close-btn">&times;</button>
+      </div>
+      <div class="crop-margins-content">
+        <div class="crop-margins-form">
+          <div class="crop-margins-row">
+            <label class="crop-margins-label">Apply to:</label>
+            <select id="crop-margins-apply" class="crop-margins-select">
+              <option value="current">Current page</option>
+              <option value="all">All pages</option>
+              <option value="range">Page range</option>
+            </select>
+          </div>
+          <div class="crop-margins-row" id="crop-margins-range-row" style="display:none">
+            <label class="crop-margins-label">Pages:</label>
+            <input type="text" id="crop-margins-range" class="crop-margins-input-wide" placeholder="e.g. 1-3, 5, 8-10">
+          </div>
+          <div class="crop-margins-row">
+            <label class="crop-margins-label">Padding (mm):</label>
+            <input type="number" id="crop-margins-padding" class="crop-margins-input" value="5" min="0" max="50" step="1">
+          </div>
+          <div class="crop-margins-row">
+            <label class="crop-margins-label">Threshold:</label>
+            <input type="range" id="crop-margins-threshold" min="200" max="255" value="250" class="crop-margins-slider">
+            <span id="crop-margins-threshold-value" class="crop-margins-threshold-value">250</span>
+          </div>
+          <div class="crop-margins-info" id="crop-margins-info"></div>
+        </div>
+      </div>
+      <div class="crop-margins-footer">
+        <div></div>
+        <div class="crop-margins-footer-right">
+          <button class="pref-btn pref-btn-primary" id="crop-margins-ok-btn">Crop</button>
+          <button class="pref-btn pref-btn-secondary" id="crop-margins-cancel-btn">Cancel</button>
         </div>
       </div>
     </div>

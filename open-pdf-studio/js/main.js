@@ -11,7 +11,7 @@ import { loadPreferences, savePreferences } from './core/preferences.js';
 import { initCanvasContexts } from './ui/dom-elements.js';
 
 // UI initialization
-import { initAboutDialog, initDocPropertiesDialog, initNewDocDialog, initImportDialog, initExportDialog, initInsertPageDialog, initExtractPagesDialog, initMergePdfsDialog, initPrintDialog, initPageSetupDialog } from './ui/chrome/dialogs.js';
+import { initAboutDialog, initDocPropertiesDialog, initNewDocDialog, initImportDialog, initExportDialog, initInsertPageDialog, initExtractPagesDialog, initMergePdfsDialog, initPrintDialog, initPageSetupDialog, initCropMarginsDialog } from './ui/chrome/dialogs.js';
 import { initSignatureDialog } from './annotations/signature.js';
 import { initMenus } from './ui/chrome/menus.js';
 import { initRibbon } from './ui/chrome/ribbon.js';
@@ -86,6 +86,7 @@ async function init() {
   initMergePdfsDialog();
   initPrintDialog();
   initPageSetupDialog();
+  initCropMarginsDialog();
   initContextMenus();
   initAnnotationsList();
   initWatermarkDialog();
