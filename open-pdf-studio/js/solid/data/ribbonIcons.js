@@ -40,6 +40,8 @@ export const editTextIcon = `<svg fill="none" stroke="currentColor" viewBox="0 0
 
 export const addTextIcon = `<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v1m0 14v1m-5-8H4m16 0h-3"/><text x="12" y="16" text-anchor="middle" font-size="14" font-weight="bold" fill="currentColor" stroke="none">T</text></svg>`;
 
+export const cropMarginsIcon = `<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 2v4H2m20 0h-4M6 22v-4H2m20 0h-4"/><rect x="6" y="6" width="12" height="12" stroke-width="2" stroke-dasharray="3 2" fill="none"/></svg>`;
+
 // --- Home tab: Navigate ---
 
 export const firstPageIcon = `<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 19l-7-7 7-7m8 14l-7-7 7-7"/></svg>`;

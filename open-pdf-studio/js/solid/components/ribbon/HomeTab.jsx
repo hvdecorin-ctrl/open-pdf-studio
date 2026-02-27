@@ -11,9 +11,10 @@ import { openFindBar } from '../../../search/find-bar.js';
 import {
   handIcon, selectTextIcon, selectCommentsIcon, screenshotIcon,
   zoomInIcon, zoomOutIcon, fitWidthIcon, actualSizeIcon, fitPageIcon,
-  rotateLeftIcon, rotateRightIcon, editTextIcon, addTextIcon,
+  rotateLeftIcon, rotateRightIcon, editTextIcon, addTextIcon, cropMarginsIcon,
   firstPageIcon, prevPageIcon, nextPageIcon, lastPageIcon, findIcon
 } from '../../data/ribbonIcons.js';
+import { showCropMarginsDialog } from '../../../ui/chrome/dialogs.js';
 import { useTranslation } from '../../../i18n/useTranslation.js';
 
 export default function HomeTab() {
@@ -102,6 +103,8 @@ export default function HomeTab() {
             disabled={noPdf() || isPdfAReadOnly()} active={state.currentTool === 'editText'} onClick={() => setTool('editText')} />
           <RibbonButton id="add-text" title={t('home.addText')} icon={addTextIcon} label={t('home.addText')}
             disabled={noPdf() || isPdfAReadOnly()} onClick={() => setTool('text')} />
+          <RibbonButton id="crop-margins" title="Crop Margins" icon={cropMarginsIcon} label="Crop"
+            disabled={noPdf() || isPdfAReadOnly()} onClick={() => showCropMarginsDialog()} />
         </RibbonGroup>
 
         <RibbonGroup label={t('home.navigate')}>

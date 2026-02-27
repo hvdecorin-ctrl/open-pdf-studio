@@ -11,6 +11,7 @@ import { loadPreferences, savePreferences } from './core/preferences.js';
 import { initDomElements } from './ui/dom-elements.js';
 
 // UI initialization
+import { initCropMarginsDialog } from './ui/chrome/dialogs.js';
 import { initMenus } from './ui/chrome/menus.js';
 import { initContextMenus } from './ui/chrome/context-menus.js';
 import { initAnnotationsList } from './ui/panels/annotations-list.js';
@@ -128,6 +129,7 @@ async function init() {
     initLeftPanel();
     initFindBar();
     initFontDropdowns();
+    initCropMarginsDialog();
   }
 
   // Initialize text selection
