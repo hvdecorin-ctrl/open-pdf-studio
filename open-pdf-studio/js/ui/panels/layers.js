@@ -1,62 +1,43 @@
+import i18next from '../../i18n/config.js';
 import { getActiveDocument } from '../../core/state.js';
-
-const layersContainer = document.getElementById('layers-container');
-const layersCount = document.getElementById('layers-count');
+import { setItems, setCountText, setEmptyMessage } from '../../solid/stores/panels/layersStore.js';
 
 let currentOCConfig = null;
 
-function createLayerItem(group, ocConfig) {
-  const item = document.createElement('div');
-  item.className = 'layer-list-item';
-
-  const checkbox = document.createElement('input');
-  checkbox.type = 'checkbox';
-  checkbox.checked = group.visible !== false;
-  checkbox.addEventListener('change', async () => {
-    try {
-      if (ocConfig && typeof ocConfig.setVisibility === 'function') {
-        await ocConfig.setVisibility(group.id, checkbox.checked);
-      }
-      // Trigger re-render of current page
-      const activeDoc = getActiveDocument();
-      if (activeDoc && activeDoc.pdfDoc) {
-        const event = new CustomEvent('layers-changed');
-        document.dispatchEvent(event);
-      }
-    } catch (e) {
-      console.warn('Failed to toggle layer visibility:', e);
+export async function toggleLayerVisibility(id, checked) {
+  try {
+    if (currentOCConfig && typeof currentOCConfig.setVisibility === 'function') {
+      await currentOCConfig.setVisibility(id, checked);
     }
-  });
-  item.appendChild(checkbox);
-
-  const name = document.createElement('div');
-  name.className = 'layer-list-name';
-  name.textContent = group.name || 'Unnamed Layer';
-  name.title = group.name || 'Unnamed Layer';
-  item.appendChild(name);
-
-  return item;
+    const activeDoc = getActiveDocument();
+    if (activeDoc && activeDoc.pdfDoc) {
+      const event = new CustomEvent('layers-changed');
+      document.dispatchEvent(event);
+    }
+  } catch (e) {
+    console.warn('Failed to toggle layer visibility:', e);
+  }
 }
 
 export async function updateLayersList() {
-  if (!layersContainer) return;
-
   const activeDoc = getActiveDocument();
   if (!activeDoc || !activeDoc.pdfDoc) {
-    layersContainer.innerHTML = '<div class="layers-empty">No document open</div>';
-    if (layersCount) layersCount.textContent = '0 layers';
+    setItems([]);
+    setCountText(i18next.t('leftPanel.layersCount', { count: 0 }));
+    setEmptyMessage(i18next.t('leftPanel.noDocumentOpen'));
     currentOCConfig = null;
     return;
   }
 
-  layersContainer.innerHTML = '<div class="layers-empty">Loading...</div>';
+  setEmptyMessage(i18next.t('loading'));
 
   try {
     const pdfDoc = activeDoc.pdfDoc;
 
     if (typeof pdfDoc.getOptionalContentConfig !== 'function') {
-      layersContainer.innerHTML = '<div class="layers-empty">Layers not supported</div>';
-      if (layersCount) layersCount.textContent = '0 layers';
+      setItems([]);
+      setCountText(i18next.t('leftPanel.layersCount', { count: 0 }));
+      setEmptyMessage(i18next.t('leftPanel.noLayers'));
       return;
     }
 
@@ -64,38 +45,37 @@ export async function updateLayersList() {
     currentOCConfig = ocConfig;
 
     if (!ocConfig) {
-      layersContainer.innerHTML = '<div class="layers-empty">No layers in this document</div>';
-      if (layersCount) layersCount.textContent = '0 layers';
+      setItems([]);
+      setCountText(i18next.t('leftPanel.layersCount', { count: 0 }));
+      setEmptyMessage(i18next.t('leftPanel.noLayers'));
       return;
     }
 
     const groups = ocConfig.getGroups();
     if (!groups || Object.keys(groups).length === 0) {
-      layersContainer.innerHTML = '<div class="layers-empty">No layers in this document</div>';
-      if (layersCount) layersCount.textContent = '0 layers';
+      setItems([]);
+      setCountText(i18next.t('leftPanel.layersCount', { count: 0 }));
+      setEmptyMessage(i18next.t('leftPanel.noLayers'));
       return;
     }
 
-    layersContainer.innerHTML = '';
-    let count = 0;
-
+    const layerItems = [];
     for (const [id, group] of Object.entries(groups)) {
-      const groupInfo = {
+      layerItems.push({
         id,
-        name: group.name || `Layer ${count + 1}`,
-        visible: ocConfig.isVisible(group)
-      };
-      layersContainer.appendChild(createLayerItem(groupInfo, ocConfig));
-      count++;
+        name: group.name || `Layer ${layerItems.length + 1}`,
+        visible: ocConfig.isVisible(group) !== false
+      });
     }
 
-    if (layersCount) {
-      layersCount.textContent = `${count} layer${count !== 1 ? 's' : ''}`;
-    }
+    setEmptyMessage(null);
+    setItems(layerItems);
+    setCountText(i18next.t('leftPanel.layersCount', { count: layerItems.length }));
   } catch (e) {
     console.warn('Failed to load layers:', e);
-    layersContainer.innerHTML = '<div class="layers-empty">No layers in this document</div>';
-    if (layersCount) layersCount.textContent = '0 layers';
+    setItems([]);
+    setCountText(i18next.t('leftPanel.layersCount', { count: 0 }));
+    setEmptyMessage(i18next.t('leftPanel.noLayers'));
     currentOCConfig = null;
   }
 }

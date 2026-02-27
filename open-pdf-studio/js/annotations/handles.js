@@ -97,6 +97,8 @@ export function getAnnotationHandles(annotation, scale = 1) {
       handles.push({ type: HANDLE_TYPES.TOP_RIGHT, x: annotation.x + coW - hs/2, y: annotation.y - hs/2 });
       handles.push({ type: HANDLE_TYPES.BOTTOM_LEFT, x: annotation.x - hs/2, y: annotation.y + coH - hs/2 });
       handles.push({ type: HANDLE_TYPES.BOTTOM_RIGHT, x: annotation.x + coW - hs/2, y: annotation.y + coH - hs/2 });
+      // Move-all handle at center of box
+      handles.push({ type: HANDLE_TYPES.CALLOUT_MOVE, x: annotation.x + coW / 2 - hs/2, y: annotation.y + coH / 2 - hs/2 });
       // Callout arrow handle
       const arrowX = annotation.arrowX !== undefined ? annotation.arrowX : annotation.x - 60;
       const arrowY = annotation.arrowY !== undefined ? annotation.arrowY : annotation.y + coH;
@@ -350,7 +352,7 @@ function createRotatedResizeCursor(angleDeg) {
 }
 
 // Get cursor style for handle type, accounting for annotation rotation
-export function getCursorForHandle(handleType, rotation) {
+export function getCursorForHandle(handleType, rotation, annotation) {
   // Non-directional cursors - rotation doesn't affect these
   switch (handleType) {
     case HANDLE_TYPES.LINE_START:
@@ -360,10 +362,12 @@ export function getCursorForHandle(handleType, rotation) {
       return 'move';
     case HANDLE_TYPES.ROTATE:
       return 'grab';
+    case HANDLE_TYPES.CALLOUT_MOVE:
+      return 'move';
     case HANDLE_TYPES.CALLOUT_ARROW:
       return 'crosshair';
     case HANDLE_TYPES.CALLOUT_KNEE:
-      return 'move';
+      return annotation && annotation._leaderVertical ? 'ns-resize' : 'ew-resize';
   }
 
   // Map each handle to its base angle (0° = vertical/N-S)

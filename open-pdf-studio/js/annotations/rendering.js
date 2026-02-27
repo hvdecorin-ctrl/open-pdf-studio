@@ -344,9 +344,16 @@ function drawAnnotation(ctx, annotation) {
       const coLineWidth = annotation.lineWidth !== undefined ? annotation.lineWidth : 1;
       const coBorderStyle = annotation.borderStyle || 'solid';
 
-      // Set stroke style for leader line
+      // Set stroke style for leader line and border
       ctx.strokeStyle = annotation.strokeColor || strokeColor;
       ctx.lineWidth = coLineWidth > 0 ? coLineWidth : 1;
+      if (coBorderStyle === 'dashed') {
+        ctx.setLineDash([8, 4]);
+      } else if (coBorderStyle === 'dotted') {
+        ctx.setLineDash([2, 2]);
+      } else {
+        ctx.setLineDash([]);
+      }
 
       // Arrow tip position
       const arrowX = annotation.arrowX !== undefined ? annotation.arrowX : annotation.x - 60;
@@ -601,15 +608,23 @@ function drawAnnotation(ctx, annotation) {
       ctx.lineTo(annotation.endX + px, annotation.endY + py);
       ctx.stroke();
 
-      // Draw measurement label
+      // Draw measurement label along the line direction
       if (annotation.measureText) {
         const midX = (annotation.startX + annotation.endX) / 2;
         const midY = (annotation.startY + annotation.endY) / 2;
+        let textAngle = Math.atan2(annotation.endY - annotation.startY, annotation.endX - annotation.startX);
+        // Keep text readable (not upside-down)
+        if (textAngle > Math.PI / 2) textAngle -= Math.PI;
+        else if (textAngle < -Math.PI / 2) textAngle += Math.PI;
+        ctx.save();
+        ctx.translate(midX, midY);
+        ctx.rotate(textAngle);
         ctx.font = '11px Arial';
         ctx.fillStyle = strokeColor;
         ctx.textAlign = 'center';
-        ctx.fillText(annotation.measureText, midX, midY - 6);
-        ctx.textAlign = 'left';
+        ctx.textBaseline = 'bottom';
+        ctx.fillText(annotation.measureText, 0, -4);
+        ctx.restore();
       }
       break;
     }
@@ -735,15 +750,18 @@ function drawTextEdits(ctx, pageNum) {
     const firstBaseY = pageHeight - edit.pdfY;
 
     // Cover rectangle: extends from above first baseline to below last baseline
-    const coverTop = firstBaseY - fontSize;
-    const coverHeight = (numOrig - 1) * ls + fontSize * 1.3;
-    const origLines = edit.originalText.split('\n');
-    const maxOrigLen = Math.max(...origLines.map(l => l.length));
-    const coverWidth = Math.max(edit.pdfWidth, fontSize * 0.6 * maxOrigLen) + fontSize * 0.5;
-
+    // Skip cover rect for newly added text (no original text to cover)
     ctx.save();
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect(edit.pdfX, coverTop, coverWidth, coverHeight);
+    if (edit.originalText) {
+      const coverTop = firstBaseY - fontSize;
+      const coverHeight = (numOrig - 1) * ls + fontSize * 1.3;
+      const origLines = edit.originalText.split('\n');
+      const maxOrigLen = Math.max(...origLines.map(l => l.length));
+      const coverWidth = Math.max(edit.pdfWidth, fontSize * 0.6 * maxOrigLen) + fontSize * 0.5;
+
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(edit.pdfX, coverTop, coverWidth, coverHeight);
+    }
 
     // Draw new text line by line
     ctx.fillStyle = edit.color || '#000000';
@@ -876,4 +894,7 @@ export function redrawContinuous() {
 
   // Update quick access button states
   updateQuickAccessButtons();
+
+  // Show/hide contextual ribbon tabs based on selection
+  updateContextualTabs();
 }

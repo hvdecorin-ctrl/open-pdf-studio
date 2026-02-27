@@ -1,0 +1,23 @@
+{
+  "$schema": "https://schemas.tauri.app/config/2",
+  "identifier": "mobile",
+  "description": "Capabilities for mobile platforms (Android/iOS)",
+  "platforms": ["android", "iOS"],
+  "permissions": [
+    "core:default",
+    "dialog:allow-open",
+    "dialog:allow-save",
+    "dialog:allow-message",
+    "dialog:allow-ask",
+    "dialog:allow-confirm",
+    "fs:read-all",
+    "fs:write-all",
+    "fs:allow-exists",
+    "fs:allow-stat",
+    "shell:allow-open",
+    "os:default",
+    "process:allow-restart",
+    "process:allow-exit",
+    "deep-link:default"
+  ]
+}

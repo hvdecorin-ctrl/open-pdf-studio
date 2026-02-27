@@ -4,10 +4,51 @@
  * Uses the global __TAURI__ object instead of ES module imports
  */
 
+// Extract a display-friendly file name from a path or content:// URI
+export function extractFileName(pathOrUri) {
+  if (!pathOrUri) return 'Document';
+  // content:// URIs: try to decode and extract last segment
+  if (pathOrUri.startsWith('content://')) {
+    const decoded = decodeURIComponent(pathOrUri);
+    // Try common patterns: .../document/primary:Download/file.pdf or raw:/storage/.../file.pdf
+    const match = decoded.match(/[/:]([^/:]+\.pdf)$/i);
+    if (match) return match[1];
+    // Fallback: last path segment
+    const segments = decoded.split(/[/:]+/).filter(Boolean);
+    return segments[segments.length - 1] || 'Document';
+  }
+  // Regular filesystem path
+  const parts = pathOrUri.replace(/\\/g, '/').split('/');
+  return parts[parts.length - 1] || 'Document';
+}
+
 // Check if running in Tauri
 export const isTauri = () => {
   return typeof window !== 'undefined' && window.__TAURI__ !== undefined;
 };
+
+// Detect mobile platform (Android/iOS) — cached at first call
+// Add ?mobile to the URL to force mobile layout for testing in browser
+let _isMobile = null;
+export function isMobile() {
+  if (_isMobile !== null) return _isMobile;
+  // Allow forcing mobile mode via URL param for dev/testing
+  if (new URLSearchParams(window.location.search).has('mobile')) {
+    _isMobile = true;
+    return _isMobile;
+  }
+  try {
+    if (isTauri() && window.__TAURI__.os) {
+      const osType = window.__TAURI__.os.type();
+      _isMobile = (osType === 'android' || osType === 'ios');
+    } else {
+      _isMobile = false;
+    }
+  } catch {
+    _isMobile = false;
+  }
+  return _isMobile;
+}
 
 // Get Tauri APIs from global object
 function getTauriWindow() {
@@ -253,6 +294,16 @@ export async function openDefaultAppsSettings() {
     console.warn('Failed to open default apps settings:', e);
     return false;
   }
+}
+
+// Download a PDF from URL to a temp file
+export async function downloadPdfFromUrl(url) {
+  return await invoke('download_pdf_from_url', { url });
+}
+
+// List PDF files in a directory
+export async function listPdfFiles(dir) {
+  return await invoke('list_pdf_files', { dir });
 }
 
 // File locking - prevent other apps from writing to an open file

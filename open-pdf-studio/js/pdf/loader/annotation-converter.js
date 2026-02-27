@@ -272,13 +272,14 @@ export async function convertPdfAnnotation(annot, pageNum, viewport, stampImageM
     case 'FreeText': {
       // Extract font size, font family, bold/italic, and text color
       let fontSize = 14;
+      let fontSizeFromPdf = false;
       let textColor = '#000000';
       let fontFamily = null;
       let fontBold = false;
       let fontItalic = false;
 
       if (annot.defaultAppearanceData) {
-        if (annot.defaultAppearanceData.fontSize) fontSize = annot.defaultAppearanceData.fontSize;
+        if (annot.defaultAppearanceData.fontSize) { fontSize = annot.defaultAppearanceData.fontSize; fontSizeFromPdf = true; }
         if (annot.defaultAppearanceData.fontColor) {
           textColor = colorArrayToHex(annot.defaultAppearanceData.fontColor, '#000000');
         }
@@ -304,7 +305,7 @@ export async function convertPdfAnnotation(annot, pageNum, viewport, stampImageM
         }
         if (!annot.defaultAppearanceData) {
           const sizeMatch = annot.defaultAppearance.match(/(\d+(?:\.\d+)?)\s+Tf/);
-          if (sizeMatch) fontSize = parseFloat(sizeMatch[1]);
+          if (sizeMatch) { fontSize = parseFloat(sizeMatch[1]); fontSizeFromPdf = true; }
           const colorMatch = annot.defaultAppearance.match(/([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+rg/);
           if (colorMatch) {
             textColor = colorArrayToHex([parseFloat(colorMatch[1]), parseFloat(colorMatch[2]), parseFloat(colorMatch[3])], '#000000');
@@ -315,6 +316,8 @@ export async function convertPdfAnnotation(annot, pageNum, viewport, stampImageM
       if (extraColors.fontFamily) fontFamily = extraColors.fontFamily;
       if (extraColors.fontBold) fontBold = true;
       if (extraColors.fontItalic) fontItalic = true;
+      // Use DS font-size as fallback if DA didn't provide one
+      if (!fontSizeFromPdf && extraColors.dsFontSize) fontSize = extraColors.dsFontSize;
       let fontUnderline = extraColors.fontUnderline || false;
       let fontStrikethrough = extraColors.fontStrikethrough || false;
 
@@ -392,21 +395,38 @@ export async function convertPdfAnnotation(annot, pageNum, viewport, stampImageM
       const ftX = cx - ftWidth / 2;
       const ftY = cy - ftHeight / 2;
 
-      const isCallout = annot.calloutLine && annot.calloutLine.length >= 4;
+      // pdf.js doesn't expose calloutLine; use pdf-lib extracted CL from extraColors
+      const calloutLine = extraColors.calloutLine || annot.calloutLine;
+      const isCallout = calloutLine && calloutLine.length >= 4;
 
       if (isCallout) {
+        // For callouts, Rect may include the leader line. Use /RD to get the actual text box.
+        // RD = [left, bottom, right, top] insets from Rect to text box
+        let coX = ftX, coY = ftY, coW = ftWidth, coH = ftHeight;
+        const rd = extraColors.rectDiff;
+        if (rd && rd[0] !== null) {
+          coX = rect[0] + rd[0];
+          const coY1 = convertY(rect[3] - rd[3]); // top inset from top of Rect (PDF top = rect[3])
+          coW = rectW - rd[0] - rd[2];
+          coH = rectH - rd[1] - rd[3];
+          coY = coY1;
+        }
+        // Callout stroke color: IC > AP stroke > borderColor fallback
+        const coStrokeColor = extraColors.ic || extraColors.apStrokeColor || borderColor;
+        // Fill color: C entry is the background for FreeText
+        const coFillColor = bgColor || extraColors.cColor || '#FFFFD0';
         return createAnnotation({
           ...baseProps,
           type: 'callout',
-          x: ftX,
-          y: ftY,
-          width: ftWidth,
-          height: ftHeight,
+          x: coX,
+          y: coY,
+          width: coW,
+          height: coH,
           rotation: ftRotation,
           text: text,
-          color: borderColor,
-          strokeColor: borderColor,
-          fillColor: bgColor || '#FFFFD0',
+          color: coStrokeColor,
+          strokeColor: coStrokeColor,
+          fillColor: coFillColor || '#FFFFD0',
           textColor: textColor,
           fontSize: fontSize,
           borderStyle: borderStyle,
@@ -414,12 +434,15 @@ export async function convertPdfAnnotation(annot, pageNum, viewport, stampImageM
           fontFamily: fontFamily || 'Arial',
           fontBold: fontBold,
           fontItalic: fontItalic,
+          lineSpacing: extraColors.lineSpacing || undefined,
           fontUnderline: fontUnderline,
           fontStrikethrough: fontStrikethrough,
-          arrowX: annot.calloutLine[0],
-          arrowY: convertY(annot.calloutLine[1]),
-          kneeX: annot.calloutLine.length >= 6 ? annot.calloutLine[2] : annot.calloutLine[0],
-          kneeY: annot.calloutLine.length >= 6 ? convertY(annot.calloutLine[3]) : convertY(annot.calloutLine[1])
+          arrowX: calloutLine[0],
+          arrowY: convertY(calloutLine[1]),
+          kneeX: calloutLine.length >= 6 ? calloutLine[2] : calloutLine[0],
+          kneeY: calloutLine.length >= 6 ? convertY(calloutLine[3]) : convertY(calloutLine[1]),
+          armOriginX: calloutLine.length >= 6 ? calloutLine[4] : calloutLine[2],
+          armOriginY: calloutLine.length >= 6 ? convertY(calloutLine[5]) : convertY(calloutLine[3])
         });
       }
 
@@ -442,6 +465,7 @@ export async function convertPdfAnnotation(annot, pageNum, viewport, stampImageM
         fontFamily: fontFamily || 'Arial',
         fontBold: fontBold,
         fontItalic: fontItalic,
+        lineSpacing: extraColors.lineSpacing || undefined,
         fontUnderline: fontUnderline,
         fontStrikethrough: fontStrikethrough
       });

@@ -156,8 +156,31 @@ export async function extractAnnotationColors(pageNum, pdfDoc) {
                   colors.fontItalic = true;
                 }
               }
+              // Extract line-height from RC (stored as absolute pt value, convert to multiplier)
+              const lhMatch = rcStr.match(/line-height\s*:\s*([\d.]+)/i);
+              if (lhMatch) {
+                colors.rawLineHeight = parseFloat(lhMatch[1]);
+              }
             }
           } catch (e) { /* ignore RC parsing errors */ }
+        }
+
+        // Extract /DS (Default Style) for font-size fallback
+        const dsRaw = annotDict.get(PDFName.of('DS'));
+        if (dsRaw) {
+          try {
+            const dsStr = dsRaw.toString?.() || '';
+            const fsSizeMatch = dsStr.match(/font-size\s*:\s*([\d.]+)\s*pt/i);
+            if (fsSizeMatch) {
+              colors.dsFontSize = parseFloat(fsSizeMatch[1]);
+            }
+            if (!colors.rawLineHeight) {
+              const lhMatch = dsStr.match(/line-height\s*:\s*([\d.]+)/i);
+              if (lhMatch) {
+                colors.rawLineHeight = parseFloat(lhMatch[1]);
+              }
+            }
+          } catch (e) { /* ignore DS parsing errors */ }
         }
 
         // Extract /OPS_Rotation (our custom key only — ignore standard /Rotation
@@ -166,6 +189,35 @@ export async function extractAnnotationColors(pageNum, pdfDoc) {
         if (opsRotRaw) {
           const rv = pdfNum(context.lookup(opsRotRaw) || opsRotRaw);
           if (rv !== null) colors.rotation = rv;
+        }
+
+        // Extract /C (Color) entry directly for FreeText — needed for callout stroke detection
+        const cRaw = annotDict.get(PDFName.of('C'));
+        if (cRaw) {
+          colors.cColor = pdfColorToHex(context.lookup(cRaw) || cRaw, context);
+        }
+
+        // Extract /CL (Callout Line) array — pdf.js doesn't expose this
+        const clRaw = annotDict.get(PDFName.of('CL'));
+        if (clRaw) {
+          const cl = context.lookup(clRaw) || clRaw;
+          if (cl && typeof cl.size === 'function') {
+            const clArr = [];
+            for (let ci = 0; ci < cl.size(); ci++) {
+              const v = pdfNum(cl.get(ci));
+              if (v !== null) clArr.push(v);
+            }
+            if (clArr.length >= 4) colors.calloutLine = clArr;
+          }
+        }
+
+        // Extract /RD (Rectangle Differences) — insets from Rect to actual text box
+        const rdRaw = annotDict.get(PDFName.of('RD'));
+        if (rdRaw) {
+          const rd = context.lookup(rdRaw) || rdRaw;
+          if (rd && typeof rd.size === 'function' && rd.size() >= 4) {
+            colors.rectDiff = [pdfNum(rd.get(0)), pdfNum(rd.get(1)), pdfNum(rd.get(2)), pdfNum(rd.get(3))];
+          }
         }
 
         const apRaw = annotDict.get(PDFName.of('AP'));
@@ -253,33 +305,51 @@ export async function extractAnnotationColors(pageNum, pdfDoc) {
                   }
                 }
 
-                // Extract stroke color from content stream
+                // Extract stroke color from content stream (or referenced XObjects)
                 if (!colors.ic) {
-                  let streamBytes;
-                  if (typeof nStream.getContents === 'function') {
-                    streamBytes = nStream.getContents();
-                  } else if (typeof nStream.contents === 'function') {
-                    streamBytes = nStream.contents();
-                  } else if (nStream.contentsCache?.value) {
-                    streamBytes = nStream.contentsCache.value;
-                  }
-                  if (streamBytes) {
-                    let content;
-                    const filterRaw = nDict.get(PDFName.of('Filter'));
+                  const decodeStream = async (stream) => {
+                    let bytes;
+                    if (typeof stream.getContents === 'function') bytes = stream.getContents();
+                    else if (typeof stream.contents === 'function') bytes = stream.contents();
+                    else if (stream.contentsCache?.value) bytes = stream.contentsCache.value;
+                    if (!bytes) return null;
+                    const dict = stream.dict || stream;
+                    const filterRaw = dict.get(PDFName.of('Filter'));
                     const filterName = filterRaw?.toString();
                     if (filterName === '/FlateDecode') {
-                      const decompressed = await inflateBytes(streamBytes);
-                      if (decompressed) content = new TextDecoder().decode(decompressed);
-                    } else {
-                      content = new TextDecoder().decode(streamBytes);
+                      const dec = await inflateBytes(bytes);
+                      return dec ? new TextDecoder().decode(dec) : null;
                     }
-                    if (content) {
-                      const rgMatch = content.match(/([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+RG/);
-                      if (rgMatch) {
-                        const r = parseFloat(rgMatch[1]), g = parseFloat(rgMatch[2]), b = parseFloat(rgMatch[3]);
-                        colors.apStrokeColor = `#${Math.round(r * 255).toString(16).padStart(2, '0')}${Math.round(g * 255).toString(16).padStart(2, '0')}${Math.round(b * 255).toString(16).padStart(2, '0')}`;
-                      }
+                    return new TextDecoder().decode(bytes);
+                  };
+
+                  let content = await decodeStream(nStream);
+                  let rgMatch = content ? content.match(/([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+RG/) : null;
+
+                  // If not found, follow XObject form references (e.g. /Fm0 Do)
+                  if (!rgMatch && content) {
+                    const xobjMatch = content.match(/\/(\S+)\s+Do/);
+                    if (xobjMatch) {
+                      try {
+                        const resRaw = nDict.get(PDFName.of('Resources'));
+                        const res = resRaw ? context.lookup(resRaw) : null;
+                        const xobjDictRaw = res ? res.get(PDFName.of('XObject')) : null;
+                        const xobjDict = xobjDictRaw ? context.lookup(xobjDictRaw) : null;
+                        const fmRaw = xobjDict ? xobjDict.get(PDFName.of(xobjMatch[1])) : null;
+                        const fmStream = fmRaw ? context.lookup(fmRaw) : null;
+                        if (fmStream) {
+                          const fmContent = await decodeStream(fmStream);
+                          if (fmContent) {
+                            rgMatch = fmContent.match(/([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+RG/);
+                          }
+                        }
+                      } catch (e) { /* ignore XObject extraction errors */ }
                     }
+                  }
+
+                  if (rgMatch) {
+                    const r = parseFloat(rgMatch[1]), g = parseFloat(rgMatch[2]), b = parseFloat(rgMatch[3]);
+                    colors.apStrokeColor = `#${Math.round(r * 255).toString(16).padStart(2, '0')}${Math.round(g * 255).toString(16).padStart(2, '0')}${Math.round(b * 255).toString(16).padStart(2, '0')}`;
                   }
                 }
               }
@@ -288,10 +358,25 @@ export async function extractAnnotationColors(pageNum, pdfDoc) {
         }
       }
 
+      // Convert absolute line-height (pt) to multiplier using font size
+      if (colors.rawLineHeight) {
+        // Get font size from DA string
+        const daRawForLH = annotDict.get(PDFName.of('DA'));
+        const daStrLH = daRawForLH?.toString?.() || '';
+        const fsSizeMatch = daStrLH.match(/([\d.]+)\s+Tf/);
+        const fsVal = fsSizeMatch ? parseFloat(fsSizeMatch[1]) : (colors.dsFontSize || 12);
+        if (fsVal > 0) {
+          const ratio = Math.round(colors.rawLineHeight / fsVal * 100) / 100;
+          if (ratio >= 0.5 && ratio <= 5) colors.lineSpacing = ratio;
+        }
+        delete colors.rawLineHeight;
+      }
+
       if (colors.ic || colors.apStrokeColor || colors.lineCoords || colors.opacity !== undefined ||
           colors.matrixAngle !== undefined || colors.bboxWidth || colors.rotation !== undefined ||
           colors.fontFamily || colors.fontBold || colors.fontItalic ||
-          colors.fontUnderline || colors.fontStrikethrough || colors.borderWidth !== undefined) {
+          colors.fontUnderline || colors.fontStrikethrough || colors.borderWidth !== undefined ||
+          colors.calloutLine || colors.rectDiff || colors.lineSpacing || colors.dsFontSize) {
         colorMap.set(key, colors);
       }
     }

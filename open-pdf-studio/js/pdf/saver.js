@@ -537,12 +537,19 @@ export async function savePDF(saveAsPath = null) {
             const ftFillColorArr = (ann.fillColor && ann.fillColor !== 'none')
               ? hexToColorArray(ann.fillColor) : null;
 
+            // Build DS (Default Style) string for better interop with other viewers
+            const textColorCss = ann.textColor || '#000000';
+            const dsFontFamily = ann.fontFamily || 'Arial';
+            const dsLineHeight = ann.lineSpacing ? `line-height:${Math.round(fontSize * ann.lineSpacing * 100) / 100};` : '';
+            const dsStr = `font-family:${dsFontFamily};font-size:${fontSize}pt;color:${textColorCss};${dsLineHeight}`;
+
             const annDictObj = {
               Type: 'Annot',
               Subtype: 'FreeText',
               Rect: [x1, y1, x2, y2],
               Contents: PDFString.of(ann.text || ''),
               DA: PDFString.of(da),
+              DS: PDFString.of(dsStr),
               C: ftFillColorArr || [1, 1, 1],
               CA: opacity,
               T: PDFString.of(ann.author || 'User'),
@@ -562,18 +569,31 @@ export async function savePDF(saveAsPath = null) {
             // Stroke/border color in IC
             annDictObj.IC = ftStrokeColorArr;
 
-            // Callout line
+            // Callout-specific data (set after context.obj for reliable PDF serialization)
+            let calloutData = null;
             if (ann.type === 'callout' && ann.arrowX !== undefined) {
-              const arrowX = ann.arrowX;
-              const arrowY = convertY(ann.arrowY);
-              const kneeX = ann.kneeX !== undefined ? ann.kneeX : arrowX;
-              const kneeY = ann.kneeY !== undefined ? convertY(ann.kneeY) : arrowY;
+              const clArrowX = ann.arrowX;
+              const clArrowY = convertY(ann.arrowY);
+              const clKneeX = ann.kneeX !== undefined ? ann.kneeX : clArrowX;
+              const clKneeY = ann.kneeY !== undefined ? convertY(ann.kneeY) : clArrowY;
+              const textConnectionX = ann.armOriginX !== undefined ? ann.armOriginX : (ann.arrowX < (ann.x + ftW / 2) ? x1 : x2);
+              const textConnectionY = ann.armOriginY !== undefined ? convertY(ann.armOriginY) : (y1 + y2) / 2;
 
-              // CL array: [arrowX, arrowY, kneeX, kneeY, textX, textY]
-              const textConnectionX = ann.arrowX < (ann.x + ftW / 2) ? x1 : x2;
-              const textConnectionY = (y1 + y2) / 2;
-              annDictObj.CL = [arrowX, arrowY, kneeX, kneeY, textConnectionX, textConnectionY];
-              annDictObj.IT = 'FreeTextCallout';
+              // Save original text box Rect before expanding
+              const tbX1 = x1, tbY1 = y1, tbX2 = x2, tbY2 = y2;
+
+              // Expand Rect to include all callout points (with padding for arrowhead)
+              const clPad = 12;
+              x1 = Math.min(x1, clArrowX - clPad, clKneeX, textConnectionX);
+              y1 = Math.min(y1, clArrowY - clPad, clKneeY, textConnectionY);
+              x2 = Math.max(x2, clArrowX + clPad, clKneeX, textConnectionX);
+              y2 = Math.max(y2, clArrowY + clPad, clKneeY, textConnectionY);
+              annDictObj.Rect = [x1, y1, x2, y2];
+
+              calloutData = {
+                cl: [clArrowX, clArrowY, clKneeX, clKneeY, textConnectionX, textConnectionY],
+                rd: [tbX1 - x1, tbY1 - y1, x2 - tbX2, y2 - tbY2]
+              };
             }
 
             // For standard 90° multiples, also set /Rotation for viewers that rebuild AP
@@ -587,36 +607,83 @@ export async function savePDF(saveAsPath = null) {
 
             annotDict = context.obj(annDictObj);
 
+            // Set callout entries explicitly using PDFName keys for reliable serialization
+            if (calloutData) {
+              annotDict.set(PDFName.of('CL'), context.obj(calloutData.cl));
+              annotDict.set(PDFName.of('IT'), PDFName.of('FreeTextCallout'));
+              annotDict.set(PDFName.of('LE'), PDFName.of('OpenArrow'));
+              annotDict.set(PDFName.of('RD'), context.obj(calloutData.rd));
+            }
+
             // Always generate AP stream so other viewers show correct colors
             {
-              const rectW = x2 - x1;
-              const rectH = Math.abs(y2 - y1);
+              const isCallout = ann.type === 'callout' && ann.arrowX !== undefined;
+              // Text box in absolute PDF coords
+              const tbX1 = ann.x;
+              const tbY1 = convertY(ann.y + ftH);
+              const tbX2 = tbX1 + ftW;
+              const tbY2 = tbY1 + ftH;
 
               let ftStreamContent = '';
               const [sr, sg, sb] = ann.strokeColor && ann.strokeColor !== 'none'
                 ? hexToRgb(ann.strokeColor) : [0, 0, 0];
 
-              // For arbitrary rotation angles, wrap content in rotation transform
+              // Draw callout leader line and arrowhead first (using absolute page coords)
+              if (isCallout) {
+                const clAX = ann.arrowX;
+                const clAY = convertY(ann.arrowY);
+                const clKX = ann.kneeX !== undefined ? ann.kneeX : ann.arrowX;
+                const clKY = ann.kneeY !== undefined ? convertY(ann.kneeY) : convertY(ann.arrowY);
+                const clOX = ann.armOriginX !== undefined ? ann.armOriginX : tbX1;
+                const clOY = ann.armOriginY !== undefined ? convertY(ann.armOriginY) : (tbY1 + ftH / 2);
+
+                const dashOp = ann.borderStyle === 'dashed' ? '[8 4] 0 d\n' : ann.borderStyle === 'dotted' ? '[2 2] 0 d\n' : '';
+                ftStreamContent += `${sr} ${sg} ${sb} RG ${ftBorderWidth} w\n${dashOp}`;
+                // Leader line: armOrigin -> knee -> arrow tip
+                ftStreamContent += `${clOX} ${clOY} m ${clKX} ${clKY} l ${clAX} ${clAY} l S\n`;
+                // Arrowhead at arrow tip (3-point open arrow: point1 -> tip -> point2)
+                const aAngle = Math.atan2(clAY - clKY, clAX - clKX);
+                const aSize = 8;
+                const ah1x = clAX - aSize * Math.cos(aAngle - Math.PI / 6);
+                const ah1y = clAY - aSize * Math.sin(aAngle - Math.PI / 6);
+                const ah2x = clAX - aSize * Math.cos(aAngle + Math.PI / 6);
+                const ah2y = clAY - aSize * Math.sin(aAngle + Math.PI / 6);
+                ftStreamContent += `${ah1x} ${ah1y} m ${clAX} ${clAY} l ${ah2x} ${ah2y} l S\n`;
+              }
+
+              // Draw text box fill + stroke (absolute coords)
+              const ftDashOp = ann.borderStyle === 'dashed' ? '[8 4] 0 d\n' : ann.borderStyle === 'dotted' ? '[2 2] 0 d\n' : '';
+              // For non-callout with rotation, wrap in transform
               const needsRotationInAP = ftRotation !== 0 && !isStandardRotation;
               if (needsRotationInAP) {
                 const rad = -ftRotation * Math.PI / 180;
                 const cosR = Math.cos(rad);
                 const sinR = Math.sin(rad);
-                const bboxCX = rectW / 2;
-                const bboxCY = rectH / 2;
+                const bboxCX = tbX1 + ftW / 2;
+                const bboxCY = tbY1 + ftH / 2;
                 ftStreamContent += 'q\n';
                 ftStreamContent += `1 0 0 1 ${bboxCX} ${bboxCY} cm\n`;
                 ftStreamContent += `${cosR} ${sinR} ${-sinR} ${cosR} 0 0 cm\n`;
                 ftStreamContent += `1 0 0 1 ${-ftW / 2} ${-ftH / 2} cm\n`;
-              }
-
-              // Draw border/fill
-              ftStreamContent += `${ftBorderWidth} w\n${sr} ${sg} ${sb} RG\n`;
-              if (ann.fillColor && ann.fillColor !== 'none') {
-                const [fr, fg, fb] = hexToRgb(ann.fillColor);
-                ftStreamContent += `${fr} ${fg} ${fb} rg\n0 0 ${ftW} ${ftH} re B\n`;
+                // In rotated mode, draw at local 0,0
+                ftStreamContent += `${ftBorderWidth} w\n${ftDashOp}${sr} ${sg} ${sb} RG\n`;
+                if (ann.fillColor && ann.fillColor !== 'none') {
+                  const [fr, fg, fb] = hexToRgb(ann.fillColor);
+                  ftStreamContent += `${fr} ${fg} ${fb} rg\n0 0 ${ftW} ${ftH} re B\n`;
+                } else {
+                  ftStreamContent += `0 0 ${ftW} ${ftH} re S\n`;
+                }
               } else {
-                ftStreamContent += `0 0 ${ftW} ${ftH} re S\n`;
+                // Draw at absolute text box position
+                ftStreamContent += `${ftBorderWidth} w\n${ftDashOp}${sr} ${sg} ${sb} RG\n`;
+                if (ann.fillColor && ann.fillColor !== 'none') {
+                  const [fr, fg, fb] = hexToRgb(ann.fillColor);
+                  ftStreamContent += `${fr} ${fg} ${fb} rg\n${tbX1} ${tbY1} ${ftW} ${ftH} re B\n`;
+                } else {
+                  ftStreamContent += `${tbX1} ${tbY1} ${ftW} ${ftH} re S\n`;
+                }
+                // Clip text to text box area
+                ftStreamContent += `${tbX1} ${tbY1} ${ftW} ${ftH} re W n\n`;
               }
 
               // Render text
@@ -626,15 +693,23 @@ export async function savePDF(saveAsPath = null) {
                 const pdfFont = mapFontToPdfName(ann.fontFamily, ann.fontBold, ann.fontItalic);
                 const padding = ftBorderWidth + 2;
                 const lineHeight = ftFontSize * 1.2;
+                // Text position in absolute coords (or local 0,0 for rotated)
+                const textBaseX = needsRotationInAP ? padding : tbX1 + padding;
+                const textBaseY = needsRotationInAP ? (ftH - padding - ftFontSize) : (tbY2 - padding - ftFontSize);
 
-                ftStreamContent += `BT\n/${pdfFont} ${ftFontSize} Tf\n${tr} ${tg} ${tb} rg\n`;
+                ftStreamContent += 'BT\n';
+                ftStreamContent += `0 0 0 rg 0 Tc 0 Tw 100 Tz 0 Tr\n`;
+                ftStreamContent += `/${pdfFont} ${ftFontSize} Tf\n`;
+                if (ann.textColor) {
+                  ftStreamContent += `${tr} ${tg} ${tb} rg\n`;
+                }
                 const lines = ann.text.split('\n');
-                let textY = ftH - padding - ftFontSize;
+                let textY = textBaseY;
                 for (const line of lines) {
-                  if (textY < 0) break;
+                  if (needsRotationInAP ? textY < 0 : textY < tbY1) break;
                   const escaped = line.replace(/\\/g, '\\\\').replace(/\(/g, '\\(').replace(/\)/g, '\\)');
-                  ftStreamContent += `${padding} ${textY} Td\n(${escaped}) Tj\n`;
-                  ftStreamContent += `${-padding} ${-textY} Td\n`;
+                  ftStreamContent += `${textBaseX} ${textY} Td\n(${escaped}) Tj\n`;
+                  ftStreamContent += `${-textBaseX} ${-textY} Td\n`;
                   textY -= lineHeight;
                 }
                 ftStreamContent += 'ET\n';
@@ -649,17 +724,22 @@ export async function savePDF(saveAsPath = null) {
               const fontDict = context.obj({
                 Type: 'Font',
                 Subtype: 'Type1',
-                BaseFont: pdfFont
+                BaseFont: pdfFont,
+                Encoding: 'WinAnsiEncoding'
               });
 
-              const ftApStream = context.stream(ftStreamContent, {
+              // Use absolute BBox (same as Rect) with Matrix to translate origin
+              const apStreamDict = {
                 Type: 'XObject',
                 Subtype: 'Form',
-                BBox: [0, 0, rectW, rectH],
+                BBox: [x1, y1, x2, y2],
+                Matrix: [1, 0, 0, 1, -x1, -y1],
                 Resources: context.obj({
                   Font: context.obj({ [pdfFont]: fontDict })
                 })
-              });
+              };
+
+              const ftApStream = context.stream(ftStreamContent, apStreamDict);
               const ftApRef = context.register(ftApStream);
               const ftApDict = context.obj({ N: ftApRef });
               annotDict.set(PDFName.of('AP'), ftApDict);
@@ -911,21 +991,23 @@ async function saveTextEditsToPages(pdfDocLib, pages) {
     const numOrig = edit.numOriginalLines || 1;
     const [r, g, b] = hexToRgb(edit.color || '#000000');
 
-    // Cover rectangle spanning all original lines
-    const origLines = edit.originalText.split('\n');
-    const maxOrigLen = Math.max(...origLines.map(l => l.length));
-    const coverWidth = Math.max(edit.pdfWidth, fontSize * 0.6 * maxOrigLen) + fontSize * 0.5;
-    const rectBottom = edit.pdfY - (numOrig - 1) * ls - fontSize * 0.3;
-    const rectHeight = (numOrig - 1) * ls + fontSize * 1.3;
+    // Cover rectangle spanning all original lines (skip for newly added text)
+    if (edit.originalText) {
+      const origLines = edit.originalText.split('\n');
+      const maxOrigLen = Math.max(...origLines.map(l => l.length));
+      const coverWidth = Math.max(edit.pdfWidth, fontSize * 0.6 * maxOrigLen) + fontSize * 0.5;
+      const rectBottom = edit.pdfY - (numOrig - 1) * ls - fontSize * 0.3;
+      const rectHeight = (numOrig - 1) * ls + fontSize * 1.3;
 
-    page.drawRectangle({
-      x: edit.pdfX,
-      y: rectBottom,
-      width: coverWidth,
-      height: rectHeight,
-      color: rgb(1, 1, 1),
-      borderWidth: 0
-    });
+      page.drawRectangle({
+        x: edit.pdfX,
+        y: rectBottom,
+        width: coverWidth,
+        height: rectHeight,
+        color: rgb(1, 1, 1),
+        borderWidth: 0
+      });
+    }
 
     // Draw new text line by line
     const editFont = await getEditFont(edit.fontFamily);
@@ -1439,7 +1521,7 @@ function mapFontToPdfName(fontFamily, bold, italic) {
     if (bold && italic) return 'Helvetica-BoldOblique';
     if (bold) return 'Helvetica-Bold';
     if (italic) return 'Helvetica-Oblique';
-    return 'Helv';
+    return 'Helvetica';
   }
 
   // For non-standard fonts, preserve the actual name as CamelCase (no spaces)

@@ -2,6 +2,59 @@ import { HANDLE_TYPES } from '../core/constants.js';
 import { state } from '../core/state.js';
 import { snapAngle } from '../utils/helpers.js';
 
+// Recalculate callout leader line geometry from box position and arrow tip.
+// Picks the best box edge based on arrow position:
+//   - Arrow to the side → horizontal arm from left/right edge at vertical center
+//   - Arrow above/below → vertical arm from top/bottom edge at horizontal center
+function recalcCalloutLeader(annotation) {
+  const boxW = annotation.width || 150;
+  const boxH = annotation.height || 50;
+  const arrowX = annotation.arrowX !== undefined ? annotation.arrowX : annotation.x - 60;
+  const arrowY = annotation.arrowY !== undefined ? annotation.arrowY : annotation.y + boxH;
+
+  const boxCenterX = annotation.x + boxW / 2;
+  const boxCenterY = annotation.y + boxH / 2;
+
+  // How far the arrow is outside the box span in each axis
+  const hDist = arrowX < annotation.x ? annotation.x - arrowX :
+                arrowX > annotation.x + boxW ? arrowX - (annotation.x + boxW) : 0;
+  const vDist = arrowY < annotation.y ? annotation.y - arrowY :
+                arrowY > annotation.y + boxH ? arrowY - (annotation.y + boxH) : 0;
+
+  // Determine current mode, with hysteresis to prevent flickering
+  const wasVertical = annotation._leaderVertical;
+  const threshold = 20;
+  let useVertical;
+  if (wasVertical) {
+    // Currently vertical — only switch to horizontal if hDist exceeds vDist by threshold
+    useVertical = !(hDist > vDist + threshold);
+  } else {
+    // Currently horizontal — only switch to vertical if vDist exceeds hDist by threshold
+    useVertical = vDist > hDist + threshold;
+  }
+  annotation._leaderVertical = useVertical;
+
+  if (!useVertical) {
+    // Arrow is more to the side → horizontal arm from left/right edge, vertical center
+    const isLeft = arrowX < boxCenterX;
+    annotation.armOriginX = isLeft ? annotation.x : annotation.x + boxW;
+    annotation.armOriginY = boxCenterY;
+
+    const armLen = Math.min(30, Math.abs(arrowX - annotation.armOriginX) * 0.4);
+    annotation.kneeX = isLeft ? annotation.armOriginX - armLen : annotation.armOriginX + armLen;
+    annotation.kneeY = annotation.armOriginY;
+  } else {
+    // Arrow is more above/below → vertical arm from top/bottom edge, horizontal center
+    const isAbove = arrowY < boxCenterY;
+    annotation.armOriginX = boxCenterX;
+    annotation.armOriginY = isAbove ? annotation.y : annotation.y + boxH;
+
+    const armLen = Math.min(30, Math.abs(arrowY - annotation.armOriginY) * 0.4);
+    annotation.kneeX = annotation.armOriginX;
+    annotation.kneeY = isAbove ? annotation.armOriginY - armLen : annotation.armOriginY + armLen;
+  }
+}
+
 // Rotate a delta vector from screen space into the annotation's local coordinate space
 function rotateDelta(deltaX, deltaY, rotationDeg) {
   if (!rotationDeg) return { dx: deltaX, dy: deltaY };
@@ -167,20 +220,51 @@ export function applyResize(annotation, handleType, deltaX, deltaY, originalAnn,
           annotation.width = originalAnn.width + deltaX;
           annotation.height = originalAnn.height + deltaY;
           break;
+        case HANDLE_TYPES.CALLOUT_MOVE:
+          // Move entire callout (box + arrow + all points)
+          annotation.x = originalAnn.x + deltaX;
+          annotation.y = originalAnn.y + deltaY;
+          annotation.arrowX = (originalAnn.arrowX || originalAnn.x - 60) + deltaX;
+          annotation.arrowY = (originalAnn.arrowY || originalAnn.y + originalAnn.height) + deltaY;
+          annotation.kneeX = (originalAnn.kneeX || originalAnn.x - 30) + deltaX;
+          annotation.kneeY = (originalAnn.kneeY || originalAnn.y + originalAnn.height / 2) + deltaY;
+          annotation.armOriginX = (originalAnn.armOriginX || originalAnn.x) + deltaX;
+          annotation.armOriginY = (originalAnn.armOriginY || originalAnn.y + originalAnn.height / 2) + deltaY;
+          break;
         case HANDLE_TYPES.CALLOUT_ARROW:
           // Move arrow tip
           annotation.arrowX = (originalAnn.arrowX || originalAnn.x - 60) + deltaX;
           annotation.arrowY = (originalAnn.arrowY || originalAnn.y + originalAnn.height) + deltaY;
           break;
         case HANDLE_TYPES.CALLOUT_KNEE:
-          // Move knee point
-          annotation.kneeX = (originalAnn.kneeX || originalAnn.x - 30) + deltaX;
-          annotation.kneeY = (originalAnn.kneeY || originalAnn.y + originalAnn.height / 2) + deltaY;
+          // Constrain to the arm direction: horizontal arm → move X only, vertical arm → move Y only
+          if (annotation._leaderVertical) {
+            annotation.kneeY = (originalAnn.kneeY || originalAnn.y + originalAnn.height / 2) + deltaY;
+          } else {
+            annotation.kneeX = (originalAnn.kneeX || originalAnn.x - 30) + deltaX;
+          }
           break;
       }
       // Ensure minimum size
       if (annotation.width < 50) annotation.width = 50;
       if (annotation.height < 30) annotation.height = 30;
+      // Recalculate leader line geometry (skip for move-all, already correct)
+      if (handleType === HANDLE_TYPES.CALLOUT_MOVE) {
+        // Everything moved together, no recalc needed
+      } else if (handleType === HANDLE_TYPES.CALLOUT_KNEE) {
+        // Preserve user's knee offset in the arm direction, recalc everything else
+        const isVert = annotation._leaderVertical;
+        const userKneeX = annotation.kneeX;
+        const userKneeY = annotation.kneeY;
+        recalcCalloutLeader(annotation);
+        if (isVert) {
+          annotation.kneeY = userKneeY;
+        } else {
+          annotation.kneeX = userKneeX;
+        }
+      } else {
+        recalcCalloutLeader(annotation);
+      }
       break;
 
     case 'line':
@@ -314,14 +398,14 @@ export function applyResize(annotation, handleType, deltaX, deltaY, originalAnn,
 
     case 'image':
     case 'stamp':
-    case 'signature':
-      // Maintain aspect ratio when shift is held
+    case 'signature': {
+      // Maintain aspect ratio when shift is held or lockAspectRatio is enabled
       const aspectRatio = originalAnn.originalWidth / originalAnn.originalHeight;
+      const lockRatio = shiftKey || annotation.lockAspectRatio;
 
       switch (handleType) {
         case HANDLE_TYPES.TOP_LEFT:
-          if (shiftKey) {
-            // Maintain aspect ratio
+          if (lockRatio) {
             const newWidth = originalAnn.width - deltaX;
             const newHeight = newWidth / aspectRatio;
             annotation.x = originalAnn.x + originalAnn.width - newWidth;
@@ -336,7 +420,7 @@ export function applyResize(annotation, handleType, deltaX, deltaY, originalAnn,
           }
           break;
         case HANDLE_TYPES.TOP_RIGHT:
-          if (shiftKey) {
+          if (lockRatio) {
             const newWidth = originalAnn.width + deltaX;
             const newHeight = newWidth / aspectRatio;
             annotation.y = originalAnn.y + originalAnn.height - newHeight;
@@ -349,7 +433,7 @@ export function applyResize(annotation, handleType, deltaX, deltaY, originalAnn,
           }
           break;
         case HANDLE_TYPES.BOTTOM_LEFT:
-          if (shiftKey) {
+          if (lockRatio) {
             const newWidth = originalAnn.width - deltaX;
             const newHeight = newWidth / aspectRatio;
             annotation.x = originalAnn.x + originalAnn.width - newWidth;
@@ -362,7 +446,7 @@ export function applyResize(annotation, handleType, deltaX, deltaY, originalAnn,
           }
           break;
         case HANDLE_TYPES.BOTTOM_RIGHT:
-          if (shiftKey) {
+          if (lockRatio) {
             const newWidth = originalAnn.width + deltaX;
             const newHeight = newWidth / aspectRatio;
             annotation.width = newWidth;
@@ -373,24 +457,55 @@ export function applyResize(annotation, handleType, deltaX, deltaY, originalAnn,
           }
           break;
         case HANDLE_TYPES.TOP:
-          annotation.y = originalAnn.y + deltaY;
-          annotation.height = originalAnn.height - deltaY;
+          if (lockRatio) {
+            const newHeight = originalAnn.height - deltaY;
+            const newWidth = newHeight * aspectRatio;
+            annotation.y = originalAnn.y + deltaY;
+            annotation.height = newHeight;
+            annotation.width = newWidth;
+          } else {
+            annotation.y = originalAnn.y + deltaY;
+            annotation.height = originalAnn.height - deltaY;
+          }
           break;
         case HANDLE_TYPES.BOTTOM:
-          annotation.height = originalAnn.height + deltaY;
+          if (lockRatio) {
+            const newHeight = originalAnn.height + deltaY;
+            const newWidth = newHeight * aspectRatio;
+            annotation.height = newHeight;
+            annotation.width = newWidth;
+          } else {
+            annotation.height = originalAnn.height + deltaY;
+          }
           break;
         case HANDLE_TYPES.LEFT:
-          annotation.x = originalAnn.x + deltaX;
-          annotation.width = originalAnn.width - deltaX;
+          if (lockRatio) {
+            const newWidth = originalAnn.width - deltaX;
+            const newHeight = newWidth / aspectRatio;
+            annotation.x = originalAnn.x + deltaX;
+            annotation.width = newWidth;
+            annotation.height = newHeight;
+          } else {
+            annotation.x = originalAnn.x + deltaX;
+            annotation.width = originalAnn.width - deltaX;
+          }
           break;
         case HANDLE_TYPES.RIGHT:
-          annotation.width = originalAnn.width + deltaX;
+          if (lockRatio) {
+            const newWidth = originalAnn.width + deltaX;
+            const newHeight = newWidth / aspectRatio;
+            annotation.width = newWidth;
+            annotation.height = newHeight;
+          } else {
+            annotation.width = originalAnn.width + deltaX;
+          }
           break;
       }
       // Ensure minimum size
       if (annotation.width < 20) annotation.width = 20;
       if (annotation.height < 20) annotation.height = 20;
       break;
+    }
 
     case 'comment':
       // Initialize width/height if not set
@@ -457,16 +572,11 @@ export function applyMove(annotation, deltaX, deltaY) {
       break;
 
     case 'callout':
-      // Move the text box
+      // Move only the text box - arrow tip stays anchored
       annotation.x += deltaX;
       annotation.y += deltaY;
-      // Also move the callout arm points
-      if (annotation.arrowX !== undefined) annotation.arrowX += deltaX;
-      if (annotation.arrowY !== undefined) annotation.arrowY += deltaY;
-      if (annotation.kneeX !== undefined) annotation.kneeX += deltaX;
-      if (annotation.kneeY !== undefined) annotation.kneeY += deltaY;
-      if (annotation.armOriginX !== undefined) annotation.armOriginX += deltaX;
-      if (annotation.armOriginY !== undefined) annotation.armOriginY += deltaY;
+      // Recalculate leader line from new box position to fixed arrow
+      recalcCalloutLeader(annotation);
       break;
 
     case 'circle':
@@ -580,7 +690,7 @@ export function applyRotation(annotation, mouseX, mouseY, originalAnn) {
   const angle = Math.atan2(mouseY - centerY, mouseX - centerX) * (180 / Math.PI);
 
   // Adjust angle (rotation handle is to the right, so no offset needed)
-  annotation.rotation = angle;
+  annotation.rotation = Math.round(angle);
 
   // Snap to 15 degree increments when shift is held
   if (state.shiftKeyPressed && state.preferences.enableAngleSnap) {

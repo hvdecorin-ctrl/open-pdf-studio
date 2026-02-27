@@ -1,5 +1,5 @@
 import { state } from '../core/state.js';
-import { colorPicker, lineWidth } from '../ui/dom-elements.js';
+import { getColorPickerValue, getLineWidthValue } from '../solid/stores/ribbonStore.js';
 import { createAnnotation } from '../annotations/factory.js';
 import { snapAngle } from '../utils/helpers.js';
 import { calculateDistance, formatMeasurement } from '../annotations/measurement.js';
@@ -14,9 +14,9 @@ export function createAnnotationFromTool(tool, startX, startY, endX, endY, e) {
           type: 'draw',
           page: state.currentPage,
           path: state.currentPath,
-          color: prefs.drawStrokeColor || colorPicker.value,
-          strokeColor: prefs.drawStrokeColor || colorPicker.value,
-          lineWidth: prefs.drawLineWidth || parseInt(lineWidth.value),
+          color: prefs.drawStrokeColor || getColorPickerValue(),
+          strokeColor: prefs.drawStrokeColor || getColorPickerValue(),
+          lineWidth: prefs.drawLineWidth || getLineWidthValue(),
           opacity: (prefs.drawOpacity || 100) / 100
         });
         state.currentPath = [];
@@ -32,8 +32,8 @@ export function createAnnotationFromTool(tool, startX, startY, endX, endY, e) {
         y: Math.min(startY, endY),
         width: Math.abs(endX - startX),
         height: Math.abs(endY - startY),
-        color: prefs.highlightColor || colorPicker.value,
-        fillColor: prefs.highlightColor || colorPicker.value
+        color: prefs.highlightColor || getColorPickerValue(),
+        fillColor: prefs.highlightColor || getColorPickerValue()
       });
 
     case 'line': {
@@ -55,9 +55,9 @@ export function createAnnotationFromTool(tool, startX, startY, endX, endY, e) {
         startY: startY,
         endX: finalEndX,
         endY: finalEndY,
-        color: prefs.lineStrokeColor || colorPicker.value,
-        strokeColor: prefs.lineStrokeColor || colorPicker.value,
-        lineWidth: prefs.lineLineWidth || parseInt(lineWidth.value),
+        color: prefs.lineStrokeColor || getColorPickerValue(),
+        strokeColor: prefs.lineStrokeColor || getColorPickerValue(),
+        lineWidth: prefs.lineLineWidth || getLineWidthValue(),
         borderStyle: prefs.lineBorderStyle || 'solid',
         opacity: (prefs.lineOpacity || 100) / 100
       });
@@ -82,10 +82,10 @@ export function createAnnotationFromTool(tool, startX, startY, endX, endY, e) {
         startY: startY,
         endX: finalEndX,
         endY: finalEndY,
-        color: prefs.arrowStrokeColor || colorPicker.value,
-        strokeColor: prefs.arrowStrokeColor || colorPicker.value,
-        fillColor: prefs.arrowFillColor || prefs.arrowStrokeColor || colorPicker.value,
-        lineWidth: prefs.arrowLineWidth || parseInt(lineWidth.value),
+        color: prefs.arrowStrokeColor || getColorPickerValue(),
+        strokeColor: prefs.arrowStrokeColor || getColorPickerValue(),
+        fillColor: prefs.arrowFillColor || prefs.arrowStrokeColor || getColorPickerValue(),
+        lineWidth: prefs.arrowLineWidth || getLineWidthValue(),
         borderStyle: prefs.arrowBorderStyle || 'solid',
         startHead: prefs.arrowStartHead || 'none',
         endHead: prefs.arrowEndHead || 'open',
@@ -145,9 +145,9 @@ export function createAnnotationFromTool(tool, startX, startY, endX, endY, e) {
         width: endX - startX,
         height: endY - startY,
         sides: 6,
-        color: prefs.polygonStrokeColor || colorPicker.value,
-        strokeColor: prefs.polygonStrokeColor || colorPicker.value,
-        lineWidth: prefs.polygonLineWidth || parseInt(lineWidth.value),
+        color: prefs.polygonStrokeColor || getColorPickerValue(),
+        strokeColor: prefs.polygonStrokeColor || getColorPickerValue(),
+        lineWidth: prefs.polygonLineWidth || getLineWidthValue(),
         opacity: (prefs.polygonOpacity || 100) / 100
       });
 
@@ -164,9 +164,9 @@ export function createAnnotationFromTool(tool, startX, startY, endX, endY, e) {
           y: cloudY,
           width: cloudW,
           height: cloudH,
-          color: prefs.cloudStrokeColor || colorPicker.value,
-          strokeColor: prefs.cloudStrokeColor || colorPicker.value,
-          lineWidth: prefs.cloudLineWidth || parseInt(lineWidth.value),
+          color: prefs.cloudStrokeColor || getColorPickerValue(),
+          strokeColor: prefs.cloudStrokeColor || getColorPickerValue(),
+          lineWidth: prefs.cloudLineWidth || getLineWidthValue(),
           opacity: (prefs.cloudOpacity || 100) / 100
         });
       }
@@ -261,14 +261,25 @@ export function createAnnotationFromTool(tool, startX, startY, endX, endY, e) {
     }
 
     case 'measureDistance': {
-      const dist = calculateDistance(startX, startY, endX, endY);
+      let mEndX = endX;
+      let mEndY = endY;
+      if (e.shiftKey && prefs.enableAngleSnap) {
+        const dx = endX - startX;
+        const dy = endY - startY;
+        const length = Math.sqrt(dx * dx + dy * dy);
+        const currentAngle = Math.atan2(dy, dx) * (180 / Math.PI);
+        const snappedAngle = snapAngle(currentAngle, prefs.angleSnapDegrees) * (Math.PI / 180);
+        mEndX = startX + length * Math.cos(snappedAngle);
+        mEndY = startY + length * Math.sin(snappedAngle);
+      }
+      const dist = calculateDistance(startX, startY, mEndX, mEndY);
       return createAnnotation({
         type: 'measureDistance',
         page: state.currentPage,
         startX: startX,
         startY: startY,
-        endX: endX,
-        endY: endY,
+        endX: mEndX,
+        endY: mEndY,
         color: prefs.measureStrokeColor,
         strokeColor: prefs.measureStrokeColor,
         lineWidth: prefs.measureLineWidth,
@@ -292,9 +303,9 @@ export function createContinuousAnnotation(tool, pageNum, startX, startY, endX, 
           type: 'draw',
           page: pageNum,
           path: state.currentPath,
-          color: colorPicker.value,
-          strokeColor: colorPicker.value,
-          lineWidth: parseInt(lineWidth.value)
+          color: getColorPickerValue(),
+          strokeColor: getColorPickerValue(),
+          lineWidth: getLineWidthValue()
         });
         state.currentPath = [];
         return ann;
@@ -309,8 +320,8 @@ export function createContinuousAnnotation(tool, pageNum, startX, startY, endX, 
         y: Math.min(startY, endY),
         width: Math.abs(endX - startX),
         height: Math.abs(endY - startY),
-        color: colorPicker.value,
-        fillColor: colorPicker.value
+        color: getColorPickerValue(),
+        fillColor: getColorPickerValue()
       });
 
     case 'line':
@@ -321,9 +332,9 @@ export function createContinuousAnnotation(tool, pageNum, startX, startY, endX, 
         startY: startY,
         endX: endX,
         endY: endY,
-        color: colorPicker.value,
-        strokeColor: colorPicker.value,
-        lineWidth: parseInt(lineWidth.value)
+        color: getColorPickerValue(),
+        strokeColor: getColorPickerValue(),
+        lineWidth: getLineWidthValue()
       });
 
     case 'circle': {
@@ -338,10 +349,10 @@ export function createContinuousAnnotation(tool, pageNum, startX, startY, endX, 
         y: circleY,
         width: circleW,
         height: circleH,
-        color: colorPicker.value,
-        strokeColor: colorPicker.value,
-        fillColor: colorPicker.value,
-        lineWidth: parseInt(lineWidth.value)
+        color: getColorPickerValue(),
+        strokeColor: getColorPickerValue(),
+        fillColor: getColorPickerValue(),
+        lineWidth: getLineWidthValue()
       });
     }
 
@@ -357,10 +368,83 @@ export function createContinuousAnnotation(tool, pageNum, startX, startY, endX, 
         y: boxY,
         width: boxW,
         height: boxH,
-        color: colorPicker.value,
-        fillColor: colorPicker.value,
-        strokeColor: colorPicker.value,
-        lineWidth: parseInt(lineWidth.value)
+        color: getColorPickerValue(),
+        fillColor: getColorPickerValue(),
+        strokeColor: getColorPickerValue(),
+        lineWidth: getLineWidthValue()
+      });
+    }
+
+    case 'textbox': {
+      const tbX = Math.min(startX, endX);
+      const tbY = Math.min(startY, endY);
+      const tbW = Math.abs(endX - startX);
+      const tbH = Math.abs(endY - startY);
+      const prefs = state.preferences;
+      if (tbW > 5 && tbH > 5) {
+        return createAnnotation({
+          type: 'textbox',
+          page: pageNum,
+          x: tbX,
+          y: tbY,
+          width: tbW,
+          height: tbH,
+          text: '',
+          color: prefs.textboxStrokeColor,
+          strokeColor: prefs.textboxStrokeColor,
+          fillColor: prefs.textboxFillNone ? 'transparent' : prefs.textboxFillColor,
+          textColor: '#000000',
+          fontSize: prefs.textboxFontSize,
+          fontFamily: 'Arial',
+          lineWidth: prefs.textboxBorderWidth,
+          borderStyle: prefs.textboxBorderStyle,
+          opacity: (prefs.textboxOpacity || 100) / 100
+        });
+      }
+      return null;
+    }
+
+    case 'callout': {
+      const prefs = state.preferences;
+      const defaultWidth = 150;
+      const defaultHeight = 60;
+      const coX = endX - defaultWidth / 2;
+      const coY = endY - defaultHeight / 2;
+      const boxCenterX = endX;
+      const isArrowLeft = startX < boxCenterX;
+      let armOriginX;
+      if (isArrowLeft) {
+        armOriginX = coX;
+      } else {
+        armOriginX = coX + defaultWidth;
+      }
+      const armOriginY = Math.max(coY, Math.min(coY + defaultHeight, endY));
+      const armLength = Math.min(30, Math.abs(startX - armOriginX) * 0.4);
+      const kneeX = isArrowLeft ? armOriginX - armLength : armOriginX + armLength;
+      const kneeY = armOriginY;
+      return createAnnotation({
+        type: 'callout',
+        page: pageNum,
+        x: coX,
+        y: coY,
+        width: defaultWidth,
+        height: defaultHeight,
+        arrowX: startX,
+        arrowY: startY,
+        kneeX: kneeX,
+        kneeY: kneeY,
+        armOriginX: armOriginX,
+        armOriginY: armOriginY,
+        text: '',
+        color: prefs.calloutStrokeColor,
+        strokeColor: prefs.calloutStrokeColor,
+        fillColor: prefs.calloutFillNone ? 'transparent' : prefs.calloutFillColor,
+        textColor: '#000000',
+        fontSize: prefs.calloutFontSize,
+        fontFamily: 'Arial',
+        lineWidth: prefs.calloutBorderWidth,
+        borderStyle: prefs.calloutBorderStyle,
+        opacity: (prefs.calloutOpacity || 100) / 100
       });
     }
 

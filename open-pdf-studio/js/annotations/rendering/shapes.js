@@ -58,15 +58,66 @@ export function drawCloudShape(ctx, x, y, width, height) {
   ctx.stroke();
 }
 
+// Compute the minimum height needed for textbox content (same word-wrap logic as drawTextboxContent)
+export function computeTextboxContentHeight(annotation) {
+  if (!annotation.text) return annotation.height || 50;
+
+  const width = annotation.width || 150;
+  const fontSize = annotation.fontSize || 14;
+  const lineSpacing = annotation.lineSpacing || 1.5;
+  const lineHeight = fontSize * lineSpacing;
+  const padding = (annotation.lineWidth || 1) + 2;
+  const maxWidth = width - padding * 2;
+
+  const fontFamily = annotation.fontFamily || 'Arial';
+  const fontStyle = (annotation.fontItalic ? 'italic ' : '') + (annotation.fontBold ? 'bold ' : '');
+  const font = `${fontStyle}${fontSize}px ${fontFamily}`;
+
+  // Use offscreen canvas for text measurement
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+  ctx.font = font;
+
+  const paragraphs = annotation.text.split('\n');
+  let totalLines = 0;
+
+  for (const para of paragraphs) {
+    if (!para) {
+      // Empty line counts as one line
+      totalLines++;
+      continue;
+    }
+    const words = para.split(' ');
+    let line = '';
+    let paraLines = 0;
+
+    for (let i = 0; i < words.length; i++) {
+      const testLine = line + words[i] + ' ';
+      if (ctx.measureText(testLine).width > maxWidth && i > 0) {
+        paraLines++;
+        line = words[i] + ' ';
+      } else {
+        line = testLine;
+      }
+    }
+    if (line.trim()) paraLines++;
+    totalLines += paraLines;
+  }
+
+  return padding * 2 + totalLines * lineHeight;
+}
+
 // Draw textbox content with word wrap
-export function drawTextboxContent(ctx, annotation, padding = 0) {
+export function drawTextboxContent(ctx, annotation, padding) {
   if (!annotation.text) return;
 
   const width = annotation.width || 150;
   const height = annotation.height || 50;
   const fontSize = annotation.fontSize || 14;
-  const lineSpacing = annotation.lineSpacing || 1.2;
+  const lineSpacing = annotation.lineSpacing || 1.5;
   const lineHeight = fontSize * lineSpacing;
+  // Use same padding as the textarea editor: borderWidth + 2
+  if (padding === undefined) padding = (annotation.lineWidth || 1) + 2;
 
   // Build font string with style options
   const fontFamily = annotation.fontFamily || 'Arial';
@@ -80,11 +131,18 @@ export function drawTextboxContent(ctx, annotation, padding = 0) {
   const maxWidth = width - padding * 2;
 
   // Word wrap text with newline support
+  // Line spacing only applies below text, not above first line
   const paragraphs = annotation.text.split('\n');
   let y = annotation.y + padding;
 
   for (let p = 0; p < paragraphs.length; p++) {
     if (y >= annotation.y + height) break;
+
+    // Empty line: just advance y
+    if (!paragraphs[p]) {
+      y += lineHeight;
+      continue;
+    }
 
     const words = paragraphs[p].split(' ');
     let line = '';

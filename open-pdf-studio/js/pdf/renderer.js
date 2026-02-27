@@ -1,8 +1,7 @@
 import { state, getPageRotation, setPageRotation } from '../core/state.js';
-import {
-  pdfCanvas, annotationCanvas, pdfCtx,
-  pageInfo, pageInput, pageTotal, prevPageBtn, nextPageBtn, zoomLevel
-} from '../ui/dom-elements.js';
+// Always-fresh DOM refs (never stale regardless of init timing or bundler behavior)
+function getPdfCanvas() { return document.getElementById('pdf-canvas'); }
+function getAnnotationCanvas() { return document.getElementById('annotation-canvas'); }
 import { redrawAnnotations, renderAnnotationsForPage } from '../annotations/rendering.js';
 import { ensureAnnotationsForPage, hidePdfABar } from './loader.js';
 import { updateAllStatus } from '../ui/chrome/status-bar.js';
@@ -37,6 +36,10 @@ export async function renderPage(pageNum) {
     viewportOpts.rotation = (page.rotate + extraRotation) % 360;
   }
   const viewport = page.getViewport(viewportOpts);
+
+  const pdfCanvas = getPdfCanvas();
+  const annotationCanvas = getAnnotationCanvas();
+  if (!pdfCanvas || !annotationCanvas) return;
 
   // Set canvas dimensions
   pdfCanvas.width = viewport.width;
@@ -110,13 +113,6 @@ export async function renderPage(pageNum) {
 
   // Redraw annotations
   redrawAnnotations();
-
-  // Update page info
-  pageInput.value = pageNum;
-  pageInput.max = state.pdfDoc.numPages;
-  pageTotal.textContent = state.pdfDoc.numPages;
-  prevPageBtn.disabled = pageNum === 1;
-  nextPageBtn.disabled = pageNum === state.pdfDoc.numPages;
 
   // Update status bar
   updateAllStatus();
@@ -275,13 +271,6 @@ export async function renderContinuous() {
     continuousContainer.appendChild(pageWrapper);
   }
 
-  // Update page info (disable input in continuous mode)
-  pageInput.value = 1;
-  pageInput.max = state.pdfDoc.numPages;
-  pageInput.disabled = true;
-  pageTotal.textContent = state.pdfDoc.numPages;
-  prevPageBtn.disabled = true;
-  nextPageBtn.disabled = true;
   updateAllStatus();
 
   // Setup IntersectionObserver to lazily render pages as they scroll into view
@@ -309,10 +298,11 @@ export async function renderContinuous() {
 // Setup mouse events for continuous mode pages
 function setupContinuousPageEvents(canvas, pageNum) {
   // Import event handlers dynamically to avoid circular dependencies
-  import('../tools/mouse-handlers.js').then(({ handleContinuousMouseDown, handleContinuousMouseMove, handleContinuousMouseUp }) => {
+  import('../tools/mouse-handlers.js').then(({ handleContinuousMouseDown, handleContinuousMouseMove, handleContinuousMouseUp, handleContinuousDblClick }) => {
     canvas.addEventListener('mousedown', (e) => handleContinuousMouseDown(e, pageNum));
     canvas.addEventListener('mousemove', (e) => handleContinuousMouseMove(e, pageNum));
     canvas.addEventListener('mouseup', (e) => handleContinuousMouseUp(e, pageNum));
+    canvas.addEventListener('dblclick', (e) => handleContinuousDblClick(e, pageNum));
   });
 }
 
@@ -327,20 +317,11 @@ export async function setViewMode(mode) {
   if (mode === 'single') {
     singleContainer.style.display = 'inline-block';
     continuousContainer.style.display = 'none';
-    pageInput.disabled = false;
     await renderPage(state.currentPage);
-
-    // Update button states
-    document.getElementById('single-page')?.classList.add('active');
-    document.getElementById('continuous')?.classList.remove('active');
   } else if (mode === 'continuous') {
     singleContainer.style.display = 'none';
     continuousContainer.style.display = 'flex';
     await renderContinuous();
-
-    // Update button states
-    document.getElementById('single-page')?.classList.remove('active');
-    document.getElementById('continuous')?.classList.add('active');
   }
 }
 
@@ -375,7 +356,7 @@ export async function goToPage(pageNum) {
 // Zoom controls
 export async function zoomIn() {
   state.scale += 0.25;
-  zoomLevel.value = `${Math.round(state.scale * 100)}%`;
+
 
   if (state.viewMode === 'continuous') {
     await renderContinuous();
@@ -387,7 +368,7 @@ export async function zoomIn() {
 export async function zoomOut() {
   if (state.scale > 0.5) {
     state.scale -= 0.25;
-    zoomLevel.value = `${Math.round(state.scale * 100)}%`;
+  
 
     if (state.viewMode === 'continuous') {
       await renderContinuous();
@@ -399,7 +380,7 @@ export async function zoomOut() {
 
 export async function setZoom(newScale) {
   state.scale = newScale;
-  zoomLevel.value = `${Math.round(state.scale * 100)}%`;
+
 
   if (state.viewMode === 'continuous') {
     await renderContinuous();
@@ -420,7 +401,7 @@ export async function fitWidth() {
   const containerWidth = container.clientWidth - 40; // padding
   state.scale = containerWidth / viewport.width;
 
-  zoomLevel.value = `${Math.round(state.scale * 100)}%`;
+
 
   if (state.viewMode === 'continuous') {
     await renderContinuous();
@@ -444,7 +425,7 @@ export async function fitPage() {
   const scaleY = containerHeight / viewport.height;
   state.scale = Math.min(scaleX, scaleY);
 
-  zoomLevel.value = `${Math.round(state.scale * 100)}%`;
+
 
   if (state.viewMode === 'continuous') {
     await renderContinuous();
@@ -455,7 +436,6 @@ export async function fitPage() {
 
 export async function actualSize() {
   state.scale = 1;
-  zoomLevel.value = '100%';
 
   if (state.pdfDoc) {
     if (state.viewMode === 'continuous') {
@@ -491,7 +471,12 @@ export async function rotatePage(delta, targetPage) {
 
 // Clear the PDF view when no document is open
 export function clearPdfView() {
+  const pdfCanvas = getPdfCanvas();
+  const annotationCanvas = getAnnotationCanvas();
+  if (!pdfCanvas || !annotationCanvas) return;
+
   // Clear single page mode canvases
+  const pdfCtx = pdfCanvas.getContext('2d');
   pdfCtx.clearRect(0, 0, pdfCanvas.width, pdfCanvas.height);
   const annotationCtx = annotationCanvas.getContext('2d');
   annotationCtx.clearRect(0, 0, annotationCanvas.width, annotationCanvas.height);
@@ -512,24 +497,12 @@ export function clearPdfView() {
   hideFormFieldsBar();
   hidePdfABar();
 
-  // Reset page info
-  pageInput.value = '';
-  pageInput.disabled = true;
-  pageTotal.textContent = '0';
-  prevPageBtn.disabled = true;
-  nextPageBtn.disabled = true;
-  zoomLevel.value = '100%';
-
   // Show placeholder if no documents open
   const placeholder = document.getElementById('placeholder');
   const pdfContainer = document.getElementById('pdf-container');
   if (placeholder) placeholder.style.display = 'flex';
   if (pdfContainer) pdfContainer.classList.remove('visible');
 
-  // Hide PDF controls in status bar
-  const pdfControls = document.getElementById('pdf-controls');
-  if (pdfControls) pdfControls.style.display = 'none';
-
-  // Update status bar
+  // Update status bar (derives from reactive state)
   updateAllStatus();
 }

@@ -1,20 +1,25 @@
 import { state, addToSelection, removeFromSelection, isSelected, clearSelection, getAnnotationBounds, getSelectionBounds } from '../core/state.js';
-import { annotationCanvas, annotationCtx, colorPicker, lineWidth, pdfContainer } from '../ui/dom-elements.js';
+import { annotationCanvas, annotationCtx, pdfContainer } from '../ui/dom-elements.js';
+import { getColorPickerValue, getLineWidthValue } from '../solid/stores/ribbonStore.js';
 import { createAnnotation, cloneAnnotation } from '../annotations/factory.js';
 import { findAnnotationAt } from '../annotations/geometry.js';
 import { findHandleAt, getCursorForHandle } from '../annotations/handles.js';
 import { applyResize, applyMove, applyRotation } from '../annotations/transforms.js';
 import { redrawAnnotations, redrawContinuous, renderAnnotationsForPage, snapToGrid } from '../annotations/rendering.js';
 import { showProperties, hideProperties, showMultiSelectionProperties } from '../ui/panels/properties-panel.js';
-import { startTextEditing, addTextAnnotation, addComment } from './text-editing.js';
+import { startTextEditing, finishTextEditing, addTextAnnotation, addComment } from './text-editing.js';
+import { findTextEditAtPosition, startTextEditEditing } from './text-edit-tool.js';
 import { markDocumentModified } from '../ui/chrome/tabs.js';
 import { recordAdd, recordModify, recordBulkModify } from '../core/undo-manager.js';
 import { showStampPicker } from '../annotations/stamps.js';
 import { showSignatureDialog } from '../annotations/signature.js';
 import { startPan, startContinuousPan, handlePanMove, handleMiddleButtonPanEnd } from './pan-handler.js';
+import { snapAngle } from '../utils/helpers.js';
 import { drawShapePreview } from './shape-preview.js';
 import { createAnnotationFromTool, createContinuousAnnotation } from './annotation-creators.js';
 import { isPdfAReadOnly } from '../pdf/loader.js';
+import { calculateDistance, calculateArea, calculatePerimeter, formatMeasurement } from '../annotations/measurement.js';
+import { performSnap, drawSnapIndicator } from './snap-engine.js';
 
 // Check if any modal dialog/overlay is blocking interaction
 function isModalDialogOpen() {
@@ -38,13 +43,21 @@ export function handleMouseDown(e) {
   if (!state.pdfDoc) return;
   if (isModalDialogOpen()) return;
 
+  // Finish inline text editing when clicking outside
+  if (state.isEditingText) {
+    finishTextEditing();
+  }
+
   const rect = annotationCanvas.getBoundingClientRect();
   // Convert to unscaled coordinates
   const x = (e.clientX - rect.left) / state.scale;
   const y = (e.clientY - rect.top) / state.scale;
 
-  state.startX = snapToGrid(x);
-  state.startY = snapToGrid(y);
+  // Apply object snap then grid snap to start coordinates
+  const startSnap = performSnap(x, y, state.annotations, state.currentPage, state.scale);
+  state.startX = startSnap.snapped ? startSnap.x : snapToGrid(x);
+  state.startY = startSnap.snapped ? startSnap.y : snapToGrid(y);
+  state.lastSnapResult = startSnap.snapped ? startSnap : null;
   state.dragStartX = x;
   state.dragStartY = y;
 
@@ -54,9 +67,42 @@ export function handleMouseDown(e) {
     return;
   }
 
-  // Handle hand tool (panning)
+  // Ignore right-click — handled by context menu
+  if (e.button === 2) return;
+
+  // Handle hand tool (panning, allow annotation selection, dragging and resizing)
   if (state.currentTool === 'hand') {
-    startPan(e, false);
+    // Check for resize handle on already-selected annotation
+    if (state.selectedAnnotation && state.selectedAnnotations.length === 1) {
+      const handleType = findHandleAt(x, y, state.selectedAnnotation, state.scale);
+      if (handleType) {
+        state.isResizing = true;
+        state.activeHandle = handleType;
+        state.dragStartX = x;
+        state.dragStartY = y;
+        state.originalAnnotation = cloneAnnotation(state.selectedAnnotation);
+        annotationCanvas.style.cursor = getCursorForHandle(handleType, state.selectedAnnotation.rotation, state.selectedAnnotation);
+        return;
+      }
+    }
+
+    const clickedAnnotation = findAnnotationAt(x, y);
+    if (clickedAnnotation) {
+      state.selectedAnnotations = [clickedAnnotation];
+      showProperties(clickedAnnotation);
+      state.isDragging = true;
+      state.dragStartX = x;
+      state.dragStartY = y;
+      state.originalAnnotation = cloneAnnotation(clickedAnnotation);
+      state.originalAnnotations = [cloneAnnotation(clickedAnnotation)];
+      annotationCanvas.style.cursor = 'move';
+      redrawAnnotations();
+    } else {
+      clearSelection();
+      hideProperties();
+      startPan(e, false);
+      redrawAnnotations();
+    }
     return;
   }
 
@@ -65,8 +111,13 @@ export function handleMouseDown(e) {
     return;
   }
 
-  // Edit text tool is handled by text layer click handlers, not annotation canvas
+  // Edit text tool: first check for textEdit records at click position
   if (state.currentTool === 'editText') {
+    const canvas = annotationCanvas;
+    const hitEdit = findTextEditAtPosition(x, y, state.currentPage, canvas);
+    if (hitEdit) {
+      startTextEditEditing(hitEdit, state.currentPage, canvas);
+    }
     return;
   }
 
@@ -81,7 +132,7 @@ export function handleMouseDown(e) {
         state.isResizing = true;
         state.activeHandle = handleType;
         state.originalAnnotation = cloneAnnotation(state.selectedAnnotation);
-        annotationCanvas.style.cursor = getCursorForHandle(handleType, state.selectedAnnotation.rotation);
+        annotationCanvas.style.cursor = getCursorForHandle(handleType, state.selectedAnnotation.rotation, state.selectedAnnotation);
         return;
       }
     }
@@ -177,8 +228,11 @@ export function handleMouseDown(e) {
       return;
     }
 
-    // Single click - add point
-    state.polylinePoints.push({ x, y });
+    // Single click - add point (with object snap, including in-progress vertices)
+    const polySnap = performSnap(x, y, state.annotations, state.currentPage, state.scale, null, state.polylinePoints);
+    const polyPtX = polySnap.snapped ? polySnap.x : x;
+    const polyPtY = polySnap.snapped ? polySnap.y : y;
+    state.polylinePoints.push({ x: polyPtX, y: polyPtY });
     state.isDrawingPolyline = true;
     redrawAnnotations();
 
@@ -228,9 +282,60 @@ export function handleMouseDown(e) {
   } else if (state.currentTool === 'measureArea' || state.currentTool === 'measurePerimeter') {
     // Multi-click to add points; use polyline-like behavior
     if (!state.measurePoints) state.measurePoints = [];
-    state.measurePoints.push({ x, y });
+    // Try object snap first (including in-progress vertices)
+    const mSnapResult = performSnap(x, y, state.annotations, state.currentPage, state.scale, null, state.measurePoints);
+    let ptX = mSnapResult.snapped ? mSnapResult.x : x;
+    let ptY = mSnapResult.snapped ? mSnapResult.y : y;
+    // Snap angle relative to last placed point when Shift is held (only if not object-snapped)
+    if (!mSnapResult.snapped && e.shiftKey && state.preferences.enableAngleSnap && state.measurePoints.length > 0) {
+      const last = state.measurePoints[state.measurePoints.length - 1];
+      const dx = x - last.x;
+      const dy = y - last.y;
+      const length = Math.sqrt(dx * dx + dy * dy);
+      const angle = Math.atan2(dy, dx) * (180 / Math.PI);
+      const snapped = snapAngle(angle, state.preferences.angleSnapDegrees) * (Math.PI / 180);
+      ptX = last.x + length * Math.cos(snapped);
+      ptY = last.y + length * Math.sin(snapped);
+    }
+    state.measurePoints.push({ x: ptX, y: ptY });
     state.isDrawing = false;
     redrawAnnotations();
+
+    // Draw in-progress measurement so points remain visible after click
+    if (state.measurePoints.length > 0) {
+      const mPrefs = state.preferences;
+      const mColor = mPrefs.measureStrokeColor || '#FF0000';
+      const ctx = annotationCtx || annotationCanvas.getContext('2d');
+      ctx.save();
+      ctx.scale(state.scale, state.scale);
+      ctx.strokeStyle = mColor;
+      ctx.lineWidth = mPrefs.measureLineWidth || 1;
+      ctx.globalAlpha = (mPrefs.measureOpacity || 100) / 100;
+      ctx.setLineDash([4, 2]);
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      ctx.beginPath();
+      state.measurePoints.forEach((point, index) => {
+        if (index === 0) ctx.moveTo(point.x, point.y);
+        else ctx.lineTo(point.x, point.y);
+      });
+      if (state.currentTool === 'measureArea' && state.measurePoints.length > 2) {
+        ctx.closePath();
+        ctx.fillStyle = mColor + '20';
+        ctx.fill();
+      }
+      ctx.stroke();
+      ctx.setLineDash([]);
+      // Draw vertex markers
+      state.measurePoints.forEach(point => {
+        ctx.beginPath();
+        ctx.arc(point.x, point.y, 3, 0, 2 * Math.PI);
+        ctx.fillStyle = mColor;
+        ctx.fill();
+      });
+      ctx.globalAlpha = 1;
+      ctx.restore();
+    }
   }
 }
 
@@ -245,6 +350,21 @@ export function handleMouseMove(e) {
   const rect = annotationCanvas.getBoundingClientRect();
   const currentX = (e.clientX - rect.left) / state.scale;
   const currentY = (e.clientY - rect.top) / state.scale;
+
+  // Hand tool: show resize cursors on handles, annotation hover, or grab for panning
+  if (state.currentTool === 'hand' && !state.isDragging && !state.isResizing) {
+    // Check resize handles on selected annotation
+    if (state.selectedAnnotation && state.selectedAnnotations.length === 1) {
+      const handleType = findHandleAt(currentX, currentY, state.selectedAnnotation, state.scale);
+      if (handleType) {
+        annotationCanvas.style.cursor = getCursorForHandle(handleType, state.selectedAnnotation.rotation, state.selectedAnnotation);
+        return;
+      }
+    }
+    const hoverAnnotation = findAnnotationAt(currentX, currentY);
+    annotationCanvas.style.cursor = hoverAnnotation ? 'default' : 'grab';
+    return;
+  }
 
   // Rubber band selection drawing
   if (state.isRubberBanding && (state.currentTool === 'select' || state.currentTool === 'selectComments')) {
@@ -273,7 +393,7 @@ export function handleMouseMove(e) {
     if (state.selectedAnnotations.length === 1) {
       const handleType = findHandleAt(currentX, currentY, state.selectedAnnotation, state.scale);
       if (handleType) {
-        annotationCanvas.style.cursor = getCursorForHandle(handleType, state.selectedAnnotation.rotation);
+        annotationCanvas.style.cursor = getCursorForHandle(handleType, state.selectedAnnotation.rotation, state.selectedAnnotation);
         return;
       }
     }
@@ -364,6 +484,11 @@ export function handleMouseMove(e) {
   // Handle polyline preview
   if (state.currentTool === 'polyline' && state.isDrawingPolyline && state.polylinePoints.length > 0) {
     const polyPrefs = state.preferences;
+    // Snap cursor position for preview
+    const polyPreviewSnap = performSnap(currentX, currentY, state.annotations, state.currentPage, state.scale, null, state.polylinePoints);
+    const polySnapX = polyPreviewSnap.snapped ? polyPreviewSnap.x : currentX;
+    const polySnapY = polyPreviewSnap.snapped ? polyPreviewSnap.y : currentY;
+    state.lastSnapResult = polyPreviewSnap.snapped ? polyPreviewSnap : null;
     redrawAnnotations();
     annotationCtx.save();
     annotationCtx.scale(state.scale, state.scale);
@@ -380,8 +505,8 @@ export function handleMouseMove(e) {
         annotationCtx.lineTo(point.x, point.y);
       }
     });
-    // Draw line to current mouse position
-    annotationCtx.lineTo(currentX, currentY);
+    // Draw line to snapped cursor position
+    annotationCtx.lineTo(polySnapX, polySnapY);
     annotationCtx.stroke();
     // Draw small circles at each point
     state.polylinePoints.forEach(point => {
@@ -390,11 +515,124 @@ export function handleMouseMove(e) {
       annotationCtx.fillStyle = polyPrefs.polylineStrokeColor;
       annotationCtx.fill();
     });
+    // Draw snap indicator
+    if (polyPreviewSnap.snapped) {
+      drawSnapIndicator(annotationCtx, polyPreviewSnap, state.scale);
+    }
     annotationCtx.restore();
     return;
   }
 
-  if (!state.isDrawing) return;
+  // Handle measureArea / measurePerimeter preview
+  if ((state.currentTool === 'measureArea' || state.currentTool === 'measurePerimeter') &&
+      state.measurePoints && state.measurePoints.length > 0) {
+    const mPrefs = state.preferences;
+    const mColor = mPrefs.measureStrokeColor || '#FF0000';
+    // Object snap for measurement preview (including in-progress vertices)
+    const mPreviewSnap = performSnap(currentX, currentY, state.annotations, state.currentPage, state.scale, null, state.measurePoints);
+    state.lastSnapResult = mPreviewSnap.snapped ? mPreviewSnap : null;
+    redrawAnnotations();
+    annotationCtx.save();
+    annotationCtx.scale(state.scale, state.scale);
+    annotationCtx.strokeStyle = mColor;
+    annotationCtx.lineWidth = mPrefs.measureLineWidth || 1;
+    annotationCtx.globalAlpha = (mPrefs.measureOpacity || 100) / 100;
+    annotationCtx.setLineDash([4, 2]);
+    annotationCtx.lineCap = 'round';
+    annotationCtx.lineJoin = 'round';
+
+    // Use object snap if available, otherwise angle snap
+    let snapX = mPreviewSnap.snapped ? mPreviewSnap.x : currentX;
+    let snapY = mPreviewSnap.snapped ? mPreviewSnap.y : currentY;
+    if (!mPreviewSnap.snapped && e.shiftKey && mPrefs.enableAngleSnap) {
+      const last = state.measurePoints[state.measurePoints.length - 1];
+      const dx = currentX - last.x;
+      const dy = currentY - last.y;
+      const length = Math.sqrt(dx * dx + dy * dy);
+      const angle = Math.atan2(dy, dx) * (180 / Math.PI);
+      const snapped = snapAngle(angle, mPrefs.angleSnapDegrees) * (Math.PI / 180);
+      snapX = last.x + length * Math.cos(snapped);
+      snapY = last.y + length * Math.sin(snapped);
+    }
+
+    // Build the current set of points including cursor position
+    const previewPoints = [...state.measurePoints, { x: snapX, y: snapY }];
+
+    // Draw lines connecting all points
+    annotationCtx.beginPath();
+    previewPoints.forEach((point, index) => {
+      if (index === 0) annotationCtx.moveTo(point.x, point.y);
+      else annotationCtx.lineTo(point.x, point.y);
+    });
+
+    if (state.currentTool === 'measureArea' && previewPoints.length > 2) {
+      // Close the polygon and fill
+      annotationCtx.closePath();
+      annotationCtx.fillStyle = mColor + '20';
+      annotationCtx.fill();
+      annotationCtx.stroke();
+    } else {
+      annotationCtx.stroke();
+    }
+    annotationCtx.setLineDash([]);
+
+    // Draw vertex markers at placed points
+    state.measurePoints.forEach(point => {
+      annotationCtx.beginPath();
+      annotationCtx.arc(point.x, point.y, 3, 0, 2 * Math.PI);
+      annotationCtx.fillStyle = mColor;
+      annotationCtx.fill();
+    });
+
+    // Draw live measurement text
+    annotationCtx.font = '11px Arial';
+    annotationCtx.fillStyle = mColor;
+    if (state.currentTool === 'measureArea' && previewPoints.length >= 3) {
+      const area = calculateArea(previewPoints);
+      const areaText = formatMeasurement(area);
+      let cx = 0, cy = 0;
+      for (const p of previewPoints) { cx += p.x; cy += p.y; }
+      cx /= previewPoints.length;
+      cy /= previewPoints.length;
+      annotationCtx.textAlign = 'center';
+      annotationCtx.fillText(areaText, cx, cy);
+      annotationCtx.textAlign = 'left';
+    } else if (state.currentTool === 'measurePerimeter' && previewPoints.length >= 2) {
+      const perim = calculatePerimeter(previewPoints);
+      const perimText = formatMeasurement(perim);
+      annotationCtx.fillText(perimText, snapX + 8, snapY - 4);
+    }
+
+    // Draw snap indicator for measurement preview
+    if (mPreviewSnap.snapped) {
+      annotationCtx.globalAlpha = 1;
+      drawSnapIndicator(annotationCtx, mPreviewSnap, state.scale);
+    }
+    annotationCtx.globalAlpha = 1;
+    annotationCtx.restore();
+    return;
+  }
+
+  // Show snap indicator when hovering with a drawing tool (before click)
+  if (!state.isDrawing) {
+    const drawingTools = ['line', 'arrow', 'box', 'circle', 'highlight', 'textbox', 'callout',
+      'polygon', 'cloud', 'measureDistance', 'polyline', 'measureArea', 'measurePerimeter'];
+    if (drawingTools.includes(state.currentTool)) {
+      const hoverSnap = performSnap(currentX, currentY, state.annotations, state.currentPage, state.scale);
+      if (hoverSnap.snapped) {
+        state.lastSnapResult = hoverSnap;
+        redrawAnnotations();
+        annotationCtx.save();
+        annotationCtx.scale(state.scale, state.scale);
+        drawSnapIndicator(annotationCtx, hoverSnap, state.scale);
+        annotationCtx.restore();
+      } else if (state.lastSnapResult) {
+        state.lastSnapResult = null;
+        redrawAnnotations();
+      }
+    }
+    return;
+  }
 
   // Drawing preview for various tools
   if (state.currentTool === 'draw') {
@@ -402,18 +640,26 @@ export function handleMouseMove(e) {
     // Draw temporary line with scale
     annotationCtx.save();
     annotationCtx.scale(state.scale, state.scale);
-    annotationCtx.strokeStyle = colorPicker.value;
-    annotationCtx.lineWidth = parseInt(lineWidth.value);
+    const drawPrefs = state.preferences;
+    annotationCtx.strokeStyle = drawPrefs.drawStrokeColor || getColorPickerValue();
+    annotationCtx.lineWidth = drawPrefs.drawLineWidth || getLineWidthValue();
+    annotationCtx.globalAlpha = (drawPrefs.drawOpacity || 100) / 100;
     annotationCtx.lineCap = 'round';
     annotationCtx.lineJoin = 'round';
     annotationCtx.beginPath();
     annotationCtx.moveTo(state.currentPath[state.currentPath.length - 2].x, state.currentPath[state.currentPath.length - 2].y);
     annotationCtx.lineTo(currentX, currentY);
     annotationCtx.stroke();
+    annotationCtx.globalAlpha = 1;
     annotationCtx.restore();
   } else {
+    // Snap cursor position for shape preview (object snap overrides grid snap)
+    const shapeSnap = performSnap(currentX, currentY, state.annotations, state.currentPage, state.scale);
+    const previewX = shapeSnap.snapped ? shapeSnap.x : currentX;
+    const previewY = shapeSnap.snapped ? shapeSnap.y : currentY;
+    state.lastSnapResult = shapeSnap.snapped ? shapeSnap : null;
     // Show preview for shape tools
-    drawShapePreview(currentX, currentY, e);
+    drawShapePreview(previewX, previewY, e);
   }
 }
 
@@ -485,7 +731,7 @@ export function handleMouseUp(e) {
     state.originalAnnotations = [];
     state._ctrlDragCopy = false;
     state._ctrlCopiesCreated = false;
-    annotationCanvas.style.cursor = 'default';
+    annotationCanvas.style.cursor = state.currentTool === 'hand' ? 'grab' : 'default';
 
     // Update properties panel with new values
     if (state.selectedAnnotations.length === 1 && state.selectedAnnotation) {
@@ -499,13 +745,19 @@ export function handleMouseUp(e) {
   if (!state.isDrawing) return;
 
   const rect = annotationCanvas.getBoundingClientRect();
-  const endX = snapToGrid((e.clientX - rect.left) / state.scale);
-  const endY = snapToGrid((e.clientY - rect.top) / state.scale);
+  const rawEndX = (e.clientX - rect.left) / state.scale;
+  const rawEndY = (e.clientY - rect.top) / state.scale;
+  // Object snap on end point, fall back to grid snap
+  const endSnap = performSnap(rawEndX, rawEndY, state.annotations, state.currentPage, state.scale);
+  const endX = endSnap.snapped ? endSnap.x : snapToGrid(rawEndX);
+  const endY = endSnap.snapped ? endSnap.y : snapToGrid(rawEndY);
+  state.lastSnapResult = null;
 
   const annotationCountBefore = state.annotations.length;
 
   // Create annotation based on tool
-  const ann = createAnnotationFromTool(state.currentTool, state.startX, state.startY, endX, endY, e);
+  const currentTool = state.currentTool;
+  const ann = createAnnotationFromTool(currentTool, state.startX, state.startY, endX, endY, e);
   if (ann) {
     state.annotations.push(ann);
   }
@@ -518,19 +770,38 @@ export function handleMouseUp(e) {
   }
 
   redrawAnnotations();
+
+  // Auto-start text editing for textbox/callout after creation
+  if (ann && ['textbox', 'callout'].includes(ann.type)) {
+    state.selectedAnnotations = [ann];
+    showProperties(ann);
+    startTextEditing(ann);
+  }
 }
 
 // Mouse event handlers for continuous mode
 export function handleContinuousMouseDown(e, pageNum) {
   if (isModalDialogOpen()) return;
+
+  // Finish inline text editing when clicking outside
+  if (state.isEditingText) {
+    finishTextEditing();
+  }
+
   const canvas = e.target;
   const rect = canvas.getBoundingClientRect();
-  state.startX = (e.clientX - rect.left) / state.scale;
-  state.startY = (e.clientY - rect.top) / state.scale;
+  const rawX = (e.clientX - rect.left) / state.scale;
+  const rawY = (e.clientY - rect.top) / state.scale;
 
   state.activeContinuousCanvas = canvas;
   state.activeContinuousPage = pageNum;
   state.currentPage = pageNum;
+
+  // Object snap the start point
+  const contStartSnap = performSnap(rawX, rawY, state.annotations, pageNum, state.scale);
+  state.startX = contStartSnap.snapped ? contStartSnap.x : rawX;
+  state.startY = contStartSnap.snapped ? contStartSnap.y : rawY;
+  state.lastSnapResult = contStartSnap.snapped ? contStartSnap : null;
 
   // Handle middle mouse button panning (works regardless of current tool)
   if (e.button === 1) {
@@ -538,9 +809,27 @@ export function handleContinuousMouseDown(e, pageNum) {
     return;
   }
 
-  // Handle hand tool (panning) - use same document-level handlers as single page mode
+  // Handle hand tool (panning, but allow annotation selection and dragging)
   if (state.currentTool === 'hand') {
-    startContinuousPan(e, false);
+    const clickedAnnotation = findAnnotationAt(state.startX, state.startY);
+    if (clickedAnnotation) {
+      state.selectedAnnotations = [clickedAnnotation];
+      showProperties(clickedAnnotation);
+      state.isDragging = true;
+      state.dragStartX = state.startX;
+      state.dragStartY = state.startY;
+      state.originalAnnotation = cloneAnnotation(clickedAnnotation);
+      state.originalAnnotations = [cloneAnnotation(clickedAnnotation)];
+      state.activeContinuousCanvas = canvas;
+      state.activeContinuousPage = pageNum;
+      canvas.style.cursor = 'move';
+      redrawContinuous();
+    } else {
+      clearSelection();
+      hideProperties();
+      startContinuousPan(e, false);
+      redrawContinuous();
+    }
     return;
   }
 
@@ -554,8 +843,14 @@ export function handleContinuousMouseDown(e, pageNum) {
     return;
   }
 
-  // Edit text tool is handled by text layer click handlers, not annotation canvas
-  if (state.currentTool === 'editText') return;
+  // Edit text tool: first check for textEdit records at click position
+  if (state.currentTool === 'editText') {
+    const hitEdit = findTextEditAtPosition(state.startX, state.startY, pageNum, canvas);
+    if (hitEdit) {
+      startTextEditEditing(hitEdit, pageNum, canvas);
+    }
+    return;
+  }
 
   // Block annotation tools when PDF/A read-only is active
   if (isPdfAReadOnly()) return;
@@ -568,7 +863,7 @@ export function handleContinuousMouseDown(e, pageNum) {
     addComment(state.startX, state.startY);
     state.isDrawing = false;
   } else if (state.currentTool === 'text') {
-    addTextAnnotation(state.startX, state.startY);
+    addTextAnnotation(state.startX, state.startY, pageNum, canvas);
     state.isDrawing = false;
   }
 }
@@ -577,6 +872,18 @@ export function handleContinuousMouseMove(e, pageNum) {
   if (isModalDialogOpen()) return;
   // Hand tool panning is handled by document-level listener
   if (state.isPanning) return;
+
+  // Hand tool: change cursor when hovering over annotations
+  if (state.currentTool === 'hand') {
+    const canvas = e.target;
+    const rect = canvas.getBoundingClientRect();
+    const hx = (e.clientX - rect.left) / state.scale;
+    const hy = (e.clientY - rect.top) / state.scale;
+    state.currentPage = pageNum;
+    const hoverAnnotation = findAnnotationAt(hx, hy);
+    canvas.style.cursor = hoverAnnotation ? 'default' : 'grab';
+    return;
+  }
 
   if (!state.isDrawing) return;
   if (state.activeContinuousPage !== pageNum) return;
@@ -588,43 +895,96 @@ export function handleContinuousMouseMove(e, pageNum) {
   const currentY = (e.clientY - rect.top) / state.scale;
   const ctx = canvas.getContext('2d');
 
+  const prefs = state.preferences;
   if (state.currentTool === 'draw') {
     state.currentPath.push({ x: currentX, y: currentY });
-    ctx.strokeStyle = colorPicker.value;
-    ctx.lineWidth = parseInt(lineWidth.value);
+    ctx.strokeStyle = prefs.drawStrokeColor || getColorPickerValue();
+    ctx.lineWidth = prefs.drawLineWidth || getLineWidthValue();
+    ctx.globalAlpha = (prefs.drawOpacity || 100) / 100;
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
     ctx.beginPath();
     ctx.moveTo(state.currentPath[state.currentPath.length - 2].x, state.currentPath[state.currentPath.length - 2].y);
     ctx.lineTo(currentX, currentY);
     ctx.stroke();
-  } else if (['highlight', 'line', 'circle', 'box'].includes(state.currentTool)) {
+    ctx.globalAlpha = 1;
+  } else if (['highlight', 'line', 'circle', 'box', 'textbox', 'callout'].includes(state.currentTool)) {
     renderAnnotationsForPage(ctx, pageNum, canvas.width, canvas.height);
 
     if (state.currentTool === 'highlight') {
-      ctx.fillStyle = colorPicker.value;
+      ctx.fillStyle = prefs.highlightColor || getColorPickerValue();
       ctx.globalAlpha = 0.3;
       ctx.fillRect(state.startX, state.startY, currentX - state.startX, currentY - state.startY);
       ctx.globalAlpha = 1;
     } else if (state.currentTool === 'line') {
-      ctx.strokeStyle = colorPicker.value;
-      ctx.lineWidth = parseInt(lineWidth.value);
+      ctx.strokeStyle = prefs.lineStrokeColor || getColorPickerValue();
+      ctx.lineWidth = prefs.lineLineWidth || getLineWidthValue();
       ctx.lineCap = 'round';
+      if (prefs.lineBorderStyle === 'dashed') {
+        ctx.setLineDash([8, 4]);
+      } else if (prefs.lineBorderStyle === 'dotted') {
+        ctx.setLineDash([2, 2]);
+      } else {
+        ctx.setLineDash([]);
+      }
+      ctx.globalAlpha = (prefs.lineOpacity || 100) / 100;
       ctx.beginPath();
       ctx.moveTo(state.startX, state.startY);
       ctx.lineTo(currentX, currentY);
       ctx.stroke();
+      ctx.globalAlpha = 1;
+      ctx.setLineDash([]);
     } else if (state.currentTool === 'circle') {
       const radius = Math.sqrt(Math.pow(currentX - state.startX, 2) + Math.pow(currentY - state.startY, 2));
-      ctx.strokeStyle = colorPicker.value;
-      ctx.lineWidth = parseInt(lineWidth.value);
+      ctx.strokeStyle = prefs.circleStrokeColor || getColorPickerValue();
+      ctx.lineWidth = prefs.circleBorderWidth || getLineWidthValue();
       ctx.beginPath();
       ctx.arc(state.startX, state.startY, radius, 0, 2 * Math.PI);
       ctx.stroke();
     } else if (state.currentTool === 'box') {
-      ctx.strokeStyle = colorPicker.value;
-      ctx.lineWidth = parseInt(lineWidth.value);
+      ctx.strokeStyle = prefs.rectStrokeColor || getColorPickerValue();
+      ctx.lineWidth = prefs.rectBorderWidth || getLineWidthValue();
       ctx.strokeRect(state.startX, state.startY, currentX - state.startX, currentY - state.startY);
+    } else if (state.currentTool === 'textbox') {
+      const tbX = Math.min(state.startX, currentX);
+      const tbY = Math.min(state.startY, currentY);
+      const tbW = Math.abs(currentX - state.startX);
+      const tbH = Math.abs(currentY - state.startY);
+      if (!prefs.textboxFillNone) {
+        ctx.fillStyle = prefs.textboxFillColor;
+        ctx.globalAlpha = (prefs.textboxOpacity || 100) / 100;
+        ctx.fillRect(tbX, tbY, tbW, tbH);
+        ctx.globalAlpha = 1;
+      }
+      ctx.strokeStyle = prefs.textboxStrokeColor;
+      ctx.lineWidth = prefs.textboxBorderWidth;
+      ctx.strokeRect(tbX, tbY, tbW, tbH);
+    } else if (state.currentTool === 'callout') {
+      const prefs = state.preferences;
+      const defaultWidth = 150;
+      const defaultHeight = 60;
+      const coX = currentX - defaultWidth / 2;
+      const coY = currentY - defaultHeight / 2;
+      if (!prefs.calloutFillNone) {
+        ctx.fillStyle = prefs.calloutFillColor;
+        ctx.globalAlpha = (prefs.calloutOpacity || 100) / 100;
+        ctx.fillRect(coX, coY, defaultWidth, defaultHeight);
+        ctx.globalAlpha = 1;
+      }
+      ctx.strokeStyle = prefs.calloutStrokeColor;
+      ctx.lineWidth = prefs.calloutBorderWidth;
+      ctx.strokeRect(coX, coY, defaultWidth, defaultHeight);
+      // Leader line
+      const isArrowLeft = state.startX < currentX;
+      let armOriginX = isArrowLeft ? coX : coX + defaultWidth;
+      const armOriginY = Math.max(coY, Math.min(coY + defaultHeight, currentY));
+      const armLength = Math.min(30, Math.abs(state.startX - armOriginX) * 0.4);
+      const kneeX = isArrowLeft ? armOriginX - armLength : armOriginX + armLength;
+      ctx.beginPath();
+      ctx.moveTo(armOriginX, armOriginY);
+      ctx.lineTo(kneeX, armOriginY);
+      ctx.lineTo(state.startX, state.startY);
+      ctx.stroke();
     }
   }
 }
@@ -637,8 +997,13 @@ export function handleContinuousMouseUp(e, pageNum) {
   if (!state.isDrawing || state.activeContinuousPage !== pageNum) return;
 
   const rect = state.activeContinuousCanvas.getBoundingClientRect();
-  const endX = (e.clientX - rect.left) / state.scale;
-  const endY = (e.clientY - rect.top) / state.scale;
+  const rawEndX = (e.clientX - rect.left) / state.scale;
+  const rawEndY = (e.clientY - rect.top) / state.scale;
+  // Object snap end point
+  const contEndSnap = performSnap(rawEndX, rawEndY, state.annotations, pageNum, state.scale);
+  const endX = contEndSnap.snapped ? contEndSnap.x : rawEndX;
+  const endY = contEndSnap.snapped ? contEndSnap.y : rawEndY;
+  state.lastSnapResult = null;
 
   const annotationCountBefore = state.annotations.length;
 
@@ -657,4 +1022,54 @@ export function handleContinuousMouseUp(e, pageNum) {
   }
 
   redrawContinuous();
+
+  // Auto-start text editing for textbox/callout after creation
+  if (ann && ['textbox', 'callout'].includes(ann.type)) {
+    state.selectedAnnotations = [ann];
+    showProperties(ann);
+    startTextEditing(ann);
+  }
+}
+
+// Double-click handler for editing textbox/callout annotations.
+// Uses the dedicated dblclick event (fires after the full double-click sequence)
+// rather than e.detail in mousedown, which can be unreliable when drawing
+// operations occur between the two clicks.
+export function handleDblClick(e) {
+  if (!state.pdfDoc) return;
+  if (isPdfAReadOnly()) return;
+
+  const canvas = annotationCanvas || e.target;
+  const rect = canvas.getBoundingClientRect();
+  const x = (e.clientX - rect.left) / state.scale;
+  const y = (e.clientY - rect.top) / state.scale;
+
+  const clickedAnnotation = findAnnotationAt(x, y);
+  if (clickedAnnotation && ['textbox', 'callout'].includes(clickedAnnotation.type)) {
+    // Cancel any in-progress drawing that was started by the mousedown events
+    state.isDrawing = false;
+    state.selectedAnnotations = [clickedAnnotation];
+    showProperties(clickedAnnotation);
+    startTextEditing(clickedAnnotation);
+  }
+}
+
+// Continuous mode double-click handler
+export function handleContinuousDblClick(e, pageNum) {
+  if (!state.pdfDoc) return;
+  if (isPdfAReadOnly()) return;
+
+  const canvas = e.target;
+  const rect = canvas.getBoundingClientRect();
+  const x = (e.clientX - rect.left) / state.scale;
+  const y = (e.clientY - rect.top) / state.scale;
+
+  state.currentPage = pageNum;
+  const clickedAnnotation = findAnnotationAt(x, y);
+  if (clickedAnnotation && ['textbox', 'callout'].includes(clickedAnnotation.type)) {
+    state.isDrawing = false;
+    state.selectedAnnotations = [clickedAnnotation];
+    showProperties(clickedAnnotation);
+    startTextEditing(clickedAnnotation);
+  }
 }

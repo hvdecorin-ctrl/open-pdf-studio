@@ -9,7 +9,7 @@ on:
       version:
         description: 'Version tag (e.g., v1.0.0)'
         required: true
-        default: 'v1.10.0'
+        default: 'v1.17.0'
 
 jobs:
   create-release:
@@ -49,7 +49,7 @@ jobs:
             });
             return data.id;
 
-  build-tauri:
+  build:
     needs: create-release
     permissions:
       contents: write
@@ -59,10 +59,10 @@ jobs:
         include:
           - platform: 'ubuntu-22.04'
             args: ''
-          - platform: 'windows-latest'
-            args: ''
           - platform: 'macos-latest'
             args: '--target universal-apple-darwin'
+          - platform: 'windows-latest'
+            args: ''
 
     runs-on: ${{ matrix.platform }}
     env:
@@ -106,11 +106,88 @@ jobs:
           releaseId: ${{ needs.create-release.outputs.release_id }}
           includeUpdaterJson: true
 
+      - name: Authenticode sign Windows installer
+        if: matrix.platform == 'windows-latest'
+        uses: azure/trusted-signing-action@v0.5.0
+        with:
+          azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          azure-client-secret: ${{ secrets.AZURE_CLIENT_SECRET }}
+          endpoint: ${{ secrets.AZURE_ENDPOINT }}
+          trusted-signing-account-name: ${{ secrets.AZURE_TRUSTED_SIGNING_ACCOUNT_NAME }}
+          certificate-profile-name: ${{ secrets.AZURE_CERTIFICATE_PROFILE_NAME }}
+          files-folder: ${{ github.workspace }}/open-pdf-studio/src-tauri/target/release/bundle/nsis
+          files-folder-filter: exe
+          files-folder-depth: 1
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+
+      - name: Re-sign updater artifacts after Authenticode signing
+        if: matrix.platform == 'windows-latest'
+        shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $VERSION = "${{ needs.create-release.outputs.version }}"
+          $NSIS_DIR = "src-tauri/target/release/bundle/nsis"
+
+          $EXE = Get-ChildItem "$NSIS_DIR/*-setup.exe" | Select-Object -First 1
+          $ZIP = Get-ChildItem "$NSIS_DIR/*.nsis.zip" | Select-Object -First 1
+
+          Write-Host "Signed exe: $($EXE.Name)"
+          Write-Host "Old zip: $($ZIP.Name)"
+
+          # Re-create .nsis.zip with the Authenticode-signed exe
+          Remove-Item $ZIP.FullName
+          Compress-Archive -Path $EXE.FullName -DestinationPath $ZIP.FullName
+
+          # Re-generate updater signatures for both files
+          # tauri signer sign writes a .sig file next to the input file
+          npx tauri signer sign "$($EXE.FullName)" --private-key "$env:TAURI_SIGNING_PRIVATE_KEY" --password "$env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD"
+          npx tauri signer sign "$($ZIP.FullName)" --private-key "$env:TAURI_SIGNING_PRIVATE_KEY" --password "$env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD"
+
+          # Read the generated .sig files
+          $EXE_SIG = Get-Content "$($EXE.FullName).sig" -Raw
+          $ZIP_SIG = Get-Content "$($ZIP.FullName).sig" -Raw
+
+          Write-Host "New exe signature: $($EXE_SIG.Substring(0, 50))..."
+          Write-Host "New zip signature: $($ZIP_SIG.Substring(0, 50))..."
+
+          # Download latest.json from release, update Windows signatures
+          gh release download $VERSION --pattern "latest.json" --output latest.json --clobber --repo "${{ github.repository }}"
+
+          $latest = Get-Content latest.json -Raw | ConvertFrom-Json
+
+          foreach ($key in @('windows-x86_64')) {
+            if ($latest.platforms.PSObject.Properties[$key]) {
+              $latest.platforms.$key.signature = $ZIP_SIG
+              Write-Host "Updated signature for $key"
+            }
+          }
+          foreach ($key in @('windows-x86_64-nsis')) {
+            if ($latest.platforms.PSObject.Properties[$key]) {
+              $latest.platforms.$key.signature = $EXE_SIG
+              Write-Host "Updated signature for $key"
+            }
+          }
+
+          $latest | ConvertTo-Json -Depth 10 | Set-Content latest.json -NoNewline
+
+          # Re-upload all modified files
+          gh release upload $VERSION "$($EXE.FullName)" --clobber --repo "${{ github.repository }}"
+          gh release upload $VERSION "$($EXE.FullName).sig" --clobber --repo "${{ github.repository }}"
+          gh release upload $VERSION "$($ZIP.FullName)" --clobber --repo "${{ github.repository }}"
+          gh release upload $VERSION "$($ZIP.FullName).sig" --clobber --repo "${{ github.repository }}"
+          gh release upload $VERSION latest.json --clobber --repo "${{ github.repository }}"
+
+          Write-Host "All Windows artifacts re-uploaded with correct signatures"
+
   publish-release:
     permissions:
       contents: write
     runs-on: ubuntu-latest
-    needs: [create-release, build-tauri]
+    needs: [create-release, build]
 
     steps:
       - name: Publish release

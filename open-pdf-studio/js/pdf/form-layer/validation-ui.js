@@ -1,8 +1,7 @@
 import { state } from '../../core/state.js';
+import { openDialog } from '../../solid/stores/dialogStore.js';
 
 // ─── Validation dialog ─────────────────────────────────────────────────────────
-
-let activeValidationDialog = null;
 
 function cancelToolState() {
   state.isDrawing = false;
@@ -16,111 +15,24 @@ function cancelToolState() {
 }
 
 export function showValidationDialog(message, input) {
-  if (activeValidationDialog) return;
-
   // Block all tool interaction and cancel any in-progress operation
   state.modalDialogOpen = true;
   cancelToolState();
 
-  const overlay = document.createElement('div');
-  overlay.className = 'form-validation-overlay';
-
-  // Prevent all mouse events from reaching the canvas/tools underneath
-  for (const evt of ['mousedown', 'mouseup', 'click', 'dblclick', 'mousemove', 'pointerdown', 'pointerup']) {
-    overlay.addEventListener(evt, (e) => { e.stopPropagation(); });
-  }
-
-  const dialog = document.createElement('div');
-  dialog.className = 'form-validation-dialog';
-
-  const header = document.createElement('div');
-  header.className = 'form-validation-header';
-  const title = document.createElement('span');
-  title.textContent = 'Validation Error';
-  header.appendChild(title);
-
-  let isDragging = false, dragX = 0, dragY = 0;
-  header.addEventListener('mousedown', (e) => {
-    isDragging = true;
-    dragX = e.clientX - dialog.offsetLeft;
-    dragY = e.clientY - dialog.offsetTop;
-    e.preventDefault();
-  });
-  const onDragMove = (e) => {
-    if (!isDragging) return;
-    dialog.style.left = (e.clientX - dragX) + 'px';
-    dialog.style.top = (e.clientY - dragY) + 'px';
-    dialog.style.transform = 'none';
-  };
-  const onDragEnd = () => { isDragging = false; };
-  document.addEventListener('mousemove', onDragMove);
-  document.addEventListener('mouseup', onDragEnd);
-
-  const body = document.createElement('div');
-  body.className = 'form-validation-body';
-
-  const icon = document.createElement('div');
-  icon.className = 'form-validation-icon';
-  icon.innerHTML = `<svg width="32" height="32" viewBox="0 0 32 32" fill="none">
-    <circle cx="16" cy="16" r="14" fill="#e81123"/>
-    <rect x="14" y="8" width="4" height="12" rx="2" fill="white"/>
-    <circle cx="16" cy="24" r="2" fill="white"/>
-  </svg>`;
-
-  const text = document.createElement('div');
-  text.className = 'form-validation-text';
-  text.textContent = message;
-
-  body.appendChild(icon);
-  body.appendChild(text);
-
-  const footer = document.createElement('div');
-  footer.className = 'form-validation-footer';
-  const okBtn = document.createElement('button');
-  okBtn.textContent = 'OK';
-  okBtn.className = 'form-validation-ok-btn';
-  footer.appendChild(okBtn);
-
-  dialog.appendChild(header);
-  dialog.appendChild(body);
-  dialog.appendChild(footer);
-  overlay.appendChild(dialog);
-  document.body.appendChild(overlay);
-  activeValidationDialog = overlay;
-
-  okBtn.focus();
-
-  const keyHandler = (e) => {
-    if (e.key === 'Escape' || e.key === 'Enter') {
-      e.stopPropagation();
-      e.preventDefault();
-      close();
+  openDialog('form-validation', {
+    message,
+    onOk: () => {
+      cancelToolState();
+      if (input) {
+        setTimeout(() => {
+          input.focus();
+          state.modalDialogOpen = false;
+        }, 50);
+      } else {
+        setTimeout(() => { state.modalDialogOpen = false; }, 50);
+      }
     }
-  };
-
-  const close = () => {
-    overlay.remove();
-    activeValidationDialog = null;
-    cancelToolState();
-    document.removeEventListener('mousemove', onDragMove);
-    document.removeEventListener('mouseup', onDragEnd);
-    document.removeEventListener('keydown', keyHandler);
-    if (input) {
-      // Delay focus and dialog flag reset to avoid triggering tools from the click that closed the dialog
-      setTimeout(() => {
-        input.focus();
-        state.modalDialogOpen = false;
-      }, 50);
-    } else {
-      setTimeout(() => { state.modalDialogOpen = false; }, 50);
-    }
-  };
-
-  okBtn.addEventListener('click', close);
-  okBtn.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' || e.key === ' ') close();
   });
-  document.addEventListener('keydown', keyHandler);
 }
 
 // ─── Specific validators ────────────────────────────────────────────────────────

@@ -1,4 +1,5 @@
 // Helper utility functions
+import i18next from '../i18n/config.js';
 
 // Format date for display
 export function formatDate(date) {
@@ -20,31 +21,8 @@ export function snapAngle(angle, snapDegrees) {
 
 // Get display name for annotation type
 export function getTypeDisplayName(type) {
-  const names = {
-    'draw': 'Freehand',
-    'highlight': 'Highlight',
-    'line': 'Line',
-    'arrow': 'Arrow',
-    'polyline': 'Polyline',
-    'circle': 'Ellipse',
-    'box': 'Rectangle',
-    'polygon': 'Polygon',
-    'cloud': 'Cloud',
-    'comment': 'Sticky Note',
-    'text': 'Text',
-    'textbox': 'Text Box',
-    'callout': 'Callout',
-    'image': 'Image',
-    'textHighlight': 'Text Highlight',
-    'textStrikethrough': 'Text Strikethrough',
-    'textUnderline': 'Text Underline',
-    'textSquiggly': 'Text Squiggly',
-    'stamp': 'Stamp',
-    'signature': 'Signature',
-    'measureDistance': 'Distance',
-    'measureArea': 'Area',
-    'measurePerimeter': 'Perimeter',
-    'redaction': 'Redaction'
-  };
-  return names[type] || type.charAt(0).toUpperCase() + type.slice(1);
+  const key = `types.${type}`;
+  const translated = i18next.t(key, { ns: 'properties' });
+  if (translated !== key) return translated;
+  return type.charAt(0).toUpperCase() + type.slice(1);
 }

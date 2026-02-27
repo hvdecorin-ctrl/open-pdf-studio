@@ -1,0 +1,139 @@
+name: Android Build
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version tag (e.g., v1.15.0)'
+        required: false
+        default: ''
+
+jobs:
+  build-android:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    defaults:
+      run:
+        working-directory: open-pdf-studio
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Java JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android NDK
+        run: sdkmanager --install "ndk;27.0.12077973"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: open-pdf-studio/package-lock.json
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+
+      - name: Cache Rust build artifacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            open-pdf-studio/src-tauri/target
+          key: android-rust-${{ hashFiles('open-pdf-studio/src-tauri/Cargo.lock') }}
+          restore-keys: |
+            android-rust-
+
+      - name: Install frontend dependencies
+        run: npm install
+
+      - name: Initialize Android project
+        run: npx tauri android init
+        env:
+          NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/27.0.12077973
+
+      - name: Build Android APK
+        run: npx tauri android build --apk --target aarch64
+        env:
+          NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/27.0.12077973
+
+      - name: Sign APK
+        run: |
+          # Find the unsigned APK
+          UNSIGNED_APK=$(find src-tauri/gen/android -name "*-unsigned.apk" -type f | head -1)
+          if [ -z "$UNSIGNED_APK" ]; then
+            echo "No unsigned APK found"
+            exit 1
+          fi
+          echo "Found unsigned APK: $UNSIGNED_APK"
+          APK_DIR=$(dirname "$UNSIGNED_APK")
+
+          # Generate a signing keystore
+          keytool -genkeypair -v \
+            -keystore "$APK_DIR/release.keystore" \
+            -alias release \
+            -keyalg RSA -keysize 2048 -validity 10000 \
+            -storepass openpdfstudio -keypass openpdfstudio \
+            -dname "CN=Open PDF Studio, O=OpenAEC Foundation, L=Unknown, ST=Unknown, C=US"
+
+          # Find the build-tools for zipalign and apksigner
+          BUILD_TOOLS=$(ls -d $ANDROID_HOME/build-tools/*/ | sort -V | tail -1)
+          echo "Using build-tools: $BUILD_TOOLS"
+
+          # Zipalign the APK
+          ALIGNED_APK="$APK_DIR/app-universal-release-aligned.apk"
+          "${BUILD_TOOLS}zipalign" -v 4 "$UNSIGNED_APK" "$ALIGNED_APK"
+
+          # Sign the APK
+          SIGNED_APK="$APK_DIR/open-pdf-studio-release.apk"
+          "${BUILD_TOOLS}apksigner" sign \
+            --ks "$APK_DIR/release.keystore" \
+            --ks-key-alias release \
+            --ks-pass pass:openpdfstudio \
+            --key-pass pass:openpdfstudio \
+            --out "$SIGNED_APK" \
+            "$ALIGNED_APK"
+
+          # Verify the signature
+          "${BUILD_TOOLS}apksigner" verify --verbose "$SIGNED_APK"
+          echo "signed_apk=$SIGNED_APK" >> $GITHUB_OUTPUT
+          echo "Signed APK: $SIGNED_APK"
+        id: sign-apk
+
+      - name: Upload signed APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-apk
+          path: open-pdf-studio/src-tauri/gen/android/**/open-pdf-studio-release.apk
+          if-no-files-found: warn
+
+      - name: Get version tag
+        id: get-version
+        if: startsWith(github.ref, 'refs/tags/')
+        run: echo "version=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+
+      - name: Upload APK to release
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${{ steps.get-version.outputs.version }}"
+          SIGNED_APK=$(find src-tauri/gen/android -name "open-pdf-studio-release.apk" -type f | head -1)
+          if [ -n "$SIGNED_APK" ]; then
+            gh release upload "$VERSION" "$SIGNED_APK" --clobber --repo "${{ github.repository }}"
+          fi

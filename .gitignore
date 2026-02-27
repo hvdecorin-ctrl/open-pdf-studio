@@ -31,8 +31,18 @@ nul
 !open-pdf-studio/public/pdfjs/**
 !open-pdf-studio/src-tauri/icons/**
 !snap/gui/open-pdf-studio.png
+!docs/screenshots/**
+
+# Temporary files
+temp/
+
+# Internal notes
+Missing.md
 
 # Documentation
 CLAUDE.md
 open-pdf-studio/CLAUDE.md
 open-pdf-studio/ROADMAP.md
+
+# Backup files
+*.backup

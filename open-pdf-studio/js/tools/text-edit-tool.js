@@ -1,7 +1,10 @@
 import { state, getActiveDocument } from '../core/state.js';
 import { execute } from '../core/undo-manager.js';
 import { redrawAnnotations, redrawContinuous } from '../annotations/rendering.js';
+import { showTextEditProperties, hideProperties } from '../ui/panels/properties-panel.js';
 import { markDocumentModified } from '../ui/chrome/tabs.js';
+import { canvasContainer, continuousContainer, pdfCanvas } from '../ui/dom-elements.js';
+import { showPdfTextEditor, hidePdfTextEditor, getEditorText } from '../solid/stores/pdfTextEditStore.js';
 
 let activeEditor = null;
 let hoverListeners = [];
@@ -40,8 +43,8 @@ export function deactivateEditTextTool() {
 
 function startObservingTextLayers() {
   stopObservingTextLayers();
-  const container = document.getElementById('canvas-container');
-  const continuous = document.getElementById('continuous-container');
+  const container = canvasContainer || document.getElementById('canvas-container');
+  const continuous = continuousContainer || document.getElementById('continuous-container');
   const targets = [container, continuous].filter(Boolean);
   if (targets.length === 0) return;
 
@@ -181,9 +184,9 @@ function getBlockGroups(layer) {
 
   // ── Build group objects ──
   // Find the PDF canvas to sample text colors
-  const pdfCanvas = layer.parentElement?.querySelector('canvas.pdf-canvas')
-    || document.getElementById('pdf-canvas');
-  const canvasCtx = pdfCanvas?.getContext('2d', { willReadFrequently: true });
+  const pdfCanvasEl = layer.parentElement?.querySelector('canvas.pdf-canvas')
+    || pdfCanvas || document.getElementById('pdf-canvas');
+  const canvasCtx = pdfCanvasEl?.getContext('2d', { willReadFrequently: true });
 
   const groups = blocks.map(block => {
     const allItems = block.flat();
@@ -210,7 +213,7 @@ function getBlockGroups(layer) {
       if (canvasCtx) {
         const sampleX = Math.round(lineItems[0].domLeft + 2);
         const sampleY = Math.round((lineItems[0].domTop + lineItems[0].domBottom) / 2);
-        if (sampleX >= 0 && sampleY >= 0 && sampleX < pdfCanvas.width && sampleY < pdfCanvas.height) {
+        if (sampleX >= 0 && sampleY >= 0 && sampleX < pdfCanvasEl.width && sampleY < pdfCanvasEl.height) {
           const pixel = canvasCtx.getImageData(sampleX, sampleY, 1, 1).data;
           // Only use sampled color if it's not white/near-white (background)
           if (pixel[0] < 240 || pixel[1] < 240 || pixel[2] < 240) {
@@ -363,16 +366,7 @@ function startPdfTextEditing(span, pageNum) {
 
   const padX = 4;
   const padY = 4;
-  const editor = document.createElement('textarea');
-  editor.className = 'pdf-text-editor';
-  editor.value = combinedText;
-  editor.style.position = 'absolute';
-  editor.style.left = `${groupRect.left + offsetX - padX}px`;
-  editor.style.top = `${groupRect.top + offsetY - padY}px`;
-  editor.style.width = `${Math.max(groupRect.width + padX * 2 + 4, 80)}px`;
-  editor.style.height = `${Math.max(groupRect.height + padY * 2 + 6, 24)}px`;
-  editor.style.fontSize = `${editorFontSize}px`;
-  editor.style.lineHeight = `${visualLineHeight}px`;
+
   // Use PDF.js loaded font if available (exact visual match), else map to standard CSS font
   const loadedFont = lineData[0].loadedFontName || '';
   const actualName = (lineData[0].actualFontName || '').toLowerCase();
@@ -388,21 +382,28 @@ function startPdfTextEditing(span, pageNum) {
     cssFallbackFont = 'Helvetica, Arial, sans-serif';
   }
   const editorFont = loadedFont ? `"${loadedFont}", ${cssFallbackFont}` : cssFallbackFont;
-  editor.style.fontFamily = editorFont;
-  if (lineData[0].isBold) editor.style.fontWeight = 'bold';
-  if (lineData[0].isItalic) editor.style.fontStyle = 'italic';
-  editor.style.color = lineData[0].color || '#000000';
-  editor.style.zIndex = '1000';
 
-  // Hide all spans BEFORE appending editor so text doesn't double-render
+  // Build style object for the Solid overlay
+  // Use fixed positioning based on container's viewport position
+  const styleObj = {
+    position: 'fixed',
+    left: `${containerRect.left + groupRect.left + offsetX - padX}px`,
+    top: `${containerRect.top + groupRect.top + offsetY - padY}px`,
+    width: `${Math.max(groupRect.width + padX * 2 + 4, 80)}px`,
+    height: `${Math.max(groupRect.height + padY * 2 + 6, 24)}px`,
+    'font-size': `${editorFontSize}px`,
+    'line-height': `${visualLineHeight}px`,
+    'font-family': editorFont,
+    color: lineData[0].color || '#000000',
+    'z-index': '1000'
+  };
+  if (lineData[0].isBold) styleObj['font-weight'] = 'bold';
+  if (lineData[0].isItalic) styleObj['font-style'] = 'italic';
+
+  // Hide all spans BEFORE showing editor so text doesn't double-render
   for (const s of block.spans) s.style.visibility = 'hidden';
 
-  editorContainer.appendChild(editor);
-  editor.focus();
-  editor.select();
-
   activeEditor = {
-    editor,
     block,
     pageNum,
     originalText: combinedText,
@@ -416,7 +417,19 @@ function startPdfTextEditing(span, pageNum) {
 
   state.pdfTextEditState = activeEditor;
 
-  editor.addEventListener('keydown', (e) => {
+  // Show text properties in the right panel
+  showTextEditProperties({
+    text: combinedText,
+    fontSize,
+    fontFamily: lineData[0].actualFontName || lineData[0].pdfFontName || cssFallbackFont,
+    color: lineData[0].color || '#000000',
+    isBold: lineData[0].isBold || false,
+    isItalic: lineData[0].isItalic || false,
+    page: pageNum
+  });
+
+  // Define handlers for the store
+  const handleKeyDown = (e) => {
     if (e.key === 'Escape') {
       e.stopPropagation();
       cancelPdfTextEditing();
@@ -427,27 +440,47 @@ function startPdfTextEditing(span, pageNum) {
       e.stopPropagation();
       finishPdfTextEditing();
     }
-  });
+  };
 
-  editor.addEventListener('blur', () => {
+  const handleBlur = () => {
     setTimeout(() => {
-      if (activeEditor && activeEditor.editor === editor) {
+      if (activeEditor) {
+        // Don't close if focus moved to the properties panel.
+        // Use the static mount point from index.html (not the Solid-rendered element).
+        const activeEl = document.activeElement;
+        const propsRoot = document.getElementById('properties-panel-root');
+        if (activeEl && propsRoot && propsRoot.contains(activeEl)) {
+          return;
+        }
         finishPdfTextEditing();
       }
     }, 150);
+  };
+
+  showPdfTextEditor(styleObj, combinedText, {
+    onCommit: null,
+    onCancel: null,
+    onKeyDown: handleKeyDown,
+    onBlur: handleBlur
   });
 }
 
 function finishPdfTextEditing() {
   if (!activeEditor) return;
 
+  // If this editor was started via startTextEditEditing, delegate to its own finish handler
+  if (activeEditor._finishEditing) {
+    activeEditor._finishEditing();
+    return;
+  }
+
   const {
-    editor, block, pageNum, originalText,
+    block, pageNum, originalText,
     pdfX, pdfY, pdfWidth, fontSize, lineSpacing, numOriginalLines
   } = activeEditor;
-  const newText = editor.value;
+  const newText = getEditorText();
 
-  editor.remove();
+  hidePdfTextEditor();
 
   // Show all spans again
   for (const s of block.spans) s.style.visibility = '';
@@ -538,15 +571,199 @@ function finishPdfTextEditing() {
 
   activeEditor = null;
   state.pdfTextEditState = null;
+  hideProperties();
 }
 
 function cancelPdfTextEditing() {
   if (!activeEditor) return;
 
-  const { editor, block } = activeEditor;
-  editor.remove();
+  const { block } = activeEditor;
+  hidePdfTextEditor();
   for (const s of block.spans) s.style.visibility = '';
 
   activeEditor = null;
   state.pdfTextEditState = null;
+  hideProperties();
+}
+
+export function findTextEditAtPosition(x, y, pageNum, canvasEl) {
+  const doc = getActiveDocument();
+  if (!doc || !doc.textEdits || doc.textEdits.length === 0) return null;
+
+  const pageEdits = doc.textEdits.filter(e => e.page === pageNum);
+  if (pageEdits.length === 0) return null;
+
+  const pageHeight = canvasEl.height / state.scale;
+
+  for (const edit of pageEdits) {
+    const fontSize = edit.fontSize;
+    const ls = edit.lineSpacing || fontSize * 1.2;
+    const newLines = edit.newText.split('\n');
+    const numLines = newLines.length;
+
+    const firstBaseY = pageHeight - edit.pdfY;
+    const editLeft = edit.pdfX;
+    const editTop = firstBaseY - fontSize;
+    const editHeight = (numLines - 1) * ls + fontSize * 1.3;
+    const maxCharCount = Math.max(...newLines.map(l => l.length), 1);
+    const editWidth = Math.max(edit.pdfWidth || 0, fontSize * 0.6 * maxCharCount) + fontSize * 0.5;
+
+    if (x >= editLeft && x <= editLeft + editWidth &&
+        y >= editTop && y <= editTop + editHeight) {
+      return edit;
+    }
+  }
+  return null;
+}
+
+export function startTextEditEditing(textEdit, pageNum, canvasEl) {
+  finishPdfTextEditing();
+
+  const pageHeight = canvasEl.height / state.scale;
+  const fontSize = textEdit.fontSize;
+  const ls = textEdit.lineSpacing || fontSize * 1.2;
+  const newLines = textEdit.newText.split('\n');
+  const numLines = newLines.length;
+
+  const firstBaseY = pageHeight - textEdit.pdfY;
+  const editTop = firstBaseY - fontSize;
+  const editHeight = (numLines - 1) * ls + fontSize * 1.3;
+  const maxCharCount = Math.max(...newLines.map(l => l.length), 1);
+  const editWidth = Math.max(textEdit.pdfWidth || 0, fontSize * 0.6 * maxCharCount) + fontSize * 0.5;
+
+  // Find the container to place the editor in
+  const container = canvasEl.parentElement;
+  if (!container) return;
+  const containerRect = container.getBoundingClientRect();
+  const canvasRect = canvasEl.getBoundingClientRect();
+  const offsetX = canvasRect.left - containerRect.left;
+  const offsetY = canvasRect.top - containerRect.top;
+
+  const padX = 4;
+  const padY = 4;
+  const scaledLeft = textEdit.pdfX * state.scale;
+  const scaledTop = editTop * state.scale;
+  const scaledWidth = editWidth * state.scale;
+  const scaledHeight = editHeight * state.scale;
+  const editorFontSize = Math.round(fontSize * state.scale * 0.82);
+  const visualLineHeight = (scaledHeight / numLines);
+
+  // Map font family to CSS
+  const ff = (textEdit.fontFamily || 'Helvetica').toLowerCase();
+  let cssFontFamily;
+  if (ff.includes('courier')) {
+    cssFontFamily = '"Courier New", Courier, monospace';
+  } else if (ff.includes('times')) {
+    cssFontFamily = '"Times New Roman", Times, serif';
+  } else {
+    cssFontFamily = 'Helvetica, Arial, sans-serif';
+  }
+
+  // Build style object using fixed positioning
+  const styleObj = {
+    position: 'fixed',
+    left: `${containerRect.left + scaledLeft + offsetX - padX}px`,
+    top: `${containerRect.top + scaledTop + offsetY - padY}px`,
+    width: `${Math.max(scaledWidth + padX * 2 + 4, 80)}px`,
+    height: `${Math.max(scaledHeight + padY * 2 + 6, 24)}px`,
+    'font-size': `${editorFontSize}px`,
+    'line-height': `${visualLineHeight}px`,
+    'font-family': cssFontFamily,
+    color: textEdit.color || '#000000',
+    'z-index': '1000'
+  };
+  if (ff.includes('bold')) styleObj['font-weight'] = 'bold';
+  if (ff.includes('italic') || ff.includes('oblique')) styleObj['font-style'] = 'italic';
+
+  const oldTextEdit = { ...textEdit };
+
+  const finishEditing = () => {
+    const newText = getEditorText();
+    hidePdfTextEditor();
+
+    if (newText !== oldTextEdit.newText && newText.trim() !== '') {
+      textEdit.newText = newText;
+      execute({ type: 'modifyTextEdit', oldTextEdit, newTextEdit: { ...textEdit } });
+      markDocumentModified();
+
+      if (state.viewMode === 'continuous') {
+        redrawContinuous();
+      } else {
+        redrawAnnotations();
+      }
+    }
+
+    activeEditor = null;
+    state.pdfTextEditState = null;
+    hideProperties();
+  };
+
+  const cancelEditing = () => {
+    hidePdfTextEditor();
+    activeEditor = null;
+    state.pdfTextEditState = null;
+    hideProperties();
+  };
+
+  activeEditor = {
+    block: { spans: [] },
+    pageNum,
+    originalText: textEdit.newText,
+    pdfX: textEdit.pdfX,
+    pdfY: textEdit.pdfY,
+    pdfWidth: textEdit.pdfWidth || 0,
+    fontSize,
+    lineSpacing: ls,
+    numOriginalLines: numLines,
+    _finishEditing: finishEditing,
+    _cancelEditing: cancelEditing
+  };
+  state.pdfTextEditState = activeEditor;
+
+  // Show text properties in the right panel
+  const ffLower = (textEdit.fontFamily || 'Helvetica').toLowerCase();
+  showTextEditProperties({
+    text: textEdit.newText,
+    fontSize: textEdit.fontSize,
+    fontFamily: textEdit.fontFamily || 'Helvetica',
+    color: textEdit.color || '#000000',
+    isBold: ffLower.includes('bold'),
+    isItalic: ffLower.includes('italic') || ffLower.includes('oblique'),
+    page: pageNum
+  });
+
+  // Define handlers for the store
+  const handleKeyDown = (e) => {
+    if (e.key === 'Escape') {
+      e.stopPropagation();
+      cancelEditing();
+    }
+    if (e.key === 'Enter' && !e.shiftKey && numLines === 1) {
+      e.preventDefault();
+      e.stopPropagation();
+      finishEditing();
+    }
+  };
+
+  const handleBlur = () => {
+    setTimeout(() => {
+      if (activeEditor && activeEditor._finishEditing === finishEditing) {
+        // Don't close if focus moved to the properties panel.
+        // Use the static mount point from index.html (not the Solid-rendered element).
+        const activeEl = document.activeElement;
+        const propsRoot = document.getElementById('properties-panel-root');
+        if (activeEl && propsRoot && propsRoot.contains(activeEl)) {
+          return;
+        }
+        finishEditing();
+      }
+    }, 150);
+  };
+
+  showPdfTextEditor(styleObj, textEdit.newText, {
+    onCommit: null,
+    onCancel: null,
+    onKeyDown: handleKeyDown,
+    onBlur: handleBlur
+  });
 }

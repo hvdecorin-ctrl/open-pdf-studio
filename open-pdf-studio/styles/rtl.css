@@ -1,0 +1,149 @@
+/* RTL (Right-to-Left) Layout Overrides for Arabic and Farsi */
+
+/*
+ * HOW RTL WORKS IN THIS CODEBASE:
+ *
+ * The global [dir="rtl"] rule sets `direction: rtl` on the root element.
+ * This AUTOMATICALLY reverses all `flex-direction: row` containers —
+ * flex items flow right-to-left instead of left-to-right.
+ *
+ * DO NOT add `flex-direction: row-reverse` for RTL — that creates a
+ * double reversal (row-reverse + direction:rtl = back to LTR).
+ *
+ * Only physical property swaps (border-left/right, margin-left/right)
+ * are needed here, since those don't respond to `direction`.
+ *
+ * Use `direction: ltr` on specific containers that should NOT reverse
+ * (e.g., directional navigation buttons, window controls).
+ */
+
+/* Global text direction */
+[dir="rtl"] {
+  direction: rtl;
+  text-align: right;
+}
+
+/* Layout: left panel swaps to right side automatically via direction: rtl */
+[dir="rtl"] .left-panel {
+  border-right: none;
+  border-left: none;
+}
+
+[dir="rtl"] .panel-resize-handle {
+  order: -1;
+}
+
+/* Properties panel: swap border to right side */
+[dir="rtl"] .properties-panel {
+  border-left: none;
+  border-right: 1px solid var(--theme-panel-border);
+}
+
+/* PDF viewer: must always render LTR — PDF content has its own text direction */
+[dir="rtl"] #pdf-container {
+  direction: ltr;
+  text-align: left;
+}
+
+/* Titlebar: keep LTR layout so window controls stay on the right (Windows standard) */
+[dir="rtl"] .title-bar {
+  direction: ltr;
+}
+
+/* Ribbon: border swaps for group separators */
+[dir="rtl"] .ribbon-content {
+  direction: rtl;
+}
+
+[dir="rtl"] .ribbon-group {
+  border-right: none;
+  border-left: 1px solid var(--theme-ribbon-group-border);
+  margin-right: 0;
+  margin-left: 8px;
+}
+
+[dir="rtl"] .ribbon-group:last-child {
+  border-left: none;
+  margin-left: 0;
+}
+
+/* Backstage / File menu */
+[dir="rtl"] .backstage-overlay {
+  direction: rtl;
+}
+
+[dir="rtl"] .backstage-sidebar {
+  border-right: none;
+  border-left: 1px solid var(--theme-backstage-border);
+}
+
+[dir="rtl"] .backstage-menu-item .shortcut {
+  margin-left: 0;
+  margin-right: auto;
+}
+
+/* Document tabs: swap close button margin */
+[dir="rtl"] .doc-tab .tab-close {
+  margin-left: 0;
+  margin-right: 6px;
+}
+
+/* Status bar: page navigation keeps LTR order (directional arrows) */
+[dir="rtl"] .status-bar-center {
+  direction: ltr;
+}
+
+/* Context menu */
+[dir="rtl"] .context-menu {
+  text-align: right;
+}
+
+[dir="rtl"] .context-menu .menu-item .shortcut {
+  margin-left: 0;
+  margin-right: auto;
+  padding-left: 0;
+  padding-right: 16px;
+}
+
+[dir="rtl"] .context-menu .submenu-arrow {
+  transform: scaleX(-1);
+}
+
+/* Left panel tabs: swap border */
+[dir="rtl"] .left-panel-tabs {
+  border-right: none;
+  border-left: 1px solid var(--theme-panel-border);
+}
+
+/* Find bar */
+[dir="rtl"] .find-bar input[type="text"] {
+  text-align: right;
+}
+
+/* Preferences: swap tab border */
+[dir="rtl"] .pref-tabs {
+  border-right: none;
+  border-left: 1px solid var(--theme-pref-border);
+}
+
+[dir="rtl"] .pref-row label {
+  text-align: right;
+}
+
+/* Properties panel sections */
+[dir="rtl"] .prop-row label {
+  text-align: right;
+}
+
+/* Navigation icons: mirror directional arrows for RTL */
+[dir="rtl"] #first-page .ribbon-btn-icon,
+[dir="rtl"] #prev-page-ribbon .ribbon-btn-icon,
+[dir="rtl"] #next-page-ribbon .ribbon-btn-icon,
+[dir="rtl"] #last-page .ribbon-btn-icon {
+  transform: scaleX(-1);
+}
+
+/* Scrollbars - keep LTR direction for scroll behavior */
+[dir="rtl"] ::-webkit-scrollbar {
+  direction: ltr;
+}

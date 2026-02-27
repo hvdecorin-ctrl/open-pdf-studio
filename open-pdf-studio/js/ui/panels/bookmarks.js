@@ -1,25 +1,16 @@
+import i18next from '../../i18n/config.js';
 import { state, getActiveDocument } from '../../core/state.js';
 import { goToPage } from '../../pdf/renderer.js';
 import { markDocumentModified } from '../../ui/chrome/tabs.js';
 import { isPdfAReadOnly } from '../../pdf/loader.js';
-
-// DOM elements
-const bookmarksContainer = document.getElementById('bookmarks-container');
-const bookmarksCount = document.getElementById('bookmarks-count');
-const addBtn = document.getElementById('bookmarks-add-btn');
-const addChildBtn = document.getElementById('bookmarks-add-child-btn');
-const editBtn = document.getElementById('bookmarks-edit-btn');
-const deleteBtn = document.getElementById('bookmarks-delete-btn');
+import { openDialog } from '../../solid/stores/dialogStore.js';
+import { setTree, setCountText, setEmptyMessage, setSelectedId, setToolbarDisabled } from '../../solid/stores/panels/bookmarksStore.js';
 
 let selectedBookmarkId = null;
-let contextMenu = null;
 
-// Initialize toolbar button events
+// Initialize bookmarks - no-op, kept for callers
 export function initBookmarks() {
-  if (addBtn) addBtn.addEventListener('click', addBookmark);
-  if (addChildBtn) addChildBtn.addEventListener('click', addChildBookmark);
-  if (editBtn) editBtn.addEventListener('click', editBookmark);
-  if (deleteBtn) deleteBtn.addEventListener('click', deleteBookmark);
+  return;
 }
 
 // Load bookmarks from PDF outline
@@ -49,7 +40,6 @@ export async function loadBookmarksFromPdf(pdfDoc) {
               const pageRef = dest[0];
               const pageIndex = await pdfDoc.getPageIndex(pageRef);
               page = pageIndex + 1;
-              // dest[1] is the fit type name (e.g. /XYZ)
               if (dest.length > 2) left = dest[2];
               if (dest.length > 3) top = dest[3];
             }
@@ -122,117 +112,75 @@ function buildTree(bookmarks) {
   return roots;
 }
 
-// Update the bookmarks list display
+// Convert tree nodes to component format (add hasChildren flag recursively)
+function toComponentTree(nodes) {
+  return nodes.map(node => ({
+    id: node.id,
+    title: node.title,
+    page: node.page,
+    bold: node.bold,
+    italic: node.italic,
+    color: node.color,
+    expanded: node.expanded,
+    hasChildren: node.children.length > 0,
+    children: toComponentTree(node.children),
+  }));
+}
+
+// Update the bookmarks list display by pushing to the store
 export function updateBookmarksList() {
-  if (!bookmarksContainer) return;
   const doc = getActiveDocument();
   if (!doc) {
-    bookmarksContainer.innerHTML = '<div class="bookmarks-empty">No document open</div>';
-    if (bookmarksCount) bookmarksCount.textContent = '0 bookmarks';
+    setTree([]);
+    setCountText(i18next.t('leftPanel.bookmarksCount', { count: 0 }));
+    setEmptyMessage(i18next.t('leftPanel.noDocumentOpen'));
+    setSelectedId(null);
     updateToolbarState();
     return;
   }
 
   const bookmarks = doc.bookmarks || [];
   if (bookmarks.length === 0) {
-    bookmarksContainer.innerHTML = '<div class="bookmarks-empty">No bookmarks in this document</div>';
-    if (bookmarksCount) bookmarksCount.textContent = '0 bookmarks';
+    setTree([]);
+    setCountText(i18next.t('leftPanel.bookmarksCount', { count: 0 }));
+    setEmptyMessage(i18next.t('leftPanel.noBookmarks'));
     updateToolbarState();
     return;
   }
 
   const tree = buildTree(bookmarks);
-  bookmarksContainer.innerHTML = '';
-  renderNodes(bookmarksContainer, tree, 0);
+  const componentTree = toComponentTree(tree);
 
-  if (bookmarksCount) {
-    bookmarksCount.textContent = `${bookmarks.length} bookmark${bookmarks.length !== 1 ? 's' : ''}`;
-  }
+  setTree(componentTree);
+  setCountText(i18next.t('leftPanel.bookmarksCount', { count: bookmarks.length }));
+  setEmptyMessage(null);
   updateToolbarState();
 }
 
-// Render tree nodes recursively
-function renderNodes(container, nodes, level) {
-  for (const node of nodes) {
-    const item = createBookmarkItem(node, level);
-    container.appendChild(item);
+// Update toolbar button enabled state by pushing to store
+function updateToolbarState() {
+  const doc = getActiveDocument();
+  const hasDoc = !!doc?.pdfDoc;
+  const hasSelection = selectedBookmarkId !== null;
+  const readOnly = isPdfAReadOnly();
 
-    if (node.children.length > 0) {
-      const childContainer = document.createElement('div');
-      childContainer.className = 'bookmark-children' + (node.expanded ? '' : ' collapsed');
-      childContainer.dataset.parentId = node.id;
-      renderNodes(childContainer, node.children, level + 1);
-      container.appendChild(childContainer);
-    }
-  }
+  setToolbarDisabled({
+    add: !hasDoc || readOnly,
+    addChild: !hasDoc || !hasSelection || readOnly,
+    edit: !hasDoc || !hasSelection || readOnly,
+    delete: !hasDoc || !hasSelection || readOnly,
+  });
 }
 
-// Create a single bookmark item
-function createBookmarkItem(node, level) {
-  const item = document.createElement('div');
-  item.className = 'bookmark-item' + (selectedBookmarkId === node.id ? ' selected' : '');
-  item.dataset.bookmarkId = node.id;
-  item.style.paddingLeft = (8 + level * 16) + 'px';
-
-  // Arrow (expand/collapse)
-  const arrow = document.createElement('span');
-  arrow.className = 'bookmark-arrow' + (node.children.length > 0 ? ' has-children' : ' empty');
-  if (node.children.length > 0) {
-    arrow.textContent = node.expanded ? '\u25BC' : '\u25B6';
-    arrow.addEventListener('click', (e) => {
-      e.stopPropagation();
-      toggleExpand(node.id);
-    });
-  }
-  item.appendChild(arrow);
-
-  // Icon
-  const icon = document.createElement('span');
-  icon.className = 'bookmark-icon';
-  icon.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>';
-  item.appendChild(icon);
-
-  // Title
-  const title = document.createElement('span');
-  title.className = 'bookmark-title';
-  if (node.bold) title.classList.add('bold');
-  if (node.italic) title.classList.add('italic');
-  if (node.color) title.style.color = node.color;
-  title.textContent = node.title;
-  title.title = `${node.title} (Page ${node.page})`;
-  item.appendChild(title);
-
-  // Click to select and navigate
-  item.addEventListener('click', () => {
-    selectBookmark(node.id);
-  });
-
-  // Double-click to edit
-  item.addEventListener('dblclick', () => {
-    selectBookmark(node.id);
-    editBookmark();
-  });
-
-  // Right-click context menu
-  item.addEventListener('contextmenu', (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    selectBookmark(node.id);
-    showContextMenu(e.clientX, e.clientY);
-  });
-
-  return item;
+// Generate unique id
+function generateId() {
+  return 'bm_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6);
 }
 
 // Select a bookmark and navigate
-function selectBookmark(id) {
+export function selectBookmark(id) {
   selectedBookmarkId = id;
-  // Update visual selection
-  if (bookmarksContainer) {
-    bookmarksContainer.querySelectorAll('.bookmark-item').forEach(el => {
-      el.classList.toggle('selected', el.dataset.bookmarkId === id);
-    });
-  }
+  setSelectedId(id);
   updateToolbarState();
   // Navigate
   const doc = getActiveDocument();
@@ -242,13 +190,20 @@ function selectBookmark(id) {
   }
 }
 
+// Clear bookmark selection
+export function clearBookmarkSelection() {
+  selectedBookmarkId = null;
+  setSelectedId(null);
+  updateToolbarState();
+}
+
 function navigateToBookmark(bm) {
   if (!bm || !state.pdfDoc) return;
   goToPage(bm.page);
 }
 
 // Toggle expand/collapse
-function toggleExpand(id) {
+export function toggleBookmarkExpand(id) {
   const doc = getActiveDocument();
   if (!doc || !doc.bookmarks) return;
   const bm = doc.bookmarks.find(b => b.id === id);
@@ -258,7 +213,7 @@ function toggleExpand(id) {
 }
 
 // Expand all
-function expandAll() {
+export function expandAll() {
   const doc = getActiveDocument();
   if (!doc || !doc.bookmarks) return;
   for (const bm of doc.bookmarks) bm.expanded = true;
@@ -266,33 +221,15 @@ function expandAll() {
 }
 
 // Collapse all
-function collapseAll() {
+export function collapseAll() {
   const doc = getActiveDocument();
   if (!doc || !doc.bookmarks) return;
   for (const bm of doc.bookmarks) bm.expanded = false;
   updateBookmarksList();
 }
 
-// Update toolbar button enabled state
-function updateToolbarState() {
-  const doc = getActiveDocument();
-  const hasDoc = !!doc?.pdfDoc;
-  const hasSelection = selectedBookmarkId !== null;
-  const readOnly = isPdfAReadOnly();
-
-  if (addBtn) addBtn.disabled = !hasDoc || readOnly;
-  if (addChildBtn) addChildBtn.disabled = !hasDoc || !hasSelection || readOnly;
-  if (editBtn) editBtn.disabled = !hasDoc || !hasSelection || readOnly;
-  if (deleteBtn) deleteBtn.disabled = !hasDoc || !hasSelection || readOnly;
-}
-
-// Generate unique id
-function generateId() {
-  return 'bm_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6);
-}
-
 // Add bookmark at root
-async function addBookmark() {
+export async function addBookmark() {
   if (isPdfAReadOnly()) return;
   const doc = getActiveDocument();
   if (!doc) return;
@@ -330,7 +267,7 @@ async function addBookmark() {
 }
 
 // Add child bookmark under selected
-async function addChildBookmark() {
+export async function addChildBookmark() {
   if (isPdfAReadOnly()) return;
   const doc = getActiveDocument();
   if (!doc || !selectedBookmarkId) return;
@@ -373,7 +310,7 @@ async function addChildBookmark() {
 }
 
 // Edit selected bookmark
-async function editBookmark() {
+export async function editBookmark() {
   if (isPdfAReadOnly()) return;
   const doc = getActiveDocument();
   if (!doc || !selectedBookmarkId) return;
@@ -396,7 +333,7 @@ async function editBookmark() {
 }
 
 // Delete selected bookmark
-async function deleteBookmark() {
+export async function deleteBookmark() {
   if (isPdfAReadOnly()) return;
   const doc = getActiveDocument();
   if (!doc || !selectedBookmarkId) return;
@@ -446,253 +383,15 @@ function getDescendants(bookmarks, parentId) {
   return result;
 }
 
-// Show bookmark add/edit dialog
 function showBookmarkDialog(dialogTitle, currentTitle, currentPage) {
   return new Promise((resolve) => {
-    // Create overlay
-    const overlay = document.createElement('div');
-    overlay.className = 'bookmark-dialog-overlay';
-
-    const dialog = document.createElement('div');
-    dialog.className = 'bookmark-dialog';
-
-    // Header
-    const header = document.createElement('div');
-    header.className = 'bookmark-dialog-header';
-    const headerTitle = document.createElement('span');
-    headerTitle.textContent = dialogTitle;
-    header.appendChild(headerTitle);
-
-    const closeBtn = document.createElement('button');
-    closeBtn.className = 'bookmark-dialog-close';
-    closeBtn.innerHTML = '&times;';
-    closeBtn.addEventListener('click', () => {
-      overlay.remove();
-      state.modalDialogOpen = false;
-      resolve(null);
-    });
-    header.appendChild(closeBtn);
-    dialog.appendChild(header);
-
-    // Body
-    const body = document.createElement('div');
-    body.className = 'bookmark-dialog-body';
-
-    const titleLabel = document.createElement('label');
-    titleLabel.textContent = 'Title:';
-    body.appendChild(titleLabel);
-    const titleInput = document.createElement('input');
-    titleInput.type = 'text';
-    titleInput.value = currentTitle;
-    titleInput.placeholder = 'Bookmark title';
-    body.appendChild(titleInput);
-
-    const pageLabel = document.createElement('label');
-    pageLabel.textContent = 'Page:';
-    body.appendChild(pageLabel);
-    const pageInput = document.createElement('input');
-    pageInput.type = 'number';
-    pageInput.value = currentPage;
-    pageInput.min = 1;
-    if (state.pdfDoc) pageInput.max = state.pdfDoc.numPages;
-    body.appendChild(pageInput);
-
-    dialog.appendChild(body);
-
-    // Footer
-    const footer = document.createElement('div');
-    footer.className = 'bookmark-dialog-footer';
-
-    const okBtn = document.createElement('button');
-    okBtn.className = 'primary';
-    okBtn.textContent = 'OK';
-    okBtn.addEventListener('click', () => {
-      const title = titleInput.value.trim();
-      if (!title) {
-        titleInput.focus();
-        return;
-      }
-      let page = parseInt(pageInput.value);
-      if (isNaN(page) || page < 1) page = 1;
-      if (state.pdfDoc && page > state.pdfDoc.numPages) page = state.pdfDoc.numPages;
-      overlay.remove();
-      state.modalDialogOpen = false;
-      resolve({ title, page });
-    });
-    footer.appendChild(okBtn);
-
-    const cancelBtn = document.createElement('button');
-    cancelBtn.textContent = 'Cancel';
-    cancelBtn.addEventListener('click', () => {
-      overlay.remove();
-      state.modalDialogOpen = false;
-      resolve(null);
-    });
-    footer.appendChild(cancelBtn);
-
-    dialog.appendChild(footer);
-    overlay.appendChild(dialog);
-    document.body.appendChild(overlay);
-
-    state.modalDialogOpen = true;
-
-    // Make dialog draggable
-    makeDraggable(dialog, header, overlay);
-
-    // Focus title input
-    setTimeout(() => titleInput.focus(), 50);
-
-    // Enter key to submit
-    titleInput.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') okBtn.click();
-      if (e.key === 'Escape') cancelBtn.click();
-    });
-    pageInput.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') okBtn.click();
-      if (e.key === 'Escape') cancelBtn.click();
+    const isEdit = dialogTitle.toLowerCase().includes('edit');
+    openDialog('bookmark', {
+      title: currentTitle,
+      page: currentPage,
+      isEdit,
+      onOk: resolve,
     });
   });
 }
 
-// Make dialog draggable
-function makeDraggable(dialog, handle, overlay) {
-  let isDragging = false;
-  let offsetX = 0;
-  let offsetY = 0;
-
-  handle.addEventListener('mousedown', (e) => {
-    if (e.target.closest('.bookmark-dialog-close')) return;
-    isDragging = true;
-    const rect = dialog.getBoundingClientRect();
-    offsetX = e.clientX - rect.left;
-    offsetY = e.clientY - rect.top;
-    e.preventDefault();
-  });
-
-  document.addEventListener('mousemove', (e) => {
-    if (!isDragging) return;
-    const overlayRect = overlay.getBoundingClientRect();
-    let newX = e.clientX - overlayRect.left - offsetX;
-    let newY = e.clientY - overlayRect.top - offsetY;
-
-    const dialogRect = dialog.getBoundingClientRect();
-    const maxX = overlayRect.width - dialogRect.width;
-    const maxY = overlayRect.height - dialogRect.height;
-    newX = Math.max(0, Math.min(newX, maxX));
-    newY = Math.max(0, Math.min(newY, maxY));
-
-    dialog.style.position = 'absolute';
-    dialog.style.left = newX + 'px';
-    dialog.style.top = newY + 'px';
-    dialog.style.margin = '0';
-    dialog.style.transform = 'none';
-  });
-
-  document.addEventListener('mouseup', () => {
-    isDragging = false;
-  });
-}
-
-// Context menu
-function showContextMenu(x, y) {
-  hideContextMenu();
-
-  const doc = getActiveDocument();
-  if (!doc) return;
-
-  const menu = document.createElement('div');
-  menu.className = 'context-menu';
-  contextMenu = menu;
-
-  const hasSelection = selectedBookmarkId !== null;
-
-  const items = [
-    { label: 'Add Bookmark', action: addBookmark, disabled: false },
-    { label: 'Add Child Bookmark', action: addChildBookmark, disabled: !hasSelection },
-    { separator: true },
-    { label: 'Edit Bookmark', action: editBookmark, disabled: !hasSelection },
-    { label: 'Delete Bookmark', action: deleteBookmark, disabled: !hasSelection },
-    { separator: true },
-    { label: 'Expand All', action: expandAll, disabled: false },
-    { label: 'Collapse All', action: collapseAll, disabled: false },
-  ];
-
-  for (const item of items) {
-    if (item.separator) {
-      const sep = document.createElement('div');
-      sep.className = 'context-menu-separator';
-      menu.appendChild(sep);
-      continue;
-    }
-    const el = document.createElement('div');
-    el.className = 'context-menu-item' + (item.disabled ? ' disabled' : '');
-    const labelEl = document.createElement('span');
-    labelEl.className = 'context-menu-label';
-    labelEl.textContent = item.label;
-    el.appendChild(labelEl);
-    if (!item.disabled) {
-      el.addEventListener('click', () => {
-        hideContextMenu();
-        item.action();
-      });
-    }
-    menu.appendChild(el);
-  }
-
-  menu.style.left = `${x}px`;
-  menu.style.top = `${y}px`;
-  menu.style.display = 'block';
-  document.body.appendChild(menu);
-
-  // Ensure menu stays in viewport
-  const rect = menu.getBoundingClientRect();
-  if (rect.right > window.innerWidth) {
-    menu.style.left = `${window.innerWidth - rect.width - 10}px`;
-  }
-  if (rect.bottom > window.innerHeight) {
-    menu.style.top = `${window.innerHeight - rect.height - 10}px`;
-  }
-
-  // Close on click outside or Escape
-  const closeHandler = (e) => {
-    if (!menu.contains(e.target)) {
-      hideContextMenu();
-      document.removeEventListener('click', closeHandler);
-    }
-  };
-  const escHandler = (e) => {
-    if (e.key === 'Escape') {
-      hideContextMenu();
-      document.removeEventListener('keydown', escHandler);
-    }
-  };
-  setTimeout(() => {
-    document.addEventListener('click', closeHandler);
-    document.addEventListener('keydown', escHandler);
-  }, 0);
-}
-
-function hideContextMenu() {
-  if (contextMenu) {
-    contextMenu.remove();
-    contextMenu = null;
-  }
-}
-
-// Also handle right-click on the empty container area
-if (bookmarksContainer) {
-  bookmarksContainer.addEventListener('contextmenu', (e) => {
-    // Only if not clicking on a bookmark item
-    if (!e.target.closest('.bookmark-item')) {
-      e.preventDefault();
-      selectedBookmarkId = null;
-      updateToolbarState();
-      if (bookmarksContainer) {
-        bookmarksContainer.querySelectorAll('.bookmark-item').forEach(el => {
-          el.classList.remove('selected');
-        });
-      }
-      showContextMenu(e.clientX, e.clientY);
-    }
-  });
-}

@@ -1,7 +1,10 @@
 import { state } from '../core/state.js';
-import { annotationCtx, colorPicker, lineWidth } from '../ui/dom-elements.js';
+import { annotationCtx } from '../ui/dom-elements.js';
+import { getColorPickerValue, getLineWidthValue } from '../solid/stores/ribbonStore.js';
 import { redrawAnnotations, drawCloudShape } from '../annotations/rendering.js';
 import { snapAngle } from '../utils/helpers.js';
+import { calculateDistance, formatMeasurement } from '../annotations/measurement.js';
+import { drawSnapIndicator } from './snap-engine.js';
 
 export function drawArrowhead(ctx, x, y, angle, size, style) {
   const halfAngle = Math.PI / 6; // 30 degrees
@@ -66,7 +69,7 @@ export function drawShapePreview(currentX, currentY, e) {
 
   switch (state.currentTool) {
     case 'highlight':
-      annotationCtx.fillStyle = colorPicker.value;
+      annotationCtx.fillStyle = prefs.highlightColor || getColorPickerValue();
       annotationCtx.globalAlpha = 0.3;
       annotationCtx.fillRect(state.startX, state.startY, currentX - state.startX, currentY - state.startY);
       annotationCtx.globalAlpha = 1;
@@ -85,13 +88,24 @@ export function drawShapePreview(currentX, currentY, e) {
         lineEndX = state.startX + length * Math.cos(snappedAngle);
         lineEndY = state.startY + length * Math.sin(snappedAngle);
       }
-      annotationCtx.strokeStyle = colorPicker.value;
-      annotationCtx.lineWidth = parseInt(lineWidth.value);
+      annotationCtx.strokeStyle = prefs.lineStrokeColor || getColorPickerValue();
+      annotationCtx.lineWidth = prefs.lineLineWidth || getLineWidthValue();
       annotationCtx.lineCap = 'round';
+      // Set border style
+      if (prefs.lineBorderStyle === 'dashed') {
+        annotationCtx.setLineDash([8, 4]);
+      } else if (prefs.lineBorderStyle === 'dotted') {
+        annotationCtx.setLineDash([2, 2]);
+      } else {
+        annotationCtx.setLineDash([]);
+      }
+      annotationCtx.globalAlpha = (prefs.lineOpacity || 100) / 100;
       annotationCtx.beginPath();
       annotationCtx.moveTo(state.startX, state.startY);
       annotationCtx.lineTo(lineEndX, lineEndY);
       annotationCtx.stroke();
+      annotationCtx.globalAlpha = 1;
+      annotationCtx.setLineDash([]);
       break;
 
     case 'arrow':
@@ -108,9 +122,9 @@ export function drawShapePreview(currentX, currentY, e) {
         arrowEndY = state.startY + length * Math.sin(snappedAngle);
       }
       // Get arrow preferences
-      const arrowStrokeColor = prefs.arrowStrokeColor || colorPicker.value;
+      const arrowStrokeColor = prefs.arrowStrokeColor || getColorPickerValue();
       const arrowFillColor = prefs.arrowFillColor || arrowStrokeColor;
-      const arrowLineWidth = prefs.arrowLineWidth || parseInt(lineWidth.value);
+      const arrowLineWidth = prefs.arrowLineWidth || getLineWidthValue();
       const arrowBorderStyle = prefs.arrowBorderStyle || 'solid';
       const arrowHeadSize = prefs.arrowHeadSize || 12;
       const arrowStartHead = prefs.arrowStartHead || 'none';
@@ -198,8 +212,8 @@ export function drawShapePreview(currentX, currentY, e) {
       const cy = state.startY + height / 2;
       const rx = Math.abs(width) / 2;
       const ry = Math.abs(height) / 2;
-      annotationCtx.strokeStyle = colorPicker.value;
-      annotationCtx.lineWidth = parseInt(lineWidth.value);
+      annotationCtx.strokeStyle = prefs.polygonStrokeColor || getColorPickerValue();
+      annotationCtx.lineWidth = prefs.polygonLineWidth || getLineWidthValue();
       annotationCtx.beginPath();
       for (let i = 0; i <= 6; i++) {
         const angle = (i * 2 * Math.PI / 6) - Math.PI / 2;
@@ -221,8 +235,8 @@ export function drawShapePreview(currentX, currentY, e) {
       const cloudW = Math.abs(currentX - state.startX);
       const cloudH = Math.abs(currentY - state.startY);
       if (cloudW > 10 && cloudH > 10) {
-        annotationCtx.strokeStyle = colorPicker.value;
-        annotationCtx.lineWidth = parseInt(lineWidth.value);
+        annotationCtx.strokeStyle = prefs.cloudStrokeColor || getColorPickerValue();
+        annotationCtx.lineWidth = prefs.cloudLineWidth || getLineWidthValue();
         drawCloudShape(annotationCtx, cloudX, cloudY, cloudW, cloudH);
       }
       break;
@@ -306,6 +320,75 @@ export function drawShapePreview(currentX, currentY, e) {
       annotationCtx.stroke();
       annotationCtx.setLineDash([]);
       break;
+
+    case 'measureDistance': {
+      let mEndX = currentX;
+      let mEndY = currentY;
+      // Snap to angle increments when Shift is held
+      if (e.shiftKey && prefs.enableAngleSnap) {
+        const dx = currentX - state.startX;
+        const dy = currentY - state.startY;
+        const length = Math.sqrt(dx * dx + dy * dy);
+        const currentAngle = Math.atan2(dy, dx) * (180 / Math.PI);
+        const snappedAngle = snapAngle(currentAngle, prefs.angleSnapDegrees) * (Math.PI / 180);
+        mEndX = state.startX + length * Math.cos(snappedAngle);
+        mEndY = state.startY + length * Math.sin(snappedAngle);
+      }
+
+      const mColor = prefs.measureStrokeColor || '#FF0000';
+      const mLineWidth = prefs.measureLineWidth || 1;
+      annotationCtx.strokeStyle = mColor;
+      annotationCtx.lineWidth = mLineWidth;
+      annotationCtx.globalAlpha = (prefs.measureOpacity || 100) / 100;
+      annotationCtx.setLineDash([]);
+      annotationCtx.lineCap = 'round';
+
+      // Draw the measurement line
+      annotationCtx.beginPath();
+      annotationCtx.moveTo(state.startX, state.startY);
+      annotationCtx.lineTo(mEndX, mEndY);
+      annotationCtx.stroke();
+
+      // Draw perpendicular end markers (ticks)
+      const mdLen = 8;
+      const mdAngle = Math.atan2(mEndY - state.startY, mEndX - state.startX);
+      const perpAngle = mdAngle + Math.PI / 2;
+      const mpx = Math.cos(perpAngle) * mdLen / 2;
+      const mpy = Math.sin(perpAngle) * mdLen / 2;
+
+      annotationCtx.beginPath();
+      annotationCtx.moveTo(state.startX - mpx, state.startY - mpy);
+      annotationCtx.lineTo(state.startX + mpx, state.startY + mpy);
+      annotationCtx.moveTo(mEndX - mpx, mEndY - mpy);
+      annotationCtx.lineTo(mEndX + mpx, mEndY + mpy);
+      annotationCtx.stroke();
+
+      // Draw live measurement text along the line direction
+      const dist = calculateDistance(state.startX, state.startY, mEndX, mEndY);
+      const measureText = formatMeasurement(dist);
+      const midX = (state.startX + mEndX) / 2;
+      const midY = (state.startY + mEndY) / 2;
+      let textAngle = Math.atan2(mEndY - state.startY, mEndX - state.startX);
+      // Keep text readable (not upside-down)
+      if (textAngle > Math.PI / 2) textAngle -= Math.PI;
+      else if (textAngle < -Math.PI / 2) textAngle += Math.PI;
+      annotationCtx.save();
+      annotationCtx.translate(midX, midY);
+      annotationCtx.rotate(textAngle);
+      annotationCtx.font = '11px Arial';
+      annotationCtx.fillStyle = mColor;
+      annotationCtx.textAlign = 'center';
+      annotationCtx.textBaseline = 'bottom';
+      annotationCtx.fillText(measureText, 0, -4);
+      annotationCtx.restore();
+      annotationCtx.globalAlpha = 1;
+      break;
+    }
+  }
+
+  // Draw snap indicator if snapping is active
+  if (state.lastSnapResult && state.lastSnapResult.snapped) {
+    drawSnapIndicator(annotationCtx, state.lastSnapResult, state.scale);
   }
 
   annotationCtx.restore();

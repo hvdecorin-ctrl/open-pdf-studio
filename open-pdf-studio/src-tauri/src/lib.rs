@@ -3,7 +3,8 @@ use std::fs::File;
 use std::collections::HashMap;
 use std::sync::Mutex;
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
-use tauri::Manager;
+use tauri::{Emitter, Manager};
+use tauri_plugin_fs::FsExt;
 
 // Store the file path passed via command line
 struct OpenedFile(Mutex<Option<String>>);
@@ -78,61 +79,62 @@ fn is_dev_mode() -> bool {
 
 /// Check if this app is the default handler for .pdf files on Windows.
 /// Returns true if our exe is the registered handler, false otherwise.
+/// Uses spawn_blocking so the subprocess calls never block the main thread.
 #[tauri::command]
-fn is_default_pdf_app() -> bool {
-    #[cfg(target_os = "windows")]
-    {
-        // Get our own executable path
-        let our_exe = match std::env::current_exe() {
-            Ok(p) => p.to_string_lossy().to_lowercase(),
-            Err(_) => return false,
-        };
-
-        // Query the UserChoice ProgId for .pdf
-        let output = match std::process::Command::new("reg")
-            .args(&["query", r"HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\FileExts\.pdf\UserChoice", "/v", "ProgId"])
-            .output()
+async fn is_default_pdf_app() -> bool {
+    tauri::async_runtime::spawn_blocking(|| {
+        #[cfg(target_os = "windows")]
         {
-            Ok(o) => o,
-            Err(_) => return false,
-        };
-        let stdout = String::from_utf8_lossy(&output.stdout);
+            // Get our own executable path
+            let our_exe = match std::env::current_exe() {
+                Ok(p) => p.to_string_lossy().to_lowercase(),
+                Err(_) => return false,
+            };
 
-        // Extract ProgId value from reg query output
-        // Format: "    ProgId    REG_SZ    SomeProgId"
-        let prog_id = stdout.lines()
-            .find(|line| line.contains("ProgId"))
-            .and_then(|line| line.split_whitespace().last())
-            .unwrap_or("");
+            // Query the UserChoice ProgId for .pdf
+            let output = match std::process::Command::new("reg")
+                .args(&["query", r"HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\FileExts\.pdf\UserChoice", "/v", "ProgId"])
+                .output()
+            {
+                Ok(o) => o,
+                Err(_) => return false,
+            };
+            let stdout = String::from_utf8_lossy(&output.stdout);
 
-        if prog_id.is_empty() {
-            return false;
+            // Extract ProgId value from reg query output
+            let prog_id = stdout.lines()
+                .find(|line| line.contains("ProgId"))
+                .and_then(|line| line.split_whitespace().last())
+                .unwrap_or("");
+
+            if prog_id.is_empty() {
+                return false;
+            }
+
+            // Check if the ProgId directly matches our app name
+            if prog_id.to_lowercase().contains("openpdfstudio") {
+                return true;
+            }
+
+            // Look up the shell\open\command for this ProgId in HKCR
+            let key_path = format!(r"HKCR\{}\shell\open\command", prog_id);
+            let output2 = match std::process::Command::new("reg")
+                .args(&["query", &key_path, "/ve"])
+                .output()
+            {
+                Ok(o) => o,
+                Err(_) => return false,
+            };
+            let stdout2 = String::from_utf8_lossy(&output2.stdout).to_lowercase();
+
+            stdout2.contains("openpdfstudio") || stdout2.contains(&our_exe.replace('\\', "\\\\"))
         }
 
-        // Check if the ProgId directly matches our app name
-        if prog_id.to_lowercase().contains("openpdfstudio") {
-            return true;
-        }
-
-        // Look up the shell\open\command for this ProgId in HKCR
-        let key_path = format!(r"HKCR\{}\shell\open\command", prog_id);
-        let output2 = match std::process::Command::new("reg")
-            .args(&["query", &key_path, "/ve"])
-            .output()
+        #[cfg(not(target_os = "windows"))]
         {
-            Ok(o) => o,
-            Err(_) => return false,
-        };
-        let stdout2 = String::from_utf8_lossy(&output2.stdout).to_lowercase();
-
-        // Check if the command points to our executable
-        stdout2.contains("openpdfstudio") || stdout2.contains(&our_exe.replace('\\', "\\\\"))
-    }
-
-    #[cfg(not(target_os = "windows"))]
-    {
-        false
-    }
+            false
+        }
+    }).await.unwrap_or(false)
 }
 
 /// Open Windows "Default Apps" settings page so user can set default PDF app.
@@ -180,7 +182,6 @@ fn lock_file(path: String, state: tauri::State<LockedFiles>) -> Result<bool, Str
 
     #[cfg(not(target_os = "windows"))]
     {
-        use std::io::{Seek, SeekFrom};
         // On Unix, use advisory file locking (flock)
         let file = fs::OpenOptions::new()
             .read(true)
@@ -455,6 +456,63 @@ fn is_virtual_printer_installed() -> bool {
     }
 }
 
+/// Download a PDF from a URL and save it to a temp file.
+/// Returns the temp file path on success.
+#[tauri::command]
+async fn download_pdf_from_url(url: String) -> Result<String, String> {
+    let response = reqwest::get(&url).await.map_err(|e| format!("Download failed: {}", e))?;
+
+    if !response.status().is_success() {
+        return Err(format!("HTTP error: {}", response.status()));
+    }
+
+    let bytes = response.bytes().await.map_err(|e| format!("Failed to read response: {}", e))?;
+
+    if bytes.is_empty() {
+        return Err("Downloaded file is empty".to_string());
+    }
+
+    let temp_dir = std::env::temp_dir();
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0);
+
+    // Try to extract filename from URL
+    let filename = url.split('/').last()
+        .and_then(|s| s.split('?').next())
+        .filter(|s| s.to_lowercase().ends_with(".pdf"))
+        .unwrap_or("download.pdf");
+
+    let path = temp_dir.join(format!("openstudio_url_{}_{}", timestamp, filename));
+    fs::write(&path, &bytes).map_err(|e| format!("Failed to write temp file: {}", e))?;
+    Ok(path.to_string_lossy().to_string())
+}
+
+/// List PDF files in a directory.
+/// Returns a list of full file paths for .pdf files found.
+#[tauri::command]
+fn list_pdf_files(dir: String) -> Result<Vec<String>, String> {
+    let entries = fs::read_dir(&dir).map_err(|e| format!("Failed to read directory: {}", e))?;
+    let mut pdf_files: Vec<String> = Vec::new();
+
+    for entry in entries {
+        if let Ok(entry) = entry {
+            let path = entry.path();
+            if path.is_file() {
+                if let Some(ext) = path.extension() {
+                    if ext.to_string_lossy().to_lowercase() == "pdf" {
+                        pdf_files.push(path.to_string_lossy().to_string());
+                    }
+                }
+            }
+        }
+    }
+
+    pdf_files.sort();
+    Ok(pdf_files)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // Check for PDF file in command line arguments
@@ -464,17 +522,45 @@ pub fn run() {
         .find(|arg| arg.to_lowercase().ends_with(".pdf") && !arg.starts_with('-'))
         .cloned();
 
-    tauri::Builder::default()
+    let mut builder = tauri::Builder::default()
         .manage(OpenedFile(Mutex::new(opened_file)))
         .manage(LockedFiles(Mutex::new(HashMap::new())))
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_os::init())
-        .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_deep_link::init());
+
+    // Single-instance and updater plugins are desktop-only
+    #[cfg(not(target_os = "android"))]
+    {
+        builder = builder
+            .plugin(tauri_plugin_single_instance::init(|app: &tauri::AppHandle, argv: Vec<String>, _cwd: String| {
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.unminimize();
+                    let _ = window.set_focus();
+                }
+                let file = argv.iter()
+                    .find(|arg: &&String| arg.to_lowercase().ends_with(".pdf") && !arg.starts_with('-'))
+                    .cloned();
+                if let Some(ref path) = file {
+                    let _ = app.fs_scope().allow_file(path);
+                    let _ = app.emit("open-file", path);
+                }
+            }))
+            .plugin(tauri_plugin_updater::Builder::new().build());
+    }
+
+    builder
         .setup(|app| {
-            // Set the window icon so taskbar matches the title bar icon
+            // Grant FS plugin scope for the command-line file (file association)
+            if let Some(ref path) = app.state::<OpenedFile>().0.lock().unwrap().clone() {
+                let _ = app.fs_scope().allow_file(path);
+            }
+
+            // Set the window icon (desktop only — not applicable on Android)
+            #[cfg(not(target_os = "android"))]
             if let Some(window) = app.get_webview_window("main") {
                 let icon_bytes = include_bytes!("../icons/icon.png");
                 if let Ok(icon) = tauri::image::Image::from_bytes(icon_bytes) {
@@ -506,7 +592,9 @@ pub fn run() {
             delete_file,
             install_virtual_printer,
             remove_virtual_printer,
-            is_virtual_printer_installed
+            is_virtual_printer_installed,
+            download_pdf_from_url,
+            list_pdf_files
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
