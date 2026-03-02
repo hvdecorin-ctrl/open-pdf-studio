@@ -192,6 +192,16 @@
     "elementsRooms": "Rooms",
     "elementsWall": "Wall",
     "elementsGrids": "Grids",
-    "elementsGrid": "Grid"
+    "elementsGrid": "Grid",
+    "sortByPage": "Pàgina",
+    "sortByType": "Tipus",
+    "sortByAuthor": "Autor",
+    "sortByDate": "Data",
+    "sortByColor": "Color",
+    "filterLabel": "Filtre",
+    "sortLabel": "Ordenar per",
+    "expandAll": "Expandir-ho tot",
+    "collapseAll": "Reduir-ho tot",
+    "annotationsMenu": "Menú"
   }
 }

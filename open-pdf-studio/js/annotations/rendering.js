@@ -7,7 +7,7 @@ import { renderWatermarksBehind, renderWatermarksInFront } from '../watermark/wa
 // Import from sub-modules
 import { drawPolygonShape, drawCloudShape, drawTextboxContent } from './rendering/shapes.js';
 import { drawArrowheadOnCanvas, applyBorderStyle } from './rendering/decorations.js';
-import { drawSelectionHandles, drawMultiSelectionOutline, drawMultiSelectionBounds } from './rendering/selection.js';
+import { drawSelectionHandles } from './rendering/selection.js';
 import { updateQuickAccessButtons, updateContextualTabs, drawGrid, snapToGrid } from './rendering/ui-state.js';
 
 // Re-export everything that external code needs
@@ -86,7 +86,8 @@ function drawAnnotation(ctx, annotation) {
       const offH = maxAY - minAY;
 
       // Create offscreen canvas at scaled resolution to avoid pixelation when zoomed
-      const arrowScale = state.scale || 1;
+      const arrowDoc = state.documents[state.activeDocumentIndex];
+      const arrowScale = (arrowDoc ? arrowDoc.scale : 1) || 1;
       const offCanvas = document.createElement('canvas');
       offCanvas.width = offW * arrowScale;
       offCanvas.height = offH * arrowScale;
@@ -739,7 +740,8 @@ function drawTextEdits(ctx, pageNum) {
   if (pageEdits.length === 0) return;
 
   const canvasEl = ctx.canvas;
-  const pageHeight = canvasEl.height / state.scale;
+  const docForScale = state.documents[state.activeDocumentIndex];
+  const pageHeight = canvasEl.height / (docForScale ? docForScale.scale : 1);
 
   for (const edit of pageEdits) {
     const fontSize = edit.fontSize;
@@ -792,25 +794,31 @@ function drawTextEdits(ctx, pageNum) {
 export function redrawAnnotations(lightweight = false) {
   if (!annotationCtx || !annotationCanvas) return;
 
+  // Read scale and annotations from the active document directly
+  // (bypass createMutable proxy getter caching)
+  const doc = state.documents[state.activeDocumentIndex];
+  const scale = doc ? doc.scale : 1;
+  const annotations = doc ? doc.annotations : [];
+
   annotationCtx.clearRect(0, 0, annotationCanvas.width, annotationCanvas.height);
 
   // Apply scale transformation for zooming
   annotationCtx.save();
-  annotationCtx.scale(state.scale, state.scale);
+  annotationCtx.scale(scale, scale);
 
   // Draw grid overlay if enabled
   if (state.preferences.showGrid) {
-    drawGrid(annotationCtx, annotationCanvas.width / state.scale, annotationCanvas.height / state.scale);
+    drawGrid(annotationCtx, annotationCanvas.width / scale, annotationCanvas.height / scale);
   }
 
   // Draw watermarks behind content
-  renderWatermarksBehind(annotationCtx, state.currentPage, annotationCanvas.width / state.scale, annotationCanvas.height / state.scale);
+  renderWatermarksBehind(annotationCtx, state.currentPage, annotationCanvas.width / scale, annotationCanvas.height / scale);
 
   // Draw text edits (cover-and-replace) before annotations
   drawTextEdits(annotationCtx, state.currentPage);
 
   // Draw all annotations for current page
-  state.annotations.forEach(annotation => {
+  annotations.forEach(annotation => {
     if (annotation.page !== state.currentPage) return;
     drawAnnotation(annotationCtx, annotation);
   });
@@ -819,19 +827,15 @@ export function redrawAnnotations(lightweight = false) {
   annotationCtx.globalCompositeOperation = 'source-over';
 
   // Draw watermarks in front of content
-  renderWatermarksInFront(annotationCtx, state.currentPage, annotationCanvas.width / state.scale, annotationCanvas.height / state.scale);
+  renderWatermarksInFront(annotationCtx, state.currentPage, annotationCanvas.width / scale, annotationCanvas.height / scale);
 
-  // Draw selection highlight and handles
-  if (state.selectedAnnotations.length > 1) {
-    // Multi-selection: draw individual selection outlines for each
-    for (const ann of state.selectedAnnotations) {
+  // Draw selection highlight and handles (use selectedAnnotations array as source of truth)
+  const selected = state.selectedAnnotations;
+  if (selected.length > 0) {
+    for (const ann of selected) {
       if (ann.page !== state.currentPage) continue;
-      drawMultiSelectionOutline(annotationCtx, ann);
+      drawSelectionHandles(annotationCtx, ann);
     }
-    // Draw overall bounding box
-    drawMultiSelectionBounds(annotationCtx);
-  } else if (state.selectedAnnotation && state.selectedAnnotation.page === state.currentPage) {
-    drawSelectionHandles(annotationCtx, state.selectedAnnotation);
   }
 
   // Restore context
@@ -856,23 +860,28 @@ export function redrawAnnotations(lightweight = false) {
 export function renderAnnotationsForPage(ctx, pageNum, width, height) {
   ctx.clearRect(0, 0, width, height);
 
+  // Read scale and annotations from the active document directly
+  const doc = state.documents[state.activeDocumentIndex];
+  const scale = doc ? doc.scale : 1;
+  const annotations = doc ? doc.annotations : [];
+
   // Apply scale transformation for zooming
   ctx.save();
-  ctx.scale(state.scale, state.scale);
+  ctx.scale(scale, scale);
 
   // Draw watermarks behind content
-  renderWatermarksBehind(ctx, pageNum, width / state.scale, height / state.scale);
+  renderWatermarksBehind(ctx, pageNum, width / scale, height / scale);
 
   // Draw text edits (cover-and-replace)
   drawTextEdits(ctx, pageNum);
 
-  state.annotations.forEach(annotation => {
+  annotations.forEach(annotation => {
     if (annotation.page !== pageNum) return;
     drawAnnotation(ctx, annotation);
   });
 
   // Draw watermarks in front of content
-  renderWatermarksInFront(ctx, pageNum, width / state.scale, height / state.scale);
+  renderWatermarksInFront(ctx, pageNum, width / scale, height / scale);
 
   // Restore context
   ctx.restore();

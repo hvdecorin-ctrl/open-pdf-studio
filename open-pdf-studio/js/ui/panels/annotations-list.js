@@ -1,10 +1,11 @@
-import { state, isSelected } from '../../core/state.js';
+import { state, isSelected, getAnnotationBounds, addToSelection, removeFromSelection } from '../../core/state.js';
 import { getTypeDisplayName, formatDate } from '../../utils/helpers.js';
-import { showProperties } from './properties-panel.js';
+import { showProperties, showMultiSelectionProperties } from './properties-panel.js';
 import { goToPage } from '../../pdf/renderer.js';
+import { redrawAnnotations } from '../../annotations/rendering.js';
 import { switchLeftPanelTab } from './left-panel.js';
 import { collapsed as leftPanelCollapsed, activeTab } from '../../solid/stores/leftPanelStore.js';
-import { setItems, setCountText, setEmptyMessage } from '../../solid/stores/panels/annotationsStore.js';
+import { setItems, setCountText, setEmptyMessage, sortMode, filterMode, setFilterMode } from '../../solid/stores/panels/annotationsStore.js';
 
 const statusColors = {
   'accepted': '#22c55e',
@@ -38,24 +39,105 @@ export function hideAnnotationsListPanel() {
 }
 
 // Update annotations list - pushes data to the Solid.js store
-export function updateAnnotationsList(filterValue = 'all') {
-  // Filter annotations
-  let filteredAnnotations = [...state.annotations];
+export function updateAnnotationsList(filterValue) {
+  // Use provided filter or fall back to stored filter mode
+  if (filterValue !== undefined) {
+    setFilterMode(filterValue);
+  }
+  const activeFilter = filterValue !== undefined ? filterValue : filterMode();
 
-  if (filterValue === 'current') {
+  // Read annotations from the active document directly (bypass proxy getter caching)
+  const doc = state.documents[state.activeDocumentIndex];
+  const annotations = doc ? doc.annotations : [];
+
+  // Filter annotations
+  let filteredAnnotations = [...annotations];
+
+  if (activeFilter === 'current') {
     filteredAnnotations = filteredAnnotations.filter(a => a.page === state.currentPage);
-  } else if (filterValue !== 'all') {
-    filteredAnnotations = filteredAnnotations.filter(a => a.type === filterValue);
+  } else if (activeFilter !== 'all') {
+    filteredAnnotations = filteredAnnotations.filter(a => a.type === activeFilter);
   }
 
   // Update count text
   setCountText(`${filteredAnnotations.length} annotation${filteredAnnotations.length !== 1 ? 's' : ''}`);
 
-  // Sort by page, then by creation date
-  filteredAnnotations.sort((a, b) => {
+  // Sort and group based on current sort mode
+  const currentSort = sortMode();
+
+  const pageThenDate = (a, b) => {
     if (a.page !== b.page) return a.page - b.page;
     return new Date(a.createdAt) - new Date(b.createdAt);
-  });
+  };
+
+  if (currentSort === 'type') {
+    filteredAnnotations.sort((a, b) => {
+      const ta = getTypeDisplayName(a.type);
+      const tb = getTypeDisplayName(b.type);
+      if (ta !== tb) return ta.localeCompare(tb);
+      return pageThenDate(a, b);
+    });
+  } else if (currentSort === 'modifiedDate') {
+    filteredAnnotations.sort((a, b) => new Date(b.modifiedAt) - new Date(a.modifiedAt));
+  } else if (currentSort === 'creationDate') {
+    filteredAnnotations.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  } else if (currentSort === 'author') {
+    filteredAnnotations.sort((a, b) => {
+      const aa = (a.author || 'User').toLowerCase();
+      const ab = (b.author || 'User').toLowerCase();
+      if (aa !== ab) return aa.localeCompare(ab);
+      return pageThenDate(a, b);
+    });
+  } else if (currentSort === 'color') {
+    filteredAnnotations.sort((a, b) => {
+      const ca = (a.color || a.strokeColor || '#000').toLowerCase();
+      const cb = (b.color || b.strokeColor || '#000').toLowerCase();
+      if (ca !== cb) return ca.localeCompare(cb);
+      return pageThenDate(a, b);
+    });
+  } else if (currentSort === 'subject') {
+    filteredAnnotations.sort((a, b) => {
+      const sa = (a.subject || '').toLowerCase();
+      const sb = (b.subject || '').toLowerCase();
+      if (sa !== sb) return sa.localeCompare(sb);
+      return pageThenDate(a, b);
+    });
+  } else if (currentSort === 'status') {
+    filteredAnnotations.sort((a, b) => {
+      const sa = (a.status || 'none').toLowerCase();
+      const sb = (b.status || 'none').toLowerCase();
+      if (sa !== sb) return sa.localeCompare(sb);
+      return pageThenDate(a, b);
+    });
+  } else if (currentSort === 'statusAndAuthor') {
+    filteredAnnotations.sort((a, b) => {
+      const sa = (a.status || 'none').toLowerCase();
+      const sb = (b.status || 'none').toLowerCase();
+      if (sa !== sb) return sa.localeCompare(sb);
+      const aa = (a.author || 'User').toLowerCase();
+      const ab = (b.author || 'User').toLowerCase();
+      if (aa !== ab) return aa.localeCompare(ab);
+      return pageThenDate(a, b);
+    });
+  } else if (currentSort === 'lastStatusAuthor') {
+    const getLastStatusAuthor = (ann) => {
+      if (ann.replies && ann.replies.length > 0) {
+        for (let i = ann.replies.length - 1; i >= 0; i--) {
+          if (ann.replies[i].author) return ann.replies[i].author;
+        }
+      }
+      return ann.author || 'User';
+    };
+    filteredAnnotations.sort((a, b) => {
+      const aa = getLastStatusAuthor(a).toLowerCase();
+      const ab = getLastStatusAuthor(b).toLowerCase();
+      if (aa !== ab) return aa.localeCompare(ab);
+      return pageThenDate(a, b);
+    });
+  } else {
+    // Default: sort by page
+    filteredAnnotations.sort(pageThenDate);
+  }
 
   if (filteredAnnotations.length === 0) {
     setEmptyMessage('No annotations found');
@@ -66,38 +148,109 @@ export function updateAnnotationsList(filterValue = 'all') {
   // Clear empty message so the list renders
   setEmptyMessage('');
 
-  // Group by page
-  const pageGroups = {};
-  filteredAnnotations.forEach(ann => {
-    if (!pageGroups[ann.page]) {
-      pageGroups[ann.page] = [];
+  // Helper to get last status author
+  const getLastStatusAuthor = (ann) => {
+    if (ann.replies && ann.replies.length > 0) {
+      for (let i = ann.replies.length - 1; i >= 0; i--) {
+        if (ann.replies[i].author) return ann.replies[i].author;
+      }
     }
-    pageGroups[ann.page].push(ann);
+    return ann.author || 'User';
+  };
+
+  // Helper to capitalize status
+  const capitalize = (s) => s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
+
+  // Group annotations based on sort mode
+  const groups = {};
+  filteredAnnotations.forEach(ann => {
+    let groupKey;
+    if (currentSort === 'type') {
+      groupKey = ann.type;
+    } else if (currentSort === 'author') {
+      groupKey = ann.author || 'User';
+    } else if (currentSort === 'modifiedDate') {
+      const d = new Date(ann.modifiedAt);
+      groupKey = isNaN(d.getTime()) ? 'Unknown' : d.toLocaleDateString();
+    } else if (currentSort === 'creationDate') {
+      const d = new Date(ann.createdAt);
+      groupKey = isNaN(d.getTime()) ? 'Unknown' : d.toLocaleDateString();
+    } else if (currentSort === 'color') {
+      groupKey = ann.color || ann.strokeColor || '#000';
+    } else if (currentSort === 'subject') {
+      groupKey = ann.subject || '(No Subject)';
+    } else if (currentSort === 'status') {
+      groupKey = ann.status || 'none';
+    } else if (currentSort === 'statusAndAuthor') {
+      const s = ann.status || 'none';
+      const a = ann.author || 'User';
+      groupKey = `${s}|${a}`;
+    } else if (currentSort === 'lastStatusAuthor') {
+      groupKey = getLastStatusAuthor(ann);
+    } else {
+      groupKey = ann.page;
+    }
+    if (!groups[groupKey]) groups[groupKey] = [];
+    groups[groupKey].push(ann);
   });
 
   // Build flat items array for the store
   const flatItems = [];
+  const groupKeys = Object.keys(groups);
 
-  Object.keys(pageGroups).sort((a, b) => a - b).forEach(pageNum => {
-    // Page header entry
-    flatItems.push({ isHeader: true, page: parseInt(pageNum) });
+  // Sort group keys
+  if (currentSort === 'page') {
+    groupKeys.sort((a, b) => a - b);
+  } else if (currentSort === 'modifiedDate' || currentSort === 'creationDate') {
+    // Keep insertion order (already sorted by date)
+  } else {
+    groupKeys.sort((a, b) => String(a).localeCompare(String(b)));
+  }
+
+  groupKeys.forEach(key => {
+    // Header entry
+    let headerLabel, headerColor;
+    if (currentSort === 'type') {
+      headerLabel = getTypeDisplayName(key);
+    } else if (currentSort === 'color') {
+      headerColor = key;
+    } else if (currentSort === 'status') {
+      headerLabel = capitalize(key);
+    } else if (currentSort === 'statusAndAuthor') {
+      const [s, a] = key.split('|');
+      headerLabel = `${capitalize(s)} — ${a}`;
+    } else if (currentSort === 'page') {
+      // page number stored in item.page
+    } else {
+      headerLabel = key;
+    }
+
+    flatItems.push({
+      isHeader: true,
+      groupKey: key,
+      page: currentSort === 'page' ? parseInt(key) : null,
+      headerLabel,
+      headerColor,
+      sortMode: currentSort
+    });
 
     // Annotation item entries
-    pageGroups[pageNum].forEach(ann => {
+    groups[key].forEach(ann => {
       const hasStatus = ann.status && ann.status !== 'none';
       const replyCount = (ann.replies && ann.replies.length) || 0;
 
       flatItems.push({
         isHeader: false,
+        groupKey: key,
         id: ann.id,
         page: ann.page,
         type: ann.type,
         typeLabel: getTypeDisplayName(ann.type),
         color: ann.color || ann.strokeColor || '#000',
         text: ann.text ? ann.text.substring(0, 50) + (ann.text.length > 50 ? '...' : '') : null,
-        meta: `${ann.author || 'User'} - ${formatDate(ann.modifiedAt)}`,
+        meta: `[${ann.author || 'User'}] - ${formatDate(ann.modifiedAt)}`,
         statusColor: hasStatus ? (statusColors[ann.status] || '#888') : null,
-        statusTitle: hasStatus ? ann.status.charAt(0).toUpperCase() + ann.status.slice(1) : null,
+        statusTitle: hasStatus ? capitalize(ann.status) : null,
         replyCount,
         selected: isSelected(ann)
       });
@@ -107,17 +260,70 @@ export function updateAnnotationsList(filterValue = 'all') {
   setItems(flatItems);
 }
 
+// Scroll the pdf-container viewport to center on the given annotation
+function scrollToAnnotation(annotation) {
+  const bounds = getAnnotationBounds(annotation);
+  if (!bounds) return;
+
+  const scale = state.scale;
+  const pdfContainer = document.getElementById('pdf-container');
+  if (!pdfContainer) return;
+
+  const centerX = (bounds.x + bounds.width / 2) * scale;
+  const centerY = (bounds.y + bounds.height / 2) * scale;
+
+  if (state.viewMode === 'continuous') {
+    const pageWrapper = document.querySelector(`.page-wrapper[data-page="${annotation.page}"]`);
+    if (!pageWrapper) return;
+    const canvasContainer = pageWrapper.querySelector('.canvas-container-cont');
+    if (!canvasContainer) return;
+
+    const wrapperOffset = pageWrapper.offsetTop;
+    const canvasOffset = canvasContainer.offsetTop;
+    const scrollX = centerX - pdfContainer.clientWidth / 2;
+    const scrollY = wrapperOffset + canvasOffset + centerY - pdfContainer.clientHeight / 2;
+    pdfContainer.scrollTo({ left: Math.max(0, scrollX), top: Math.max(0, scrollY), behavior: 'smooth' });
+  } else {
+    const scrollX = centerX - pdfContainer.clientWidth / 2;
+    const scrollY = centerY - pdfContainer.clientHeight / 2;
+    pdfContainer.scrollTo({ left: Math.max(0, scrollX), top: Math.max(0, scrollY), behavior: 'smooth' });
+  }
+}
+
 // Select an annotation item - navigates to its page and selects it
-export async function selectAnnotationItem(id, page) {
+// When ctrlKey is true, toggles the annotation in/out of multi-selection
+export async function selectAnnotationItem(id, page, ctrlKey = false) {
   const annotation = state.annotations.find(a => a.id === id);
   if (!annotation) return;
 
-  if (annotation.page !== state.currentPage) {
-    await goToPage(annotation.page);
+  if (ctrlKey) {
+    if (isSelected(annotation)) {
+      removeFromSelection(annotation);
+    } else {
+      if (annotation.page !== state.currentPage) {
+        await goToPage(annotation.page);
+      }
+      addToSelection(annotation);
+    }
+  } else {
+    if (annotation.page !== state.currentPage) {
+      await goToPage(annotation.page);
+    }
+    state.selectedAnnotation = annotation;
   }
-  state.selectedAnnotation = annotation;
-  showProperties(annotation);
+
+  redrawAnnotations();
+  if (state.selectedAnnotations.length > 1) {
+    showMultiSelectionProperties();
+  } else if (state.selectedAnnotation) {
+    showProperties(state.selectedAnnotation);
+  }
   updateAnnotationsList();
+
+  // Scroll to the annotation when selecting (not when Ctrl+deselecting)
+  if (isSelected(annotation)) {
+    setTimeout(() => scrollToAnnotation(annotation), 50);
+  }
 }
 
 // Initialize annotations list panel (no-op, filter is handled by the component)

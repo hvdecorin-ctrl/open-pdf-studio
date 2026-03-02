@@ -1,5 +1,5 @@
 import { Show, Switch, Match, onMount, onCleanup } from 'solid-js';
-import { isBackstageOpen, closeBackstage, getActivePanel, setActivePanel } from '../../stores/backstageStore.js';
+import { isAppMenuOpen, closeAppMenu, getActivePanel, setActivePanel } from '../../stores/appMenuStore.js';
 import AboutPanel from './AboutPanel.jsx';
 import ImportPanel from './ImportPanel.jsx';
 import ExportPanel from './ExportPanel.jsx';
@@ -15,18 +15,18 @@ import { useTranslation } from '../../../i18n/useTranslation.js';
 function MenuItem(props) {
   return (
     <button
-      class={`backstage-item${props.active ? ' active' : ''}`}
+      class={`app-menu-item${props.active ? ' active' : ''}`}
       onClick={props.onClick}
     >
-      <span class="backstage-item-icon" innerHTML={props.icon} />
-      <span class="backstage-item-label">{props.label}</span>
-      <span class="backstage-item-shortcut">{props.shortcut || ''}</span>
+      <span class="app-menu-item-icon" innerHTML={props.icon} />
+      <span class="app-menu-item-label">{props.label}</span>
+      <span class="app-menu-item-shortcut">{props.shortcut || ''}</span>
     </button>
   );
 }
 
 function Divider() {
-  return <div class="backstage-divider" />;
+  return <div class="app-menu-divider" />;
 }
 
 const ICONS = {
@@ -44,16 +44,16 @@ const ICONS = {
 };
 
 function actionAndClose(fn) {
-  closeBackstage();
+  closeAppMenu();
   fn();
 }
 
-export default function Backstage() {
-  const { t } = useTranslation('backstage');
+export default function AppMenu() {
+  const { t } = useTranslation('appMenu');
   const { t: tDialogs } = useTranslation('dialogs');
 
   async function handleExit() {
-    closeBackstage();
+    closeAppMenu();
     if (hasUnsavedChanges()) {
       const names = getUnsavedDocumentNames().join(', ');
       const message = tDialogs('unsavedChanges.message', { names });
@@ -73,8 +73,8 @@ export default function Backstage() {
   }
 
   const handleKeyDown = (e) => {
-    if (e.key === 'Escape' && isBackstageOpen()) {
-      closeBackstage();
+    if (e.key === 'Escape' && isAppMenuOpen()) {
+      closeAppMenu();
     }
   };
 
@@ -83,21 +83,21 @@ export default function Backstage() {
 
   const handleContentClick = (e) => {
     if (e.target === e.currentTarget) {
-      closeBackstage();
+      closeAppMenu();
     }
   };
 
   return (
-    <Show when={isBackstageOpen()}>
-      <div class="backstage-overlay visible">
-        <div class="backstage-sidebar">
-          <button class="backstage-back" onClick={closeBackstage}>
+    <Show when={isAppMenuOpen()}>
+      <div class="app-menu-overlay visible">
+        <div class="app-menu-sidebar">
+          <button class="app-menu-back" onClick={closeAppMenu}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M19 12H5M12 19l-7-7 7-7"/>
             </svg>
             <span>{t('file')}</span>
           </button>
-          <div class="backstage-items">
+          <div class="app-menu-items">
             <MenuItem icon={ICONS.new} label={t('new')} shortcut="Ctrl+N" onClick={() => actionAndClose(showNewDocDialog)} />
             <MenuItem icon={ICONS.open} label={t('open')} shortcut="Ctrl+O" active={getActivePanel() === 'open'} onClick={() => setActivePanel('open')} />
             <MenuItem icon={ICONS.save} label={t('save')} shortcut="Ctrl+S" onClick={() => actionAndClose(savePDF)} />
@@ -116,7 +116,7 @@ export default function Backstage() {
             <MenuItem icon={ICONS.exit} label={t('exit')} shortcut="Alt+F4" onClick={handleExit} />
           </div>
         </div>
-        <div class="backstage-content" onClick={handleContentClick}>
+        <div class="app-menu-content" onClick={handleContentClick}>
           <Switch>
             <Match when={getActivePanel() === 'open'}>
               <OpenPanel />

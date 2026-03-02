@@ -11,7 +11,6 @@ import { loadPreferences, savePreferences } from './core/preferences.js';
 import { initDomElements } from './ui/dom-elements.js';
 
 // UI initialization
-import { initCropMarginsDialog } from './ui/chrome/dialogs.js';
 import { initMenus } from './ui/chrome/menus.js';
 import { initContextMenus } from './ui/chrome/context-menus.js';
 import { initAnnotationsList } from './ui/panels/annotations-list.js';
@@ -31,7 +30,7 @@ import { fitPage } from './pdf/renderer.js';
 import { initTextSelection } from './text/text-selection.js';
 
 // Tab management
-import { initTabs, createTab, closeActiveTab } from './ui/chrome/tabs.js';
+import { initTabs, createTab, switchToTab, closeActiveTab } from './ui/chrome/tabs.js';
 
 // Search/Find
 import { initFindBar } from './search/find-bar.js';
@@ -53,7 +52,35 @@ import App from './solid/App.jsx';
 import { addRecentFile } from './mobile/recent-files.js';
 
 // Tauri API
-import { isTauri, isMobile, getOpenedFile, loadSession, saveSession, fileExists, isDefaultPdfApp, openDefaultAppsSettings, extractFileName } from './core/platform.js';
+import { isTauri, isMobile, getOpenedFiles, loadSession, saveSession, fileExists, isDefaultPdfApp, openDefaultAppsSettings, extractFileName } from './core/platform.js';
+
+// Global promise queue — serializes all file loads across multiple openFiles() calls
+// (Windows single-instance plugin sends separate open-files events per file)
+let fileOpenQueue = Promise.resolve();
+
+// Open PDF files: tabs created instantly, loads serialized through global queue
+function openFiles(filePaths) {
+  // 1. Create all tabs instantly (synchronous) so the tab bar updates right away
+  const pending = [];
+  for (const filePath of filePaths) {
+    if (filePath && filePath.toLowerCase().endsWith('.pdf')) {
+      const { index } = createTab(filePath, false); // don't auto-switch
+      pending.push({ filePath, index });
+    }
+  }
+  // 2. Switch to the last new tab immediately (shows placeholder until load completes)
+  if (pending.length > 0) {
+    switchToTab(pending[pending.length - 1].index);
+  }
+  // 3. Chain loads onto the global queue (serialized even across multiple callers)
+  for (const { filePath, index } of pending) {
+    fileOpenQueue = fileOpenQueue.then(async () => {
+      await loadPDF(filePath, index);
+      addRecentFile(filePath, extractFileName(filePath));
+    }).catch(e => console.warn('Failed to open file:', filePath, e));
+  }
+  return fileOpenQueue;
+}
 
 // Disable default browser context menu
 function disableDefaultContextMenu() {
@@ -129,7 +156,6 @@ async function init() {
     initLeftPanel();
     initFindBar();
     initFontDropdowns();
-    initCropMarginsDialog();
   }
 
   // Initialize text selection
@@ -160,10 +186,10 @@ async function init() {
             }
             // Accept content:// URIs directly (Android picker uses opaque IDs that don't end in .pdf)
             if (filePath.startsWith('content://') || filePath.toLowerCase().endsWith('.pdf')) {
-              createTab(filePath);
+              const { index } = createTab(filePath);
               await new Promise(r => setTimeout(r, 0));
               initDomElements();
-              await loadPDF(filePath);
+              await loadPDF(filePath, index);
               await fitPage();
               addRecentFile(filePath, extractFileName(filePath));
             }
@@ -179,17 +205,10 @@ async function init() {
 
   // Listen for files opened from a second instance (single-instance plugin)
   if (isTauri() && window.__TAURI__?.event) {
-    window.__TAURI__.event.listen('open-file', async (event) => {
-      try {
-        const filePath = event.payload;
-        if (filePath && filePath.toLowerCase().endsWith('.pdf')) {
-          createTab(filePath);
-          await loadPDF(filePath);
-          addRecentFile(filePath, extractFileName(filePath));
-        }
-      } catch (e) {
-        console.warn('Failed to open file from second instance:', e);
-      }
+    window.__TAURI__.event.listen('open-files', (event) => {
+      const files = event.payload;
+      if (!Array.isArray(files)) return;
+      openFiles(files);
     });
   }
 
@@ -208,16 +227,14 @@ async function init() {
   }
 }
 
-// Check for PDF file passed as command line argument
+// Check for PDF files passed as command line arguments
 async function checkCommandLineArgs() {
   if (!isTauri()) return false;
 
   try {
-    const filePath = await getOpenedFile();
-    if (filePath && filePath.toLowerCase().endsWith('.pdf')) {
-      createTab(filePath);
-      await loadPDF(filePath);
-      addRecentFile(filePath, extractFileName(filePath));
+    const files = await getOpenedFiles();
+    if (Array.isArray(files) && files.length > 0) {
+      await openFiles(files);
       return true;
     }
   } catch (e) {
@@ -285,15 +302,19 @@ async function restoreLastSession() {
     const sessionData = await loadSession();
 
     if (sessionData && sessionData.openFiles && sessionData.openFiles.length > 0) {
+      // Filter to files that still exist, then open in parallel
+      const validFiles = [];
       for (const filePath of sessionData.openFiles) {
         try {
           if (await fileExists(filePath)) {
-            createTab(filePath);
-            await loadPDF(filePath);
+            validFiles.push(filePath);
           }
         } catch (e) {
-          console.warn('Failed to restore file:', filePath, e);
+          console.warn('Failed to check file:', filePath, e);
         }
+      }
+      if (validFiles.length > 0) {
+        await openFiles(validFiles);
       }
     }
   } catch (e) {

@@ -16,24 +16,27 @@ export function setupWheelZoom() {
     if (e.ctrlKey || e.metaKey) {
       e.preventDefault();
 
+      const doc = state.documents[state.activeDocumentIndex];
+      if (!doc) return;
+
       const minZoom = 0.25;
       const maxZoom = 10.0;
-      const oldScale = state.scale;
+      const oldScale = doc.scale;
 
       // Multiplicative zoom: smooth at all levels, works with trackpad pinch too
       // Mouse wheel deltaY is ~+-100 per tick, trackpad gives smaller values
       const factor = Math.pow(0.999, e.deltaY);
-      state.scale = Math.min(Math.max(state.scale * factor, minZoom), maxZoom);
+      doc.scale = Math.min(Math.max(doc.scale * factor, minZoom), maxZoom);
 
       // Round to avoid floating point noise (e.g. 0.9999999 -> 1.0)
-      state.scale = Math.round(state.scale * 1000) / 1000;
+      doc.scale = Math.round(doc.scale * 1000) / 1000;
 
-      if (state.scale === oldScale) return;
+      if (doc.scale === oldScale) return;
 
       const scrollContainer = document.getElementById('pdf-container');
       if (!scrollContainer) return;
 
-      const isContinuous = state.viewMode === 'continuous';
+      const isContinuous = doc.viewMode === 'continuous';
       const canvas = isContinuous
         ? document.querySelector('#continuous-container .annotation-canvas')
         : annotationCanvas;
@@ -52,7 +55,7 @@ export function setupWheelZoom() {
       // Scale canvases via CSS width/height for instant flicker-free feedback.
       // Unlike CSS transform, this updates layout (centering, scroll area)
       // without clearing the canvas pixel buffer.
-      const cssScale = state.scale / _zoomBaseScale;
+      const cssScale = doc.scale / _zoomBaseScale;
       const canvasSelector = isContinuous
         ? '#continuous-container canvas'
         : '#canvas-container canvas';
@@ -63,8 +66,8 @@ export function setupWheelZoom() {
 
       // Scroll so that the document point stays under the mouse cursor
       const newCanvasRect = canvas.getBoundingClientRect();
-      const newPointViewportX = newCanvasRect.left + docX * state.scale;
-      const newPointViewportY = newCanvasRect.top + docY * state.scale;
+      const newPointViewportX = newCanvasRect.left + docX * doc.scale;
+      const newPointViewportY = newCanvasRect.top + docY * doc.scale;
       scrollContainer.scrollLeft += newPointViewportX - e.clientX;
       scrollContainer.scrollTop += newPointViewportY - e.clientY;
 
@@ -90,7 +93,8 @@ export function setupWheelZoom() {
           if (isContinuous) {
             await renderContinuous();
           } else {
-            await renderPage(state.currentPage);
+            const curDoc = state.documents[state.activeDocumentIndex];
+            await renderPage(curDoc ? curDoc.currentPage : 1);
           }
         } finally {
           clearTimeout(loadingDelay);
@@ -141,4 +145,20 @@ export function setupWheelZoom() {
       }
     }
   }, { passive: false });
+}
+
+// Cancel any pending zoom render (call when switching documents)
+export function cancelPendingZoom() {
+  if (_zoomRenderTimer) {
+    clearTimeout(_zoomRenderTimer);
+    _zoomRenderTimer = null;
+  }
+  if (_zoomBaseScale !== null) {
+    // Clear CSS inline sizing left by the zoom preview
+    document.querySelectorAll('#canvas-container canvas, #continuous-container canvas').forEach(c => {
+      c.style.width = '';
+      c.style.height = '';
+    });
+    _zoomBaseScale = null;
+  }
 }

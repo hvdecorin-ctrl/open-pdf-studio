@@ -45,7 +45,7 @@ export async function convertPdfAnnotation(annot, pageNum, viewport, stampImageM
 
   const baseProps = {
     page: pageNum,
-    author: annot.title || 'User',
+    author: (annot.titleObj && annot.titleObj.str) || annot.title || 'User',
     subject: annot.subject || '',
     createdAt: parsePdfDate(annot.creationDate),
     modifiedAt: parsePdfDate(annot.modificationDate),

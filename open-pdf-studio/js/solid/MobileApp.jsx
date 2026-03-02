@@ -86,10 +86,10 @@ export default function MobileApp() {
           filters: [{ name: 'PDF Files', extensions: ['pdf'] }]
         });
         if (path) {
-          createTab(path);
+          const { index } = createTab(path);
           await new Promise(r => setTimeout(r, 0));
           initDomElements();
-          await loadPDF(path);
+          await loadPDF(path, index);
           await fitPage();
           addRecentFile(path, extractFileName(path));
           setRecentFiles(getRecentFiles());
@@ -112,10 +112,10 @@ export default function MobileApp() {
     try {
       const arrayBuffer = await file.arrayBuffer();
       const data = new Uint8Array(arrayBuffer);
-      createTab(file.name);
+      const { index } = createTab(file.name);
       await new Promise(r => setTimeout(r, 0));
       initDomElements();
-      await loadPDF(file.name, data);
+      await loadPDF(file.name, index, data);
       await fitPage();
       addRecentFile(file.name, file.name);
       setRecentFiles(getRecentFiles());

@@ -19,21 +19,30 @@ let currentRenderTask = null;
 
 // Render PDF page (single page mode)
 export async function renderPage(pageNum) {
-  if (!state.pdfDoc) return;
+  // Read directly from document object — state.scale getter is unreliable
+  // because Solid's createMutable caches values written via the setter
+  const doc = state.documents[state.activeDocumentIndex];
+  if (!doc || !doc.pdfDoc) return;
+  const pdfDoc = doc.pdfDoc;
+  const scale = doc.scale;
 
-  // Cancel any ongoing render task
+  // Validate page number against THIS document's page count
+  if (!Number.isInteger(pageNum) || pageNum < 1 || pageNum > pdfDoc.numPages) return;
+
+  // Cancel any ongoing render task and wait for it to finish
   if (currentRenderTask) {
     try {
       currentRenderTask.cancel();
+      await currentRenderTask.promise;
     } catch (e) {
-      // Ignore cancel errors
+      // Ignore cancel/RenderingCancelledException errors
     }
     currentRenderTask = null;
   }
 
-  const page = await state.pdfDoc.getPage(pageNum);
+  const page = await pdfDoc.getPage(pageNum);
   const extraRotation = getPageRotation(pageNum);
-  const viewportOpts = { scale: state.scale };
+  const viewportOpts = { scale };
   if (extraRotation) {
     viewportOpts.rotation = (page.rotate + extraRotation) % 360;
   }
@@ -135,9 +144,11 @@ async function renderContinuousPage(pageNum) {
   const canvasContainer = pageWrapper.querySelector('.canvas-container-cont');
   if (!canvasContainer) return;
 
-  const page = await state.pdfDoc.getPage(pageNum);
+  const doc = state.documents[state.activeDocumentIndex];
+  if (!doc || !doc.pdfDoc) return;
+  const page = await doc.pdfDoc.getPage(pageNum);
   const extraRotation = getPageRotation(pageNum);
-  const vpOpts = { scale: state.scale };
+  const vpOpts = { scale: doc.scale };
   if (extraRotation) {
     vpOpts.rotation = (page.rotate + extraRotation) % 360;
   }
@@ -224,7 +235,10 @@ async function renderContinuousPage(pageNum) {
 
 // Render all pages (continuous mode) — creates placeholders, lazily renders visible pages
 export async function renderContinuous() {
-  if (!state.pdfDoc) return;
+  const doc = state.documents[state.activeDocumentIndex];
+  if (!doc || !doc.pdfDoc) return;
+  const pdfDoc = doc.pdfDoc;
+  const scale = doc.scale;
 
   // Cleanup previous observer
   if (_continuousObserver) {
@@ -241,10 +255,10 @@ export async function renderContinuous() {
   clearFormLayers();
 
   // First pass: create all page wrappers with correct dimensions (no rendering)
-  for (let pageNum = 1; pageNum <= state.pdfDoc.numPages; pageNum++) {
-    const page = await state.pdfDoc.getPage(pageNum);
+  for (let pageNum = 1; pageNum <= pdfDoc.numPages; pageNum++) {
+    const page = await pdfDoc.getPage(pageNum);
     const extraRotation = getPageRotation(pageNum);
-    const vpOpts = { scale: state.scale };
+    const vpOpts = { scale };
     if (extraRotation) {
       vpOpts.rotation = (page.rotate + extraRotation) % 360;
     }
@@ -357,66 +371,69 @@ export async function goToPage(pageNum) {
 
 // Zoom controls
 export async function zoomIn() {
-  state.scale += 0.25;
+  const doc = state.documents[state.activeDocumentIndex];
+  if (!doc) return;
+  doc.scale += 0.25;
 
-
-  if (state.viewMode === 'continuous') {
+  if (doc.viewMode === 'continuous') {
     await renderContinuous();
   } else {
-    await renderPage(state.currentPage);
+    await renderPage(doc.currentPage);
   }
 }
 
 export async function zoomOut() {
-  if (state.scale > 0.5) {
-    state.scale -= 0.25;
-  
+  const doc = state.documents[state.activeDocumentIndex];
+  if (!doc) return;
+  if (doc.scale > 0.5) {
+    doc.scale -= 0.25;
 
-    if (state.viewMode === 'continuous') {
+    if (doc.viewMode === 'continuous') {
       await renderContinuous();
     } else {
-      await renderPage(state.currentPage);
+      await renderPage(doc.currentPage);
     }
   }
 }
 
 export async function setZoom(newScale) {
-  state.scale = newScale;
+  const doc = state.documents[state.activeDocumentIndex];
+  if (!doc) return;
+  doc.scale = newScale;
 
-
-  if (state.viewMode === 'continuous') {
+  if (doc.viewMode === 'continuous') {
     await renderContinuous();
   } else {
-    await renderPage(state.currentPage);
+    await renderPage(doc.currentPage);
   }
 }
 
 export async function fitWidth() {
-  if (!state.pdfDoc) return;
+  const doc = state.documents[state.activeDocumentIndex];
+  if (!doc || !doc.pdfDoc) return;
 
-  const page = await state.pdfDoc.getPage(state.currentPage);
-  const extraRot = getPageRotation(state.currentPage);
+  const page = await doc.pdfDoc.getPage(doc.currentPage);
+  const extraRot = getPageRotation(doc.currentPage);
   const fwOpts = { scale: 1 };
   if (extraRot) fwOpts.rotation = (page.rotate + extraRot) % 360;
   const viewport = page.getViewport(fwOpts);
   const container = document.getElementById('pdf-container');
   const containerWidth = container.clientWidth - 40; // padding
-  state.scale = containerWidth / viewport.width;
+  doc.scale = containerWidth / viewport.width;
 
-
-
-  if (state.viewMode === 'continuous') {
+  if (doc.viewMode === 'continuous') {
     await renderContinuous();
   } else {
-    await renderPage(state.currentPage);
+    await renderPage(doc.currentPage);
   }
 }
 
 export async function fitPage() {
-  if (!state.pdfDoc) return;
+  const doc = state.documents[state.activeDocumentIndex];
+  if (!doc || !doc.pdfDoc) return;
 
-  const page = await state.pdfDoc.getPage(state.currentPage);
-  const extraRot2 = getPageRotation(state.currentPage);
+  const page = await doc.pdfDoc.getPage(doc.currentPage);
+  const extraRot2 = getPageRotation(doc.currentPage);
   const fpOpts = { scale: 1 };
   if (extraRot2) fpOpts.rotation = (page.rotate + extraRot2) % 360;
   const viewport = page.getViewport(fpOpts);
@@ -425,25 +442,25 @@ export async function fitPage() {
   const containerHeight = container.clientHeight - 40;
   const scaleX = containerWidth / viewport.width;
   const scaleY = containerHeight / viewport.height;
-  state.scale = Math.min(scaleX, scaleY);
+  doc.scale = Math.min(scaleX, scaleY);
 
-
-
-  if (state.viewMode === 'continuous') {
+  if (doc.viewMode === 'continuous') {
     await renderContinuous();
   } else {
-    await renderPage(state.currentPage);
+    await renderPage(doc.currentPage);
   }
 }
 
 export async function actualSize() {
-  state.scale = 1;
+  const doc = state.documents[state.activeDocumentIndex];
+  if (!doc) return;
+  doc.scale = 1;
 
-  if (state.pdfDoc) {
-    if (state.viewMode === 'continuous') {
+  if (doc.pdfDoc) {
+    if (doc.viewMode === 'continuous') {
       await renderContinuous();
     } else {
-      await renderPage(state.currentPage);
+      await renderPage(doc.currentPage);
     }
   }
 }

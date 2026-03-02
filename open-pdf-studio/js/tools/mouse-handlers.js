@@ -33,7 +33,7 @@ function isModalDialogOpen() {
     '.preferences-overlay.visible, ' +
     '.text-annot-overlay.visible, ' +
     '.loading-overlay.visible, ' +
-    '.backstage-overlay.visible, ' +
+    '.app-menu-overlay.visible, ' +
     '.sig-overlay.visible'
   );
 }
@@ -88,14 +88,30 @@ export function handleMouseDown(e) {
 
     const clickedAnnotation = findAnnotationAt(x, y);
     if (clickedAnnotation) {
-      state.selectedAnnotations = [clickedAnnotation];
-      showProperties(clickedAnnotation);
-      state.isDragging = true;
-      state.dragStartX = x;
-      state.dragStartY = y;
-      state.originalAnnotation = cloneAnnotation(clickedAnnotation);
-      state.originalAnnotations = [cloneAnnotation(clickedAnnotation)];
-      annotationCanvas.style.cursor = 'move';
+      if (e.ctrlKey || e.metaKey) {
+        // Ctrl+click: toggle multi-selection
+        if (isSelected(clickedAnnotation)) {
+          removeFromSelection(clickedAnnotation);
+        } else {
+          addToSelection(clickedAnnotation);
+        }
+        if (state.selectedAnnotations.length === 1) {
+          showProperties(state.selectedAnnotations[0]);
+        } else if (state.selectedAnnotations.length > 1) {
+          showMultiSelectionProperties();
+        } else {
+          hideProperties();
+        }
+      } else {
+        state.selectedAnnotations = [clickedAnnotation];
+        showProperties(clickedAnnotation);
+        state.isDragging = true;
+        state.dragStartX = x;
+        state.dragStartY = y;
+        state.originalAnnotation = cloneAnnotation(clickedAnnotation);
+        state.originalAnnotations = [cloneAnnotation(clickedAnnotation)];
+        annotationCanvas.style.cursor = 'move';
+      }
       redrawAnnotations();
     } else {
       clearSelection();
@@ -147,27 +163,21 @@ export function handleMouseDown(e) {
       }
 
       if (e.ctrlKey || e.metaKey) {
-        if (!pdfaLocked && isSelected(clickedAnnotation)) {
-          // Ctrl+drag on selected annotation: start copy-drag
-          state.isDragging = true;
-          state._ctrlDragCopy = true;
-          state._ctrlCopiesCreated = false;
-          if (state.selectedAnnotations.length > 1) {
-            state.originalAnnotations = state.selectedAnnotations.map(a => cloneAnnotation(a));
-          } else {
-            state.originalAnnotation = cloneAnnotation(clickedAnnotation);
-            state.originalAnnotations = [cloneAnnotation(clickedAnnotation)];
-          }
+        if (isSelected(clickedAnnotation)) {
+          // Ctrl+click on selected annotation: toggle off (deselect)
+          removeFromSelection(clickedAnnotation);
         } else {
           // Ctrl+click on unselected: add to multi-selection
           addToSelection(clickedAnnotation);
-          if (state.selectedAnnotations.length === 1) {
-            showProperties(state.selectedAnnotations[0]);
-          } else if (state.selectedAnnotations.length > 1) {
-            showMultiSelectionProperties();
-          }
-          redrawAnnotations();
         }
+        if (state.selectedAnnotations.length === 1) {
+          showProperties(state.selectedAnnotations[0]);
+        } else if (state.selectedAnnotations.length > 1) {
+          showMultiSelectionProperties();
+        } else {
+          hideProperties();
+        }
+        redrawAnnotations();
       } else {
         // Normal click - select and show properties, but don't allow drag in PDF/A mode
         if (isSelected(clickedAnnotation) && state.selectedAnnotations.length > 1) {
@@ -813,16 +823,31 @@ export function handleContinuousMouseDown(e, pageNum) {
   if (state.currentTool === 'hand') {
     const clickedAnnotation = findAnnotationAt(state.startX, state.startY);
     if (clickedAnnotation) {
-      state.selectedAnnotations = [clickedAnnotation];
-      showProperties(clickedAnnotation);
-      state.isDragging = true;
-      state.dragStartX = state.startX;
-      state.dragStartY = state.startY;
-      state.originalAnnotation = cloneAnnotation(clickedAnnotation);
-      state.originalAnnotations = [cloneAnnotation(clickedAnnotation)];
-      state.activeContinuousCanvas = canvas;
-      state.activeContinuousPage = pageNum;
-      canvas.style.cursor = 'move';
+      if (e.ctrlKey || e.metaKey) {
+        if (isSelected(clickedAnnotation)) {
+          removeFromSelection(clickedAnnotation);
+        } else {
+          addToSelection(clickedAnnotation);
+        }
+        if (state.selectedAnnotations.length === 1) {
+          showProperties(state.selectedAnnotations[0]);
+        } else if (state.selectedAnnotations.length > 1) {
+          showMultiSelectionProperties();
+        } else {
+          hideProperties();
+        }
+      } else {
+        state.selectedAnnotations = [clickedAnnotation];
+        showProperties(clickedAnnotation);
+        state.isDragging = true;
+        state.dragStartX = state.startX;
+        state.dragStartY = state.startY;
+        state.originalAnnotation = cloneAnnotation(clickedAnnotation);
+        state.originalAnnotations = [cloneAnnotation(clickedAnnotation)];
+        state.activeContinuousCanvas = canvas;
+        state.activeContinuousPage = pageNum;
+        canvas.style.cursor = 'move';
+      }
       redrawContinuous();
     } else {
       clearSelection();
@@ -836,9 +861,30 @@ export function handleContinuousMouseDown(e, pageNum) {
   if (state.currentTool === 'select' || state.currentTool === 'selectComments') {
     const clickedAnnotation = findAnnotationAt(state.startX, state.startY);
     if (clickedAnnotation) {
-      showProperties(clickedAnnotation);
+      if (e.ctrlKey || e.metaKey) {
+        if (isSelected(clickedAnnotation)) {
+          removeFromSelection(clickedAnnotation);
+        } else {
+          addToSelection(clickedAnnotation);
+        }
+        if (state.selectedAnnotations.length === 1) {
+          showProperties(state.selectedAnnotations[0]);
+        } else if (state.selectedAnnotations.length > 1) {
+          showMultiSelectionProperties();
+        } else {
+          hideProperties();
+        }
+      } else {
+        state.selectedAnnotations = [clickedAnnotation];
+        showProperties(clickedAnnotation);
+      }
+      redrawContinuous();
     } else {
-      hideProperties();
+      if (!(e.ctrlKey || e.metaKey)) {
+        clearSelection();
+        hideProperties();
+      }
+      redrawContinuous();
     }
     return;
   }

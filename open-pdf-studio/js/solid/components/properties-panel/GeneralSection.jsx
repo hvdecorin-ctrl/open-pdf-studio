@@ -6,7 +6,7 @@ import { useTranslation } from '../../../i18n/useTranslation.js';
 export default function GeneralSection() {
   const { t } = useTranslation('properties');
   const { t: tCommon } = useTranslation('common');
-  const isLocked = () => annotProps.locked;
+  const isLocked = () => annotProps.locked === true || annotProps.locked === 'mixed';
 
   return (
     <Show when={sectionVis.general}>
@@ -42,9 +42,12 @@ export default function GeneralSection() {
 
         <div class="property-group">
           <label>{t('general.locked')}</label>
-          <select value={annotProps.locked ? 'yes' : 'no'}
+          <select value={annotProps.locked === 'mixed' ? 'mixed' : annotProps.locked ? 'yes' : 'no'}
             onDblClick={cycleSelectNext}
             onChange={(e) => updateAnnotProp('locked', e.target.value === 'yes')}>
+            <Show when={annotProps.locked === 'mixed'}>
+              <option value="mixed" disabled hidden>{tCommon('mixed')}</option>
+            </Show>
             <option value="no">{tCommon('no')}</option>
             <option value="yes">{tCommon('yes')}</option>
           </select>
@@ -52,10 +55,13 @@ export default function GeneralSection() {
 
         <div class="property-group">
           <label>{t('general.printable')}</label>
-          <select value={annotProps.printable ? 'yes' : 'no'}
+          <select value={annotProps.printable === 'mixed' ? 'mixed' : annotProps.printable ? 'yes' : 'no'}
             disabled={isLocked()}
             onDblClick={cycleSelectNext}
             onChange={(e) => updateAnnotProp('printable', e.target.value === 'yes')}>
+            <Show when={annotProps.printable === 'mixed'}>
+              <option value="mixed" disabled hidden>{tCommon('mixed')}</option>
+            </Show>
             <option value="yes">{tCommon('yes')}</option>
             <option value="no">{tCommon('no')}</option>
           </select>
@@ -63,10 +69,13 @@ export default function GeneralSection() {
 
         <div class="property-group">
           <label>{t('general.readOnly')}</label>
-          <select value={annotProps.readOnly ? 'yes' : 'no'}
+          <select value={annotProps.readOnly === 'mixed' ? 'mixed' : annotProps.readOnly ? 'yes' : 'no'}
             disabled={isLocked()}
             onDblClick={cycleSelectNext}
             onChange={(e) => updateAnnotProp('readOnly', e.target.value === 'yes')}>
+            <Show when={annotProps.readOnly === 'mixed'}>
+              <option value="mixed" disabled hidden>{tCommon('mixed')}</option>
+            </Show>
             <option value="no">{tCommon('no')}</option>
             <option value="yes">{tCommon('yes')}</option>
           </select>
@@ -74,10 +83,13 @@ export default function GeneralSection() {
 
         <div class="property-group">
           <label>{t('general.marked')}</label>
-          <select value={annotProps.marked ? 'yes' : 'no'}
+          <select value={annotProps.marked === 'mixed' ? 'mixed' : annotProps.marked ? 'yes' : 'no'}
             disabled={isLocked()}
             onDblClick={cycleSelectNext}
             onChange={(e) => updateAnnotProp('marked', e.target.value === 'yes')}>
+            <Show when={annotProps.marked === 'mixed'}>
+              <option value="mixed" disabled hidden>{tCommon('mixed')}</option>
+            </Show>
             <option value="no">{tCommon('no')}</option>
             <option value="yes">{tCommon('yes')}</option>
           </select>
@@ -85,7 +97,8 @@ export default function GeneralSection() {
 
         <div class="property-group">
           <label>{t('general.altText')}</label>
-          <textarea rows="2" placeholder={t('general.altTextPlaceholder')}
+          <textarea rows="2"
+            placeholder={annotProps.altText === '' && annotProps.multiCount > 0 ? tCommon('mixed') : t('general.altTextPlaceholder')}
             style="width: 100%; resize: vertical; font-size: 12px;"
             value={annotProps.altText}
             disabled={isLocked()}
@@ -97,6 +110,9 @@ export default function GeneralSection() {
           <select value={annotProps.status}
             onDblClick={cycleSelectNext}
             onChange={(e) => updateAnnotProp('status', e.target.value)}>
+            <Show when={annotProps.status === 'mixed'}>
+              <option value="mixed" disabled hidden>{tCommon('mixed')}</option>
+            </Show>
             <option value="none">{tCommon('none')}</option>
             <option value="accepted">{t('general.accepted')}</option>
             <option value="rejected">{t('general.rejected')}</option>

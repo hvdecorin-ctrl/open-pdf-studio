@@ -1,6 +1,6 @@
-import { openBackstage as open, closeBackstage as close } from '../../solid/stores/backstageStore.js';
+import { openAppMenu as open, closeAppMenu as close } from '../../solid/stores/appMenuStore.js';
 
-export function openBackstage() { open(); }
-export function closeBackstage() { close(); }
+export function openAppMenu() { open(); }
+export function closeAppMenu() { close(); }
 export function initMenus() {}
 export function closeAllMenus() { close(); }

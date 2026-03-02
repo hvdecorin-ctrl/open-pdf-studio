@@ -130,6 +130,13 @@ export function refreshActiveTab() {
   }
 }
 
+export function refreshAllTabs() {
+  const tabs = ['annotations', 'attachments', 'signatures', 'layers', 'form-fields', 'destinations', 'tags', 'links', 'bookmarks'];
+  for (const tab of tabs) {
+    refreshTabContent(tab);
+  }
+}
+
 function refreshTabContent(panelId) {
   if (panelId === 'annotations') {
     updateAnnotationsList();
@@ -205,6 +212,11 @@ export async function generateThumbnails() {
 
   // Update Solid store signals - this triggers reactive rendering of ThumbnailItem components
   setPlaceholderSize({ width: placeholderWidth, height: placeholderHeight });
+  setPageCount(numPages);
+
+  // Clear old thumbnail data before populating from the new document's cache
+  // (prevents stale images from the previous document showing through)
+  clearAllThumbnails();
   setPageCount(numPages);
 
   // Populate store with any already-cached thumbnail data
@@ -386,7 +398,8 @@ async function renderThumbnailToDataURL(pdfDoc, pageNum) {
 
       await page.render({
         canvasContext: ctx,
-        viewport: viewport
+        viewport: viewport,
+        annotationMode: 0
       }).promise;
 
       return {

@@ -163,9 +163,9 @@ export function saveDocumentScale() {
   }
 }
 
-// Load measure scale from localStorage into the current document
-export function loadDocumentScale() {
-  const doc = getActiveDocument();
+// Load measure scale from localStorage into the given (or active) document
+export function loadDocumentScale(doc) {
+  if (!doc) doc = getActiveDocument();
   if (!doc || !doc.filePath) return;
   try {
     const raw = localStorage.getItem(scaleStorageKey(doc.filePath));

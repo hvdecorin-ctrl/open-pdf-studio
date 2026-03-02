@@ -77,7 +77,7 @@ export function deleteSession(name) {
  */
 export async function restoreSession(session) {
   for (const filePath of session.files) {
-    createTab(filePath);
-    await loadPDF(filePath);
+    const { index } = createTab(filePath);
+    await loadPDF(filePath, index);
   }
 }

@@ -1,11 +1,11 @@
 import { createSignal, Show } from 'solid-js';
-import { closeBackstage } from '../../stores/backstageStore.js';
+import { closeAppMenu } from '../../stores/appMenuStore.js';
 import { state } from '../../../core/state.js';
 import { exportAsImages, exportAsRasterPdf, parsePageRange } from '../../../pdf/exporter.js';
 import { useTranslation } from '../../../i18n/useTranslation.js';
 
 export default function ExportPanel() {
-  const { t } = useTranslation('backstage');
+  const { t } = useTranslation('appMenu');
   const { t: tCommon } = useTranslation('common');
   const [exportType, setExportType] = createSignal('images');
   const [showOptions, setShowOptions] = createSignal(false);
@@ -16,7 +16,7 @@ export default function ExportPanel() {
   const [dpi, setDpi] = createSignal(150);
 
   const handleExportXFDF = async () => {
-    closeBackstage();
+    closeAppMenu();
     const { exportXFDFToFile } = await import('../../../annotations/xfdf.js');
     exportXFDFToFile();
   };
@@ -53,7 +53,7 @@ export default function ExportPanel() {
       for (let i = 1; i <= totalPages; i++) pages.push(i);
     }
 
-    closeBackstage();
+    closeAppMenu();
 
     if (exportType() === 'raster') {
       await exportAsRasterPdf({ dpi: dpi(), pages });

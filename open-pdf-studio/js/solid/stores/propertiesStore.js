@@ -246,76 +246,124 @@ export function storeClosePanel() {
   setPanelVisible(false);
 }
 
+// Helper: return the shared value if all items agree, otherwise fallback
+function sharedValue(selected, getter, fallback) {
+  const first = getter(selected[0]);
+  for (let i = 1; i < selected.length; i++) {
+    if (getter(selected[i]) !== first) return fallback;
+  }
+  return first;
+}
+
 // Show multi-selection properties
 export function storeShowMultiSelection(selected) {
   if (!selected || selected.length < 2) return;
   currentAnnotation = null;
 
+  const sharedType = sharedValue(selected, a => a.type, '');
+  const sharedAuthor = sharedValue(selected, a => a.author || state.defaultAuthor, '');
+  const sharedSubject = sharedValue(selected, a => a.subject || '', '');
+  const sharedStatus = sharedValue(selected, a => a.status || 'none', 'mixed');
+  const sharedAltText = sharedValue(selected, a => a.altText || '', '');
+  const sharedMarked = (() => {
+    const allMarked = selected.every(a => a.marked);
+    const noneMarked = selected.every(a => !a.marked);
+    return allMarked ? true : noneMarked ? false : 'mixed';
+  })();
+  const sharedColor = sharedValue(selected, a => a.color || '#000000', 'mixed');
+  const sharedFillColor = sharedValue(selected, a => a.fillColor || null, 'mixed');
+  const sharedStrokeColor = sharedValue(selected, a => a.strokeColor || a.color || '#000000', 'mixed');
+  const sharedTextColor = sharedValue(selected, a => a.textColor || a.color || '#000000', 'mixed');
+  const sharedLineWidth = sharedValue(selected, a => a.lineWidth !== undefined ? a.lineWidth : 3, 'mixed');
+  const sharedOpacity = sharedValue(selected, a => a.opacity !== undefined ? Math.round(a.opacity * 100) : 100, 'mixed');
+  const sharedBorderStyle = sharedValue(selected, a => a.borderStyle || 'solid', 'mixed');
+  const sharedFontSize = sharedValue(selected, a => a.fontSize || 16, 'mixed');
+  const sharedFontFamily = sharedValue(selected, a => a.fontFamily || 'Arial', 'mixed');
+  const allLocked = selected.every(a => a.locked);
+  const noneLocked = selected.every(a => !a.locked);
+  const sharedLocked = allLocked ? true : noneLocked ? false : 'mixed';
+  const allPrintable = selected.every(a => a.printable !== false);
+  const nonePrintable = selected.every(a => a.printable === false);
+  const sharedPrintable = allPrintable ? true : nonePrintable ? false : 'mixed';
+  const allReadOnly = selected.every(a => a.readOnly);
+  const noneReadOnly = selected.every(a => !a.readOnly);
+  const sharedReadOnly = allReadOnly ? true : noneReadOnly ? false : 'mixed';
+
   setAnnotProps({
-    type: '',
-    typeDisplay: i18next.t('multiSelect', { count: selected.length, ns: 'properties' }),
-    subject: '',
-    author: '',
+    type: sharedType,
+    typeDisplay: sharedType
+      ? `${getTypeDisplayName(sharedType)} (${selected.length})`
+      : i18next.t('multiSelect', { count: selected.length, ns: 'properties' }),
+    subject: sharedSubject,
+    author: sharedAuthor,
     created: '',
     modified: '',
-    locked: false,
-    printable: true,
-    readOnly: false,
-    marked: false,
-    altText: '',
-    status: 'none',
-    color: '#000000',
-    fillColor: null,
-    strokeColor: '#000000',
-    textColor: '#000000',
-    lineWidth: 3,
-    opacity: selected[0].opacity !== undefined ? Math.round(selected[0].opacity * 100) : 100,
-    icon: 'comment',
-    borderStyle: 'solid',
+    locked: sharedLocked,
+    printable: sharedPrintable,
+    readOnly: sharedReadOnly,
+    marked: sharedMarked,
+    altText: sharedAltText,
+    status: sharedStatus,
+    color: sharedColor,
+    fillColor: sharedFillColor,
+    strokeColor: sharedStrokeColor,
+    textColor: sharedTextColor,
+    lineWidth: sharedLineWidth,
+    opacity: sharedOpacity,
+    icon: sharedValue(selected, a => a.icon || 'comment', 'mixed'),
+    borderStyle: sharedBorderStyle,
     text: '',
-    fontSize: 16,
-    fontFamily: 'Arial',
-    textFontSize: 14,
-    fontBold: false,
-    fontItalic: false,
-    fontUnderline: false,
-    fontStrikethrough: false,
-    textAlign: 'left',
-    lineSpacing: '1.5',
-    rotation: 0,
+    fontSize: sharedFontSize,
+    fontFamily: sharedFontFamily,
+    textFontSize: sharedFontSize,
+    fontBold: sharedValue(selected, a => a.fontBold || false, 'mixed'),
+    fontItalic: sharedValue(selected, a => a.fontItalic || false, 'mixed'),
+    fontUnderline: sharedValue(selected, a => a.fontUnderline || false, 'mixed'),
+    fontStrikethrough: sharedValue(selected, a => a.fontStrikethrough || false, 'mixed'),
+    textAlign: sharedValue(selected, a => a.textAlign || 'left', 'mixed'),
+    lineSpacing: sharedValue(selected, a => a.lineSpacing || '1.5', 'mixed'),
+    rotation: sharedValue(selected, a => a.rotation || 0, 'mixed'),
     imageWidth: 0,
     imageHeight: 0,
     imageRotation: 0,
     lockAspectRatio: false,
-    startHead: 'none',
-    endHead: 'open',
-    headSize: 12,
+    startHead: sharedValue(selected, a => a.startHead || 'none', 'mixed'),
+    endHead: sharedValue(selected, a => a.endHead || 'open', 'mixed'),
+    headSize: sharedValue(selected, a => a.headSize || 12, 'mixed'),
     arrowLength: '',
     replies: [],
     multiCount: selected.length,
   });
 
+  // Show more sections when all selected annotations share the same type
+  const allSameType = sharedType !== '';
+
+  const isTextbox = allSameType && ['textbox', 'callout'].includes(sharedType);
+  const isArrow = allSameType && sharedType === 'arrow';
+  const isTextContent = allSameType && (sharedType === 'text' || sharedType === 'comment');
+  const hasRotation = allSameType && ['box', 'circle', 'polygon', 'cloud', 'highlight', 'redaction', 'comment', 'stamp', 'signature'].includes(sharedType);
+
   setSectionVis({
     general: true,
     replies: false,
     appearance: true,
-    lineEndings: false,
+    lineEndings: isArrow,
     dimensions: false,
-    textFormat: false,
-    paragraph: false,
+    textFormat: isTextbox,
+    paragraph: isTextbox,
     content: false,
     image: false,
     actions: true,
-    iconGroup: false,
-    fillColorGroup: false,
-    strokeColorGroup: false,
-    colorGroup: false,
-    lineWidthGroup: false,
-    borderStyleGroup: false,
-    textGroup: false,
-    fontSizeGroup: false,
+    iconGroup: allSameType && sharedType === 'comment',
+    fillColorGroup: allSameType && ['highlight', 'box', 'circle', 'textbox', 'callout', 'arrow', 'line'].includes(sharedType),
+    strokeColorGroup: allSameType && ['line', 'arrow', 'box', 'circle', 'draw', 'textbox', 'callout'].includes(sharedType),
+    colorGroup: allSameType && !['line', 'arrow', 'box', 'circle', 'draw', 'highlight', 'image', 'textbox', 'callout'].includes(sharedType),
+    lineWidthGroup: allSameType && !['highlight', 'comment', 'image', 'textHighlight'].includes(sharedType),
+    borderStyleGroup: allSameType && ['textbox', 'callout', 'arrow', 'line'].includes(sharedType),
+    textGroup: isTextContent,
+    fontSizeGroup: allSameType && sharedType === 'text',
     opacityGroup: true,
-    rotationGroup: false,
+    rotationGroup: hasRotation,
   });
 
   setPanelMode('multi');
@@ -461,8 +509,74 @@ export async function populateDocInfo() {
   setDocInfo('annotPage', i18next.t('docInfo.onPageCount', { count: onPage, page: state.currentPage, ns: 'properties' }));
 }
 
+// Apply a property change to a single annotation object
+function applyPropToAnnotation(ann, key, value) {
+  ann.modifiedAt = new Date().toISOString();
+  switch (key) {
+    case 'subject': ann.subject = value; break;
+    case 'author': ann.author = value; break;
+    case 'locked': ann.locked = value; break;
+    case 'printable': ann.printable = value; break;
+    case 'readOnly': ann.readOnly = value; break;
+    case 'marked': ann.marked = value; break;
+    case 'altText': ann.altText = value; break;
+    case 'status': ann.status = value === 'none' ? undefined : value; break;
+    case 'color': ann.color = value; break;
+    case 'fillColor': ann.fillColor = value; break;
+    case 'strokeColor': ann.strokeColor = value; break;
+    case 'lineWidth': ann.lineWidth = parseFloat(value); break;
+    case 'opacity': ann.opacity = parseInt(value) / 100; break;
+    case 'icon': ann.icon = value; break;
+    case 'borderStyle': ann.borderStyle = value; break;
+    case 'text': ann.text = value; break;
+    case 'fontSize': ann.fontSize = parseInt(value); break;
+    case 'textColor':
+      ann.textColor = value;
+      ann.color = value;
+      break;
+    case 'fontFamily': ann.fontFamily = value; break;
+    case 'textFontSize': ann.fontSize = parseInt(value); break;
+    case 'fontBold': ann.fontBold = value; break;
+    case 'fontItalic': ann.fontItalic = value; break;
+    case 'fontUnderline': ann.fontUnderline = value; break;
+    case 'fontStrikethrough': ann.fontStrikethrough = value; break;
+    case 'textAlign': ann.textAlign = value; break;
+    case 'lineSpacing': {
+      ann.lineSpacing = parseFloat(value);
+      if (['textbox', 'callout'].includes(ann.type) && ann.text) {
+        ann.height = computeTextboxContentHeight(ann);
+      }
+      break;
+    }
+    case 'rotation': ann.rotation = parseInt(value) || 0; break;
+  }
+}
+
 // Update a single annotation property (write to store + annotation + undo + redraw)
 export function updateAnnotProp(key, value) {
+  // Multi-selection mode: apply to all selected annotations
+  if (annotProps.multiCount > 0) {
+    const selected = state.selectedAnnotations;
+    if (!selected || selected.length === 0) return;
+
+    // Block all edits except lock toggle when any annotation is locked
+    if (annotProps.locked !== false && key !== 'locked') return;
+
+    for (const ann of selected) {
+      recordPropertyChange(ann);
+      applyPropToAnnotation(ann, key, value);
+    }
+    setAnnotProps(key, value);
+
+    // After toggling lock, refresh the panel to update locked state
+    if (key === 'locked') {
+      storeShowMultiSelection(selected);
+    }
+
+    redraw();
+    return;
+  }
+
   if (!currentAnnotation) return;
 
   // Special handling for locked toggle

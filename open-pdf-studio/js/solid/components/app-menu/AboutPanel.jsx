@@ -3,7 +3,7 @@ import { getAppVersion, openExternal } from '../../../core/platform.js';
 import { useTranslation } from '../../../i18n/useTranslation.js';
 
 export default function AboutPanel() {
-  const { t } = useTranslation('backstage');
+  const { t } = useTranslation('appMenu');
   const [version, setVersion] = createSignal(t('aboutPanel.version'));
 
   onMount(async () => {

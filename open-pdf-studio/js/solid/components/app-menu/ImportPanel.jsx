@@ -1,11 +1,11 @@
-import { closeBackstage } from '../../stores/backstageStore.js';
+import { closeAppMenu } from '../../stores/appMenuStore.js';
 import { useTranslation } from '../../../i18n/useTranslation.js';
 
 export default function ImportPanel() {
-  const { t } = useTranslation('backstage');
+  const { t } = useTranslation('appMenu');
 
   const handleImportXFDF = async () => {
-    closeBackstage();
+    closeAppMenu();
     const { importXFDFFromFile } = await import('../../../annotations/xfdf.js');
     importXFDFFromFile();
   };

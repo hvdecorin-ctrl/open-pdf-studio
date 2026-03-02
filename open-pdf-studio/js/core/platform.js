@@ -249,8 +249,8 @@ export async function isDevMode() {
   }
 }
 
-// Get file opened via command line
-export async function getOpenedFile() {
+// Get files opened via command line
+export async function getOpenedFiles() {
   return await invoke('get_opened_file');
 }
 

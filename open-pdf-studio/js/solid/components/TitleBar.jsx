@@ -1,5 +1,6 @@
 import { state } from '../../core/state.js';
 import { useTranslation } from '../../i18n/useTranslation.js';
+import { openDialog } from '../stores/dialogStore.js';
 
 async function handleClose() {
   const { closeActiveTab } = await import('../../ui/chrome/tabs.js');
@@ -110,6 +111,7 @@ export default function TitleBar() {
               <path d="M6 3l5 5-5 5"/>
             </svg>
           </button>
+
         </div>
       </div>
 
@@ -119,6 +121,9 @@ export default function TitleBar() {
       </div>
 
       <div class="window-controls">
+        <button class="send-feedback-btn" onClick={() => openDialog('feedback')}>
+          {tCommon('sendFeedback')}
+        </button>
         <button class="window-btn" title={tCommon('minimize')}
           onClick={() => import('../../core/platform.js').then(m => m.minimizeWindow())}>
           <svg width="10" height="1" viewBox="0 0 10 1"><rect width="10" height="1" fill="currentColor"/></svg>

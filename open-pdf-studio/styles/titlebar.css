@@ -132,6 +132,23 @@
   background: #4b5563;
 }
 
+/* Send Feedback Button */
+.send-feedback-btn {
+  background: none;
+  border: none;
+  font-size: 11px;
+  color: var(--theme-text-secondary, #666);
+  cursor: pointer;
+  padding: 0 4px;
+  margin-right: 12px;
+  font-family: inherit;
+  -webkit-app-region: no-drag;
+  transition: color 0.15s;
+}
+.send-feedback-btn:hover {
+  color: var(--theme-active, #0078d7);
+}
+
 /* Window Controls */
 .window-controls {
   display: flex;

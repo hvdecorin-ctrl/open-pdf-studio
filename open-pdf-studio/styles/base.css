@@ -29,7 +29,7 @@
 .status-bar, .status-bar *,
 .left-panel, .left-panel *,
 .properties-panel, .properties-panel *,
-.backstage-overlay, .backstage-overlay *,
+.app-menu-overlay, .app-menu-overlay *,
 .context-menu, .context-menu *,
 .document-tabs, .document-tabs * {
   cursor: default !important;

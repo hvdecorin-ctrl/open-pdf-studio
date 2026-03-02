@@ -20,7 +20,12 @@ function redraw() {
 
 // Show properties panel for a single annotation
 export function showProperties(annotation) {
-  state.selectedAnnotation = annotation;
+  // Set selectedAnnotation directly on the document to avoid the proxy setter
+  // which would reset selectedAnnotations to a single-item array
+  const doc = state.documents[state.activeDocumentIndex];
+  if (doc) {
+    doc.selectedAnnotation = annotation;
+  }
   storeShowProperties(annotation);
   redraw();
 }

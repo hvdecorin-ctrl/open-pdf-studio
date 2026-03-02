@@ -1,0 +1,267 @@
+import { createSignal, Show, For, onMount } from 'solid-js';
+import Dialog from '../Dialog.jsx';
+import { closeDialog } from '../../stores/dialogStore.js';
+import { useTranslation } from '../../../i18n/useTranslation.js';
+import { getAppVersion } from '../../../core/platform.js';
+
+const API_URL = 'https://open-feedback-studio.pages.dev/api/feedback';
+const APP_ID = 'open-pdf-studio';
+const MAX_IMAGES = 3;
+const MAX_TOTAL_SIZE = 1024 * 1024; // 1MB
+const MAX_MESSAGE = 5000;
+const MIN_MESSAGE = 10;
+
+export default function FeedbackDialog() {
+  const { t } = useTranslation('dialogs');
+
+  const [category, setCategory] = createSignal('general');
+  const [message, setMessage] = createSignal('');
+  const [images, setImages] = createSignal([]);
+  const [sentiment, setSentiment] = createSignal(null);
+  const [appVersion, setAppVersion] = createSignal('');
+  const [status, setStatus] = createSignal('idle'); // idle | submitting | success | error
+  const [errorMsg, setErrorMsg] = createSignal('');
+
+  let fileInputRef;
+
+  onMount(async () => {
+    const ver = await getAppVersion();
+    setAppVersion(ver || (typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : ''));
+  });
+
+  const close = () => closeDialog('feedback');
+
+  const canSubmit = () =>
+    message().length >= MIN_MESSAGE &&
+    message().length <= MAX_MESSAGE &&
+    status() !== 'submitting';
+
+  const charCountWarning = () => message().length >= 4500;
+
+  function handleAttach() {
+    if (images().length >= MAX_IMAGES) return;
+    fileInputRef?.click();
+  }
+
+  function handleFileChange(e) {
+    const files = Array.from(e.target.files || []);
+    if (!files.length) return;
+
+    const current = images();
+    const currentSize = current.reduce((sum, img) => sum + img.file.size, 0);
+    const remaining = MAX_IMAGES - current.length;
+    const toAdd = files.slice(0, remaining);
+
+    const newImages = [];
+    let newSize = currentSize;
+
+    for (const file of toAdd) {
+      if (!file.type.startsWith('image/')) continue;
+      if (newSize + file.size > MAX_TOTAL_SIZE) break;
+      newSize += file.size;
+      newImages.push({ file, url: URL.createObjectURL(file) });
+    }
+
+    setImages([...current, ...newImages]);
+    e.target.value = '';
+  }
+
+  function removeImage(index) {
+    setImages(prev => {
+      const updated = [...prev];
+      URL.revokeObjectURL(updated[index].url);
+      updated.splice(index, 1);
+      return updated;
+    });
+  }
+
+  function resetForm() {
+    setCategory('general');
+    setMessage('');
+    images().forEach(img => URL.revokeObjectURL(img.url));
+    setImages([]);
+    setSentiment(null);
+    setStatus('idle');
+    setErrorMsg('');
+  }
+
+  async function handleSubmit() {
+    if (!canSubmit()) return;
+
+    setStatus('submitting');
+    setErrorMsg('');
+
+    try {
+      const sentimentValue = sentiment();
+      const sentimentLabel = sentimentValue ? SENTIMENT_LABELS[sentimentValue] : undefined;
+      const ver = appVersion() || undefined;
+
+      let response;
+
+      if (images().length > 0) {
+        const formData = new FormData();
+        formData.append('app', APP_ID);
+        formData.append('category', category());
+        formData.append('message', message().trim());
+        if (sentimentLabel) formData.append('sentiment', sentimentLabel);
+        if (ver) formData.append('appVersion', ver);
+        images().forEach(img => {
+          formData.append('images', img.file);
+        });
+
+        response = await fetch(API_URL, {
+          method: 'POST',
+          body: formData,
+        });
+      } else {
+        response = await fetch(API_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            app: APP_ID,
+            category: category(),
+            message: message().trim(),
+            sentiment: sentimentLabel,
+            appVersion: ver,
+          }),
+        });
+      }
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+
+      setStatus('success');
+    } catch (e) {
+      console.error('Feedback submission failed:', e);
+      setStatus('error');
+      setErrorMsg(t('feedback.errorGeneric'));
+    }
+  }
+
+  const categories = [
+    { key: 'general', label: () => t('feedback.categoryGeneral') },
+    { key: 'bug', label: () => t('feedback.categoryBug') },
+    { key: 'feature', label: () => t('feedback.categoryFeature') },
+  ];
+
+  const SENTIMENT_LABELS = { 1: 'Frustrated', 2: 'Neutral', 3: 'Happy' };
+
+  const sentiments = [
+    { value: 1, emoji: '\u{1F61E}', label: () => t('feedback.sentimentFrustrated') },
+    { value: 2, emoji: '\u{1F610}', label: () => t('feedback.sentimentNeutral') },
+    { value: 3, emoji: '\u{1F60A}', label: () => t('feedback.sentimentHappy') },
+  ];
+
+  return (
+    <Dialog
+      title={t('feedback.title')}
+      dialogClass="feedback-dialog"
+      onClose={close}
+    >
+      <Show when={status() === 'success'} fallback={
+        <div class="feedback-form">
+          {/* Category */}
+          <div class="feedback-section">
+            <div class="feedback-categories">
+              <For each={categories}>
+                {(cat) => (
+                  <button
+                    class={`feedback-category-btn${category() === cat.key ? ' active' : ''}`}
+                    onClick={() => setCategory(cat.key)}
+                  >
+                    {cat.label()}
+                  </button>
+                )}
+              </For>
+            </div>
+          </div>
+
+          {/* Message */}
+          <div class="feedback-section">
+            <textarea
+              class="feedback-message"
+              placeholder={t('feedback.messagePlaceholder')}
+              maxLength={MAX_MESSAGE}
+              value={message()}
+              onInput={(e) => setMessage(e.target.value)}
+            />
+            <div class={`feedback-char-count${charCountWarning() ? ' warning' : ''}`}>
+              {message().length} / {MAX_MESSAGE}
+            </div>
+          </div>
+
+          {/* Image Attachments */}
+          <div class="feedback-section">
+            <div class="feedback-images">
+              <For each={images()}>
+                {(img, i) => (
+                  <div class="feedback-image-thumb">
+                    <img src={img.url} alt="" />
+                    <button class="feedback-image-remove" onClick={() => removeImage(i())}>
+                      &times;
+                    </button>
+                  </div>
+                )}
+              </For>
+            </div>
+            <Show when={images().length < MAX_IMAGES}>
+              <button class="feedback-attach-btn" onClick={handleAttach}>
+                {t('feedback.attachImages')}
+              </button>
+            </Show>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              multiple
+              style="display:none"
+              onChange={handleFileChange}
+            />
+            <div class="feedback-label">{t('feedback.imageLimit')}</div>
+          </div>
+
+          {/* Sentiment */}
+          <div class="feedback-section">
+            <div class="feedback-label">{t('feedback.sentiment')}</div>
+            <div class="feedback-sentiment">
+              <For each={sentiments}>
+                {(s) => (
+                  <button
+                    class={`feedback-sentiment-btn${sentiment() === s.value ? ' active' : ''}`}
+                    onClick={() => setSentiment(sentiment() === s.value ? null : s.value)}
+                    title={s.label()}
+                  >
+                    {s.emoji}
+                  </button>
+                )}
+              </For>
+            </div>
+          </div>
+
+          {/* Submit */}
+          <button
+            class="feedback-submit-btn"
+            disabled={!canSubmit()}
+            onClick={handleSubmit}
+          >
+            {status() === 'submitting' ? t('feedback.submitting') : t('feedback.submit')}
+          </button>
+
+          <Show when={status() === 'error'}>
+            <div class="feedback-error">{errorMsg()}</div>
+          </Show>
+        </div>
+      }>
+        {/* Success State */}
+        <div class="feedback-success">
+          <h3>{t('feedback.successTitle')}</h3>
+          <p>{t('feedback.successMessage')}</p>
+          <button class="feedback-submit-btn" onClick={resetForm}>
+            {t('feedback.sendAnother')}
+          </button>
+        </div>
+      </Show>
+    </Dialog>
+  );
+}

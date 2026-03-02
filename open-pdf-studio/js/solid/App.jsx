@@ -10,7 +10,7 @@ import PdfABar from './components/PdfABar.jsx';
 import NotificationBar from './components/NotificationBar.jsx';
 import PropertiesPanel from './components/properties-panel/PropertiesPanel.jsx';
 import StatusBar from './components/StatusBar.jsx';
-import Backstage from './components/backstage/Backstage.jsx';
+import AppMenu from './components/app-menu/AppMenu.jsx';
 import DialogHost from './components/DialogHost.jsx';
 import ContextMenu from './components/ContextMenu.jsx';
 import LoadingOverlay from './components/LoadingOverlay.jsx';
@@ -64,7 +64,7 @@ function DesktopApp() {
 
       <StatusBar />
 
-      <Backstage />
+      <AppMenu />
       <DialogHost />
       <ContextMenu />
       <LoadingOverlay />

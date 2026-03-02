@@ -84,11 +84,14 @@ async function handleZoomInput(e) {
   let val = e.target.value.replace('%', '').trim();
   let pct = parseInt(val, 10);
   if (!isNaN(pct) && pct >= 10 && pct <= 500) {
-    state.scale = pct / 100;
-    if (state.viewMode === 'continuous') {
-      await renderContinuous();
-    } else if (state.pdfDoc) {
-      await renderPage(state.currentPage);
+    const doc = state.documents[state.activeDocumentIndex];
+    if (doc) {
+      doc.scale = pct / 100;
+      if (doc.viewMode === 'continuous') {
+        await renderContinuous();
+      } else if (doc.pdfDoc) {
+        await renderPage(doc.currentPage);
+      }
     }
   }
   e.target.blur();
@@ -98,7 +101,8 @@ async function handleZoomBlur(e) {
   let val = e.target.value.replace('%', '').trim();
   let pct = parseInt(val, 10);
   if (isNaN(pct) || pct < 10 || pct > 500) {
-    e.target.value = Math.round(state.scale * 100) + '%';
+    const doc = state.documents[state.activeDocumentIndex];
+    e.target.value = Math.round((doc ? doc.scale : 1.5) * 100) + '%';
   } else if (!e.target.value.includes('%')) {
     e.target.value = pct + '%';
   }
@@ -113,7 +117,10 @@ export default function StatusBar() {
     return translated !== key ? translated : state.currentTool;
   };
   const totalPages = () => localizeNumber(state.pdfDoc?.numPages || 0);
-  const zoomText = () => localizeNumber(Math.round(state.scale * 100)) + '%';
+  const zoomText = () => {
+    const doc = state.documents[state.activeDocumentIndex];
+    return localizeNumber(Math.round((doc ? doc.scale : 1.5) * 100)) + '%';
+  };
   const annotationText = () => {
     if (state.viewMode === 'continuous') {
       return localizeNumber(state.annotations.length);

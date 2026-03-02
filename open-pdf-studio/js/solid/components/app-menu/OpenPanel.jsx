@@ -1,5 +1,5 @@
 import { createSignal, createMemo, For, Show, Switch, Match, onMount } from 'solid-js';
-import { closeBackstage } from '../../stores/backstageStore.js';
+import { closeAppMenu } from '../../stores/appMenuStore.js';
 import { openPDFFile, loadPDF } from '../../../pdf/loader.js';
 import { getRecentFiles, removeRecentFile, pinRecentFile, unpinRecentFile } from '../../../mobile/recent-files.js';
 import { createTab } from '../../../ui/chrome/tabs.js';
@@ -9,7 +9,7 @@ import { getSavedSessions, saveCurrentSession, deleteSession, restoreSession } f
 import { getSavedPlaces, addPlace, removePlace } from '../../../stores/places.js';
 
 export default function OpenPanel() {
-  const { t } = useTranslation('backstage');
+  const { t } = useTranslation('appMenu');
   const [activeSubPanel, setActiveSubPanel] = createSignal('recent');
   const [recentFiles, setRecentFiles] = createSignal([]);
   const [searchQuery, setSearchQuery] = createSignal('');
@@ -62,12 +62,12 @@ export default function OpenPanel() {
   });
 
   async function handleBrowse() {
-    closeBackstage();
+    closeAppMenu();
     await openPDFFile();
   }
 
   async function handleOpenRecent(file) {
-    closeBackstage();
+    closeAppMenu();
     if (isTauri()) {
       try {
         const exists = await fileExists(file.path);
@@ -80,8 +80,8 @@ export default function OpenPanel() {
         // If we can't check, try opening anyway
       }
     }
-    createTab(file.path);
-    await loadPDF(file.path);
+    const { index } = createTab(file.path);
+    await loadPDF(file.path, index);
   }
 
   function handlePin(e, file) {
@@ -112,7 +112,7 @@ export default function OpenPanel() {
   }
 
   async function handleRestoreSession(session) {
-    closeBackstage();
+    closeAppMenu();
     await restoreSession(session);
   }
 
@@ -140,9 +140,9 @@ export default function OpenPanel() {
     try {
       const tempPath = await downloadPdfFromUrl(url);
       if (tempPath) {
-        closeBackstage();
-        createTab(tempPath);
-        await loadPDF(tempPath);
+        closeAppMenu();
+        const { index } = createTab(tempPath);
+        await loadPDF(tempPath, index);
         setUrlInput('');
       } else {
         setUrlError(t('openPanel.downloadError'));
@@ -196,9 +196,9 @@ export default function OpenPanel() {
   }
 
   async function handleOpenPlaceFile(filePath) {
-    closeBackstage();
-    createTab(filePath);
-    await loadPDF(filePath);
+    closeAppMenu();
+    const { index } = createTab(filePath);
+    await loadPDF(filePath, index);
   }
 
   function extractFileName(path) {

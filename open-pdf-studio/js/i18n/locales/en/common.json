@@ -12,6 +12,7 @@
   "yes": "Yes",
   "no": "No",
   "none": "None",
+  "mixed": "Mixed",
   "export": "Export",
   "import": "Import",
   "print": "Print",
@@ -24,6 +25,7 @@
   "select": "Select",
   "deselect": "Deselect",
   "duplicate": "Duplicate",
+  "crop": "Crop",
   "flatten": "Flatten",
   "retry": "Retry",
   "place": "Place",
@@ -64,6 +66,7 @@
   "nextView": "Next View",
   "minimize": "Minimize",
   "maximize": "Maximize",
+  "sendFeedback": "Send Feedback",
   "loading": "Loading...",
   "leftPanel": {
     "noDocumentOpen": "No document open",

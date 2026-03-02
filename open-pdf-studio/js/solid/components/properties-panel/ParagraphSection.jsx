@@ -6,7 +6,7 @@ import { useTranslation } from '../../../i18n/useTranslation.js';
 
 export default function ParagraphSection() {
   const { t } = useTranslation('properties');
-  const isLocked = () => annotProps.locked;
+  const isLocked = () => annotProps.locked === true || annotProps.locked === 'mixed';
 
   return (
     <Show when={sectionVis.paragraph}>

@@ -14,7 +14,7 @@ import {
   rotateLeftIcon, rotateRightIcon, editTextIcon, addTextIcon, cropMarginsIcon,
   firstPageIcon, prevPageIcon, nextPageIcon, lastPageIcon, findIcon
 } from '../../data/ribbonIcons.js';
-import { showCropMarginsDialog } from '../../../ui/chrome/dialogs.js';
+import { openDialog } from '../../stores/dialogStore.js';
 import { useTranslation } from '../../../i18n/useTranslation.js';
 
 export default function HomeTab() {
@@ -104,7 +104,7 @@ export default function HomeTab() {
           <RibbonButton id="add-text" title={t('home.addText')} icon={addTextIcon} label={t('home.addText')}
             disabled={noPdf() || isPdfAReadOnly()} onClick={() => setTool('text')} />
           <RibbonButton id="crop-margins" title="Crop Margins" icon={cropMarginsIcon} label="Crop"
-            disabled={noPdf() || isPdfAReadOnly()} onClick={() => showCropMarginsDialog()} />
+            disabled={noPdf() || isPdfAReadOnly()} onClick={() => openDialog('crop-margins', { totalPages: state.pdfDoc?.numPages, currentPage: state.currentPage })} />
         </RibbonGroup>
 
         <RibbonGroup label={t('home.navigate')}>

@@ -1,7 +1,7 @@
 import RibbonGroup from './RibbonGroup.jsx';
 import RibbonButton from './RibbonButton.jsx';
 import { aboutIcon, shortcutsIcon, updatesIcon, fileAssocIcon } from '../../data/ribbonIcons.js';
-import { openBackstage, setActivePanel } from '../../stores/backstageStore.js';
+import { openAppMenu, setActivePanel } from '../../stores/appMenuStore.js';
 import { showPreferencesDialog } from '../../../core/preferences.js';
 import { useTranslation } from '../../../i18n/useTranslation.js';
 
@@ -17,7 +17,7 @@ export default function HelpTab() {
             title={t('help.aboutTitle')}
             icon={aboutIcon}
             label={t('help.about')}
-            onClick={() => { openBackstage(); setActivePanel('about'); }}
+            onClick={() => { openAppMenu(); setActivePanel('about'); }}
           />
           <RibbonButton
             id="ribbon-shortcuts"

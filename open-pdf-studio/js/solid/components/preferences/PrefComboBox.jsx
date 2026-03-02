@@ -100,13 +100,15 @@ export default function PrefComboBox(props) {
       <input
         type="text"
         class="pref-combo-input"
-        value={props.value()}
+        value={props.value() === 'mixed' ? 'Mixed' : props.value()}
+        placeholder={props.value() === 'mixed' ? 'Mixed' : undefined}
         disabled={isDisabled()}
         onInput={handleInput}
         onBlur={handleBlur}
         onKeyDown={handleKeyDown}
+        onFocus={(e) => { if (props.value() === 'mixed') e.target.value = ''; }}
       />
-      <span class="pref-combo-suffix">{suffix}</span>
+      <span class="pref-combo-suffix">{props.value() === 'mixed' ? '' : suffix}</span>
       <button type="button" class="pref-combo-arrow" tabIndex={-1} disabled={isDisabled()} onMouseDown={toggleDropdown}>
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <path d="M6 9l6 6 6-6"/>

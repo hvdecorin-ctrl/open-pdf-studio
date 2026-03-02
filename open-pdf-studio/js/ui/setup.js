@@ -47,8 +47,8 @@ function setupTauriDragDrop() {
       for (const filePath of paths) {
         const ext = getFileExtension(filePath);
         if (ext === '.pdf') {
-          createTab(filePath);
-          await loadPDF(filePath);
+          const { index } = createTab(filePath);
+          await loadPDF(filePath, index);
         } else if (IMAGE_EXTENSIONS.includes(ext)) {
           await addImageFromFile(filePath);
         }
@@ -72,8 +72,8 @@ function setupHtmlDragDrop() {
     for (const file of files) {
       const ext = getFileExtension(file.name);
       if (ext === '.pdf' && file.path) {
-        createTab(file.path);
-        await loadPDF(file.path);
+        const { index } = createTab(file.path);
+        await loadPDF(file.path, index);
       } else if (IMAGE_EXTENSIONS.includes(ext)) {
         const blob = file;
         const { pasteImageFromBlob } = await import('../annotations/clipboard.js');

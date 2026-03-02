@@ -18,6 +18,8 @@ import BookmarkDialog from './dialogs/BookmarkDialog.jsx';
 import FormValidationDialog from './dialogs/FormValidationDialog.jsx';
 import StampPickerDialog from './dialogs/StampPickerDialog.jsx';
 import CalibrationDialog from './dialogs/CalibrationDialog.jsx';
+import CropMarginsDialog from './dialogs/CropMarginsDialog.jsx';
+import FeedbackDialog from './dialogs/FeedbackDialog.jsx';
 import TextEditOverlay from './TextEditOverlay.jsx';
 import PdfTextEditOverlay from './PdfTextEditOverlay.jsx';
 
@@ -40,6 +42,8 @@ const DIALOG_MAP = {
   'form-validation': FormValidationDialog,
   'stamp-picker': StampPickerDialog,
   'calibration': CalibrationDialog,
+  'crop-margins': CropMarginsDialog,
+  'feedback': FeedbackDialog,
 };
 
 export default function DialogHost() {

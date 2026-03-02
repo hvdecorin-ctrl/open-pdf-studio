@@ -230,62 +230,20 @@ export default function CalibrationDialog(props) {
     closeDialog('calibration');
   }
 
-  const tabStyle = (active) => ({
-    padding: '6px 16px',
-    border: 'none',
-    'border-bottom': active ? '2px solid #0078d4' : '2px solid transparent',
-    background: 'transparent',
-    cursor: 'pointer',
-    'font-size': '12px',
-    'font-weight': active ? '600' : '400',
-    color: active ? '#0078d4' : 'inherit'
-  });
-
   const footer = (
-    <div style={{ display: 'flex', 'justify-content': 'space-between' }}>
-      <button
-        style={{
-          padding: '4px 12px',
-          border: '1px solid #ccc',
-          background: '#fff',
-          cursor: 'pointer',
-          'font-size': '12px',
-          'border-radius': '0'
-        }}
-        onClick={handleReset}
-      >
+    <>
+      <button class="pref-btn" onClick={handleReset}>
         {tCommon('reset')}
       </button>
-      <div style={{ display: 'flex', gap: '8px' }}>
-        <button
-          style={{
-            padding: '4px 12px',
-            border: '1px solid #ccc',
-            background: '#fff',
-            cursor: 'pointer',
-            'font-size': '12px',
-            'border-radius': '0'
-          }}
-          onClick={cancel}
-        >
+      <div class="calibration-footer-right">
+        <button class="pref-btn pref-btn-secondary" onClick={cancel}>
           {tCommon('cancel')}
         </button>
-        <button
-          style={{
-            padding: '4px 12px',
-            border: '1px solid #0078d4',
-            background: '#0078d4',
-            color: '#fff',
-            cursor: 'pointer',
-            'font-size': '12px',
-            'border-radius': '0'
-          }}
-          onClick={handleApply}
-        >
+        <button class="pref-btn pref-btn-primary" onClick={handleApply}>
           {tCommon('apply')}
         </button>
       </div>
-    </div>
+    </>
   );
 
   return (
@@ -297,44 +255,50 @@ export default function CalibrationDialog(props) {
       footer={footer}
     >
       {/* Method tabs */}
-      <div style={{ display: 'flex', 'border-bottom': '1px solid #e0e0e0', 'margin-bottom': '12px' }}>
-        <button style={tabStyle(method() === 'reference')} onClick={() => setMethod('reference')}>
+      <div class="calibration-tabs">
+        <button
+          class={`calibration-tab${method() === 'reference' ? ' active' : ''}`}
+          onClick={() => setMethod('reference')}
+        >
           {t('calibration.methodReference')}
         </button>
-        <button style={tabStyle(method() === 'ratio')} onClick={() => setMethod('ratio')}>
+        <button
+          class={`calibration-tab${method() === 'ratio' ? ' active' : ''}`}
+          onClick={() => setMethod('ratio')}
+        >
           {t('calibration.methodRatio')}
         </button>
       </div>
 
       {/* Method 1: Reference Line */}
       <Show when={method() === 'reference'}>
-        <p style={{ 'font-size': '12px', color: '#666', margin: '0 0 12px 0' }}>
+        <p class="calibration-help">
           {t('calibration.referenceHelp')}
         </p>
-        <div style={{ display: 'flex', gap: '8px', 'align-items': 'center', 'margin-bottom': '12px' }}>
-          <label style={{ 'font-size': '13px', 'min-width': '110px' }}>{t('calibration.measuredPixels')}</label>
+        <div class="calibration-row">
+          <label class="calibration-label">{t('calibration.measuredPixels')}</label>
           <input
             type="number"
-            style={{ width: '100px', padding: '4px', border: '1px solid #ccc', 'border-radius': '0' }}
+            class="calibration-input"
             min="1"
             step="0.01"
             value={pixels()}
             onInput={(e) => setPixels(e.target.value)}
           />
-          <span style={{ 'font-size': '12px', color: '#888' }}>px</span>
+          <span class="calibration-unit">px</span>
         </div>
-        <div style={{ display: 'flex', gap: '8px', 'align-items': 'center', 'margin-bottom': '12px' }}>
-          <label style={{ 'font-size': '13px', 'min-width': '110px' }}>{t('calibration.knownDistance')}</label>
+        <div class="calibration-row">
+          <label class="calibration-label">{t('calibration.knownDistance')}</label>
           <input
             type="number"
-            style={{ width: '100px', padding: '4px', border: '1px solid #ccc', 'border-radius': '0' }}
+            class="calibration-input"
             min="0.001"
             step="0.01"
             value={distance()}
             onInput={(e) => setDistance(e.target.value)}
           />
           <select
-            style={{ padding: '4px', border: '1px solid #ccc', 'border-radius': '0' }}
+            class="calibration-select"
             value={unit()}
             onChange={(e) => setUnit(e.target.value)}
           >
@@ -349,13 +313,13 @@ export default function CalibrationDialog(props) {
 
       {/* Method 2: Scale Ratio */}
       <Show when={method() === 'ratio'}>
-        <p style={{ 'font-size': '12px', color: '#666', margin: '0 0 12px 0' }}>
+        <p class="calibration-help">
           {t('calibration.ratioHelp')}
         </p>
-        <div style={{ display: 'flex', gap: '8px', 'align-items': 'center', 'margin-bottom': '12px' }}>
-          <label style={{ 'font-size': '13px', 'min-width': '110px' }}>{t('calibration.scaleRatio')}</label>
+        <div class="calibration-row">
+          <label class="calibration-label">{t('calibration.scaleRatio')}</label>
           <select
-            style={{ padding: '4px', border: '1px solid #ccc', 'border-radius': '0', width: '120px' }}
+            class="calibration-select calibration-select-wide"
             value={scalePreset()}
             onChange={(e) => setScalePreset(e.target.value)}
           >
@@ -363,20 +327,20 @@ export default function CalibrationDialog(props) {
             <option value="custom">{t('calibration.customRatio')}</option>
           </select>
           <Show when={scalePreset() === 'custom'}>
-            <span style={{ 'font-size': '13px' }}>1:</span>
+            <span class="calibration-label-inline">1:</span>
             <input
               type="number"
-              style={{ width: '80px', padding: '4px', border: '1px solid #ccc', 'border-radius': '0' }}
+              class="calibration-input calibration-input-narrow"
               min="1"
               value={customScale()}
               onInput={(e) => setCustomScale(parseInt(e.target.value) || 1)}
             />
           </Show>
         </div>
-        <div style={{ display: 'flex', gap: '8px', 'align-items': 'center', 'margin-bottom': '12px' }}>
-          <label style={{ 'font-size': '13px', 'min-width': '110px' }}>{t('calibration.unit')}</label>
+        <div class="calibration-row">
+          <label class="calibration-label">{t('calibration.unit')}</label>
           <select
-            style={{ padding: '4px', border: '1px solid #ccc', 'border-radius': '0' }}
+            class="calibration-select"
             value={ratioUnit()}
             onChange={(e) => setRatioUnit(e.target.value)}
           >
@@ -388,33 +352,25 @@ export default function CalibrationDialog(props) {
           </select>
         </div>
         <Show when={pageSizeText()}>
-          <div style={{ 'font-size': '12px', color: '#888', 'margin-bottom': '8px' }}>
+          <div class="calibration-page-size">
             {t('calibration.pageSize')} {pageSizeText()}
           </div>
         </Show>
-        <div style={{ 'margin-top': '4px', 'border-top': '1px solid #e0e0e0', 'padding-top': '10px' }}>
+        <div class="calibration-detect-section">
           <button
-            style={{
-              padding: '5px 14px',
-              border: '1px solid #0078d4',
-              background: '#f0f7ff',
-              cursor: detecting() ? 'wait' : 'pointer',
-              'font-size': '12px',
-              'border-radius': '0',
-              color: '#0078d4'
-            }}
+            class="calibration-detect-btn"
             onClick={handleAutoDetect}
             disabled={detecting()}
           >
             {detecting() ? t('calibration.detecting') : t('calibration.autoDetect')}
           </button>
           <Show when={detectResult() === 'found'}>
-            <span style={{ 'font-size': '12px', color: '#107c10', 'margin-left': '8px' }}>
+            <span class="calibration-detect-found">
               {t('calibration.scaleDetected')}
             </span>
           </Show>
           <Show when={detectResult() === 'notfound'}>
-            <span style={{ 'font-size': '12px', color: '#d83b01', 'margin-left': '8px' }}>
+            <span class="calibration-detect-notfound">
               {t('calibration.scaleNotFound')}
             </span>
           </Show>

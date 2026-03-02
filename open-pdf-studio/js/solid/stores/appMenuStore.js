@@ -1,24 +1,24 @@
 import { createSignal } from 'solid-js';
 import { state } from '../../core/state.js';
 
-// Active panel within backstage (UI-only state)
+// Active panel within app menu (UI-only state)
 const [activePanel, setActivePanelSignal] = createSignal('none');
 
-export function openBackstage() {
-  state.backstageOpen = true;
+export function openAppMenu() {
+  state.appMenuOpen = true;
   setActivePanelSignal('open');
 }
 
-export function closeBackstage() {
-  state.backstageOpen = false;
+export function closeAppMenu() {
+  state.appMenuOpen = false;
 }
 
 export function setActivePanel(name) {
   setActivePanelSignal(name);
 }
 
-export function isBackstageOpen() {
-  return state.backstageOpen;
+export function isAppMenuOpen() {
+  return state.appMenuOpen;
 }
 
 export function getActivePanel() {

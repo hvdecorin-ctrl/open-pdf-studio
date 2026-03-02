@@ -8,7 +8,7 @@ import { useTranslation } from '../../../i18n/useTranslation.js';
 export default function AppearanceSection() {
   const { t } = useTranslation('properties');
   const { t: tCommon } = useTranslation('common');
-  const isLocked = () => annotProps.locked;
+  const isLocked = () => annotProps.locked === true || annotProps.locked === 'mixed';
 
   return (
     <Show when={sectionVis.appearance}>
@@ -19,6 +19,9 @@ export default function AppearanceSection() {
             <select value={annotProps.icon} disabled={isLocked()}
               onDblClick={cycleSelectNext}
               onChange={(e) => updateAnnotProp('icon', e.target.value)}>
+              <Show when={annotProps.icon === 'mixed'}>
+                <option value="mixed" disabled hidden>{tCommon('mixed')}</option>
+              </Show>
               <option value="comment">{t('appearance.iconComment')}</option>
               <option value="note">{t('appearance.iconNote')}</option>
               <option value="help">{t('appearance.iconHelp')}</option>
@@ -97,6 +100,9 @@ export default function AppearanceSection() {
             <select value={annotProps.borderStyle} disabled={isLocked()}
               onDblClick={cycleSelectNext}
               onChange={(e) => updateAnnotProp('borderStyle', e.target.value)}>
+              <Show when={annotProps.borderStyle === 'mixed'}>
+                <option value="mixed" disabled hidden>{tCommon('mixed')}</option>
+              </Show>
               <option value="solid">{tCommon('solid')}</option>
               <option value="dashed">{tCommon('dashed')}</option>
               <option value="dotted">{tCommon('dotted')}</option>

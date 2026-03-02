@@ -9,7 +9,7 @@ import HelpTab from './HelpTab.jsx';
 import FormatTab from './FormatTab.jsx';
 import ArrangeTab from './ArrangeTab.jsx';
 import { activeTab, setActiveTab, contextualTabsVisible } from '../../stores/ribbonStore.js';
-import { openBackstage } from '../../../ui/chrome/menus.js';
+import { openAppMenu } from '../../../ui/chrome/menus.js';
 import { useTranslation } from '../../../i18n/useTranslation.js';
 
 export default function Ribbon() {
@@ -19,7 +19,7 @@ export default function Ribbon() {
     <>
       <div class="ribbon-tabs">
         <RibbonTab label={t('tabs.file')} isFileTab={true} id="file-tab"
-          onClick={() => openBackstage()} />
+          onClick={() => openAppMenu()} />
         <RibbonTab label={t('tabs.home')} dataTab="home"
           isActive={activeTab() === 'home'}
           onClick={() => setActiveTab('home')} />

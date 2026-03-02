@@ -18,8 +18,15 @@ export default function ColorPalettePicker(props) {
     onCleanup(() => document.removeEventListener('mousedown', handler));
   });
 
+  const { t: tCommon } = useTranslation('common');
+
   const colorPreviewStyle = () => {
     const c = props.color?.();
+    if (c === 'mixed') {
+      return {
+        background: `linear-gradient(135deg, #ff0000 0%, #00ff00 33%, #0000ff 66%, #ff00ff 100%)`
+      };
+    }
     if (!c && props.showNone) {
       const surfaceColor = getComputedStyle(document.documentElement)
         .getPropertyValue('--theme-surface').trim() || '#fff';
@@ -32,6 +39,7 @@ export default function ColorPalettePicker(props) {
 
   const hexDisplay = () => {
     const c = props.color?.();
+    if (c === 'mixed') return tCommon('mixed');
     if (!c && props.showNone) return t('colorNone');
     return (c || '#000000').toUpperCase();
   };
@@ -99,7 +107,8 @@ export default function ColorPalettePicker(props) {
             onClick={(e) => {
               e.stopPropagation();
               if (hiddenInput) {
-                hiddenInput.value = props.color?.() || '#ffffff';
+                const cv = props.color?.();
+                hiddenInput.value = (!cv || cv === 'mixed') ? '#ffffff' : cv;
                 hiddenInput.click();
               }
               setOpen(false);

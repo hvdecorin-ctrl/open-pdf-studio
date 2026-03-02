@@ -3,24 +3,28 @@ import { renderPage, renderContinuous, clearPdfView } from '../../pdf/renderer.j
 import { hideFormFieldsBar } from '../../pdf/form-layer.js';
 import { redrawAnnotations, redrawContinuous, updateQuickAccessButtons } from '../../annotations/rendering.js';
 import { updateAllStatus } from './status-bar.js';
-import { generateThumbnails, clearThumbnails, clearThumbnailCache, refreshActiveTab } from '../panels/left-panel.js';
+import { generateThumbnails, clearThumbnails, clearThumbnailCache, refreshActiveTab, refreshAllTabs } from '../panels/left-panel.js';
 import { cancelAnnotationLoading, hidePdfABar } from '../../pdf/loader.js';
 import { savePDF } from '../../pdf/saver.js';
 import { unlockFile } from '../../core/platform.js';
+import { cancelPendingZoom } from '../setup/navigation-events.js';
 
 /**
  * Create a new tab for a document
  * @param {string} filePath - Path to the PDF file (null for new untitled document)
- * @returns {Object} The created document object
+ * @param {boolean} autoSwitch - Whether to switch to the new tab (default: true)
+ * @returns {{ doc: Object, index: number }} The created document object and its index
  */
-export function createTab(filePath = null) {
+export function createTab(filePath = null, autoSwitch = true) {
   // Check if file is already open
   if (filePath) {
     const existingIndex = findDocumentByPath(filePath);
     if (existingIndex !== -1) {
       // File already open, switch to its tab
-      switchToTab(existingIndex);
-      return state.documents[existingIndex];
+      if (autoSwitch) {
+        switchToTab(existingIndex);
+      }
+      return { doc: state.documents[existingIndex], index: existingIndex };
     }
   }
 
@@ -30,12 +34,14 @@ export function createTab(filePath = null) {
 
   // Switch to the new tab
   const newIndex = state.documents.length - 1;
-  switchToTab(newIndex);
+  if (autoSwitch) {
+    switchToTab(newIndex);
+  }
 
   // Update tab bar UI
   updateTabBar();
 
-  return doc;
+  return { doc, index: newIndex };
 }
 
 /**
@@ -57,12 +63,16 @@ export function switchToTab(index) {
     }
   }
 
+  // Cancel any pending zoom render from the previous document
+  cancelPendingZoom();
+
   // Clear any selected annotation and close properties panel
   state.selectedAnnotation = null;
   import('../../solid/stores/propertiesStore.js').then(m => m.setPanelVisible(false));
 
   // Switch active document
   state.activeDocumentIndex = index;
+
 
   // Update tab bar UI
   updateTabBar();
@@ -73,7 +83,19 @@ export function switchToTab(index) {
 
   // Render the new active document
   const newDoc = getActiveDocument();
+  const placeholder = document.getElementById('placeholder');
+  const pdfContainer = document.getElementById('pdf-container');
+
   if (newDoc && newDoc.pdfDoc) {
+    // Show PDF container, hide placeholder
+    if (placeholder) placeholder.style.display = 'none';
+    if (pdfContainer) pdfContainer.classList.add('visible');
+
+    // Clamp currentPage to valid range (could drift if document was modified)
+    if (newDoc.currentPage < 1 || newDoc.currentPage > newDoc.pdfDoc.numPages) {
+      newDoc.currentPage = 1;
+    }
+
     if (newDoc.viewMode === 'continuous') {
       renderContinuous();
     } else {
@@ -81,11 +103,10 @@ export function switchToTab(index) {
     }
 
     // Restore scroll position
-    const container = document.getElementById('pdf-container');
-    if (container && newDoc.scrollPosition) {
+    if (pdfContainer && newDoc.scrollPosition) {
       setTimeout(() => {
-        container.scrollLeft = newDoc.scrollPosition.x;
-        container.scrollTop = newDoc.scrollPosition.y;
+        pdfContainer.scrollLeft = newDoc.scrollPosition.x;
+        pdfContainer.scrollTop = newDoc.scrollPosition.y;
       }, 50);
     }
 
@@ -95,7 +116,9 @@ export function switchToTab(index) {
     // Refresh active left panel tab content
     refreshActiveTab();
   } else {
-    // No PDF loaded for this document yet
+    // No PDF loaded for this document yet — show placeholder
+    if (placeholder) placeholder.style.display = '';
+    if (pdfContainer) pdfContainer.classList.remove('visible');
     clearPdfView();
     clearThumbnails();
   }
@@ -127,10 +150,10 @@ export function switchToTab(index) {
 export async function closeTab(index, force = false) {
   if (index < 0 || index >= state.documents.length) return false;
 
-  // Cancel any in-progress background annotation loading
-  cancelAnnotationLoading();
-
   const doc = state.documents[index];
+
+  // Cancel any in-progress background annotation loading for this document
+  cancelAnnotationLoading(doc);
 
   // Check for unsaved changes - show Save / Don't Save / Cancel dialog
   if (!force && doc.modified) {
@@ -163,6 +186,7 @@ export async function closeTab(index, force = false) {
     state.activeDocumentIndex = -1;
     clearPdfView();
     clearThumbnails();
+    refreshAllTabs();
     updateWindowTitle();
   } else if (index <= state.activeDocumentIndex) {
     // If closing current or earlier tab, adjust index

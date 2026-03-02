@@ -1,4 +1,4 @@
-import { state, getNextUntitledName } from '../core/state.js';
+import { state, getNextUntitledName, getActiveDocument } from '../core/state.js';
 import { showLoading, hideLoading } from '../ui/chrome/dialogs.js';
 import { updateAllStatus } from '../ui/chrome/status-bar.js';
 import { setViewMode } from './renderer.js';
@@ -19,14 +19,6 @@ import { convertPdfAnnotation } from './loader/annotation-converter.js';
 
 // Cache for original PDF bytes (used by saver to avoid re-reading)
 const originalBytesCache = new Map(); // filePath -> Uint8Array
-
-// Cancellation token for background annotation loading
-let annotationLoadId = 0;
-
-// Track which pages have had annotations loaded, and shared pdf-lib document
-const loadedAnnotationPages = new Set();
-let sharedPdfLibDoc = null; // lazy-loaded, shared between on-demand and background
-let sharedPdfLibDocPromise = null; // to avoid loading twice concurrently
 
 export function getCachedPdfBytes(filePath) {
   return originalBytesCache.get(filePath);
@@ -49,27 +41,27 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = new URL('pdfjs-dist/build/pdf.worker.mj
 
 // ─── PDF/A compliance bar ──────────────────────────────────────────────────────
 
-async function checkPdfACompliance() {
+async function checkPdfACompliance(doc) {
   try {
-    const meta = await state.pdfDoc.getMetadata();
+    if (!doc || !doc.pdfDoc) return;
+    const meta = await doc.pdfDoc.getMetadata();
     const metadata = meta && meta.metadata;
     if (!metadata) return;
     const part = metadata.get('pdfaid:part');
     const conformance = metadata.get('pdfaid:conformance');
     if (part) {
-      const doc = state.documents[state.activeDocumentIndex];
-      if (doc) {
-        doc.pdfaCompliance = { part, conformance: conformance || null };
+      doc.pdfaCompliance = { part, conformance: conformance || null };
+      // Only show bar if this document is active
+      if (state.documents[state.activeDocumentIndex] === doc) {
+        showPdfABar(part, conformance, doc);
       }
-      showPdfABar(part, conformance);
     }
   } catch (e) {
     // Metadata not available – ignore
   }
 }
 
-function showPdfABar(part, conformance) {
-  const doc = state.documents[state.activeDocumentIndex];
+function showPdfABar(part, conformance, doc) {
   if (!doc) return;
   if (doc.pdfADismissed) return;
   const label = `PDF/A-${part}${conformance ? conformance.toLowerCase() : ''}`;
@@ -99,10 +91,23 @@ export function isPdfAReadOnly() {
   return !doc.pdfADismissed;
 }
 
-// Load PDF from file path. Optional preloadedData (Uint8Array) bypasses FS plugin read.
-export async function loadPDF(filePath, preloadedData = null) {
+// Load PDF from file path into a specific document by index.
+// Optional preloadedData (Uint8Array) bypasses FS plugin read.
+export async function loadPDF(filePath, docIndex, preloadedData = null) {
+  const doc = state.documents[docIndex];
+  if (!doc) return;
+
+  // Guard against loading into a document that's already loading
+  if (doc._isLoading) return;
+  doc._isLoading = true;
+
+  // Helper: check if this document is the currently active one
+  const isActive = () => state.documents[state.activeDocumentIndex] === doc;
+  // Helper: check if document was closed during async operations
+  const isClosed = () => !state.documents.includes(doc);
+
   try {
-    showLoading('Loading PDF...');
+    if (isActive()) showLoading('Loading PDF...');
 
     let typedArray;
 
@@ -114,12 +119,15 @@ export async function loadPDF(filePath, preloadedData = null) {
       // Lock the file to prevent other apps from writing while we have it open
       // (skip on Android — content:// URIs don't support filesystem locking)
       const { isMobile } = await import('../core/platform.js');
+      if (isClosed()) return;
       if (!isMobile()) {
         await lockFile(filePath);
+        if (isClosed()) return;
       }
 
       // Read file using Tauri fs plugin (handles content:// URIs on Android)
       const data = await readBinaryFile(filePath);
+      if (isClosed()) return;
       typedArray = new Uint8Array(data);
 
       // Cache a copy of original bytes for saver (pdf.js transfers the buffer
@@ -130,103 +138,117 @@ export async function loadPDF(filePath, preloadedData = null) {
     }
 
     // Load PDF using pdf.js (this transfers the buffer to a worker)
-    state.pdfDoc = await pdfjsLib.getDocument({
+    doc.pdfDoc = await pdfjsLib.getDocument({
       data: typedArray,
       cMapUrl: '/pdfjs/web/cmaps/',
       cMapPacked: true,
       standardFontDataUrl: '/pdfjs/web/standard_fonts/',
       isEvalSupported: false,
     }).promise;
-    state.currentPdfPath = filePath;
+    if (isClosed()) return;
 
-    // Reset form field annotation storage for the new document
-    resetAnnotationStorage();
+    doc.filePath = filePath;
+    doc.fileName = filePath ? filePath.split(/[\\/]/).pop() : 'Untitled';
 
-    // Hide PDF/A bar from previous document
-    hidePdfABar();
-
-    // Reset annotation state
-    state.annotations = [];
-    loadedAnnotationPages.clear();
-    pagesNeedingColorUpdate.clear();
-    sharedPdfLibDoc = null;
-    sharedPdfLibDocPromise = null;
-    const doc = state.documents[state.activeDocumentIndex];
-    if (doc) { doc.undoStack = []; doc.redoStack = []; }
-    state.selectedAnnotation = null;
-    state.currentPage = 1;
+    // Reset annotation state (per-document)
+    doc.annotations = [];
+    doc._loadedAnnotationPages.clear();
+    doc._pagesNeedingColorUpdate.clear();
+    doc._sharedPdfLibDoc = null;
+    doc._sharedPdfLibDocPromise = null;
+    doc.undoStack = [];
+    doc.redoStack = [];
+    doc.selectedAnnotation = null;
+    doc.selectedAnnotations = [];
+    doc.currentPage = 1;
 
     // Eagerly start pdf-lib loading in background (don't await - runs in parallel with first paint)
-    getSharedPdfLibDoc();
+    getSharedPdfLibDoc(doc);
 
-    // Show PDF container, hide placeholder (use getElementById directly — bundled
-    // module bindings can be stale after Solid re-renders)
-    const placeholder = document.getElementById('placeholder');
-    const pdfContainer = document.getElementById('pdf-container');
-    if (placeholder) placeholder.style.display = 'none';
-    if (pdfContainer) pdfContainer.classList.add('visible');
+    // UI operations — only if this is the active document
+    if (isActive()) {
+      // Reset form field annotation storage for the new document
+      resetAnnotationStorage();
 
-    // Render first page immediately (before annotation loading)
-    await setViewMode(state.viewMode);
-    hideLoading();
+      // Hide PDF/A bar from previous document
+      hidePdfABar();
 
-    // Check for PDF/A compliance and show info bar if applicable
-    checkPdfACompliance();
+      // Show PDF container, hide placeholder
+      const placeholder = document.getElementById('placeholder');
+      const pdfContainer = document.getElementById('pdf-container');
+      if (placeholder) placeholder.style.display = 'none';
+      if (pdfContainer) pdfContainer.classList.add('visible');
 
-    // Generate thumbnails for left panel
-    generateThumbnails();
+      // Render first page immediately (before annotation loading)
+      await setViewMode(doc.viewMode);
+      if (isClosed()) return;
+      hideLoading();
 
-    // Load bookmarks from PDF outline
+      // Check for PDF/A compliance and show info bar if applicable
+      checkPdfACompliance(doc);
+
+      // Generate thumbnails for left panel
+      generateThumbnails();
+    } else {
+      // Not active — still check PDF/A but don't show bar
+      checkPdfACompliance(doc);
+    }
+
+    // Load bookmarks from PDF outline (data-only, always run)
     {
       const { loadBookmarksFromPdf } = await import('../ui/panels/bookmarks.js');
-      const doc = state.documents[state.activeDocumentIndex];
-      if (doc) {
-        doc.bookmarks = await loadBookmarksFromPdf(state.pdfDoc);
-      }
+      if (isClosed()) return;
+      doc.bookmarks = await loadBookmarksFromPdf(doc.pdfDoc);
+      if (isClosed()) return;
     }
 
-    // Load persisted measure scale for this document
+    // Load persisted measure scale for this document (data-only)
     {
       const { loadDocumentScale } = await import('../annotations/measurement.js');
-      loadDocumentScale();
+      if (isClosed()) return;
+      loadDocumentScale(doc);
     }
 
-    // Notify that a PDF has been loaded (listeners can reset tool, update UI, etc.)
-    document.dispatchEvent(new CustomEvent('pdf-loaded'));
+    // UI updates — only if active
+    if (isActive()) {
+      // Notify that a PDF has been loaded (listeners can reset tool, update UI, etc.)
+      document.dispatchEvent(new CustomEvent('pdf-loaded'));
 
-    // Refresh active left panel tab (e.g. attachments, layers, etc.)
-    refreshActiveTab();
+      // Refresh active left panel tab (e.g. attachments, layers, etc.)
+      refreshActiveTab();
 
-    // Update status bar
-    updateAllStatus();
+      // Update status bar
+      updateAllStatus();
 
-    // Update window title
-    updateWindowTitle();
+      // Update window title
+      updateWindowTitle();
+    }
 
-    // Track in recent files
+    // Track in recent files (always run)
     if (filePath && !filePath.startsWith('__memory__')) {
       addRecentFile(filePath, extractFileName(filePath));
     }
 
     // Load existing annotations in background (after first paint)
-    await loadExistingAnnotations();
+    await loadExistingAnnotations(doc);
+    if (isClosed()) return;
 
     // Redraw annotations on the current page now that they're loaded (including color updates)
-    // (only if the document is still active)
-    if (state.pdfDoc && state.currentPdfPath === filePath) {
+    if (isActive() && doc.pdfDoc) {
       const { redrawAnnotations } = await import('../annotations/rendering.js');
       redrawAnnotations();
     }
 
   } catch (error) {
     // Suppress errors from document being closed during background loading
-    if (!state.pdfDoc || state.currentPdfPath !== filePath) {
-      return;
-    }
+    if (isClosed()) return;
     console.error('Error loading PDF:', error);
-    alert('Failed to load PDF: ' + error.message);
+    if (isActive()) {
+      alert('Failed to load PDF: ' + error.message);
+    }
   } finally {
-    hideLoading();
+    doc._isLoading = false;
+    if (isActive()) hideLoading();
   }
 }
 
@@ -241,8 +263,8 @@ export async function openPDFFile() {
     const result = await openFileDialog();
     if (result) {
       // Create a new tab for the file (will switch to existing tab if already open)
-      createTab(result);
-      await loadPDF(result);
+      const { index } = createTab(result);
+      await loadPDF(result, index);
     }
   } catch (error) {
     console.error('Error opening file dialog:', error);
@@ -264,7 +286,7 @@ export async function createBlankPDF(widthPt, heightPt, numPages) {
 
     // Generate untitled name and create tab
     const fileName = getNextUntitledName();
-    const doc = createTab(null);
+    const { doc, index } = createTab(null);
     doc.fileName = fileName;
 
     // Cache bytes under a memory key for saving later
@@ -272,7 +294,7 @@ export async function createBlankPDF(widthPt, heightPt, numPages) {
     originalBytesCache.set(memoryKey, typedArray.slice());
 
     // Load into pdf.js for viewing
-    state.pdfDoc = await pdfjsLib.getDocument({
+    doc.pdfDoc = await pdfjsLib.getDocument({
       data: typedArray,
       cMapUrl: '/pdfjs/web/cmaps/',
       cMapPacked: true,
@@ -282,10 +304,12 @@ export async function createBlankPDF(widthPt, heightPt, numPages) {
 
     // Reset annotation storage and state
     resetAnnotationStorage();
-    state.annotations = [];
-    if (doc) { doc.undoStack = []; doc.redoStack = []; }
-    state.selectedAnnotation = null;
-    state.currentPage = 1;
+    doc.annotations = [];
+    doc.undoStack = [];
+    doc.redoStack = [];
+    doc.selectedAnnotation = null;
+    doc.selectedAnnotations = [];
+    doc.currentPage = 1;
 
     // Show PDF container, hide placeholder
     const placeholder = document.getElementById('placeholder');
@@ -297,7 +321,7 @@ export async function createBlankPDF(widthPt, heightPt, numPages) {
     markDocumentModified();
 
     // Render
-    await setViewMode(state.viewMode);
+    await setViewMode(doc.viewMode);
     generateThumbnails();
     refreshActiveTab();
     updateAllStatus();
@@ -311,49 +335,57 @@ export async function createBlankPDF(widthPt, heightPt, numPages) {
   }
 }
 
-// Cancel any in-progress annotation loading (called when document is closed/switched)
-export function cancelAnnotationLoading() {
-  annotationLoadId++;
-  loadedAnnotationPages.clear();
-  pagesNeedingColorUpdate.clear();
-  sharedPdfLibDoc = null;
-  sharedPdfLibDocPromise = null;
+// Cancel any in-progress annotation loading for a document
+// If no doc provided, cancels for the active document (backward compat)
+export function cancelAnnotationLoading(doc) {
+  if (!doc) {
+    doc = getActiveDocument();
+  }
+  if (!doc) return;
+  doc._annotationLoadId++;
+  doc._loadedAnnotationPages.clear();
+  doc._pagesNeedingColorUpdate.clear();
+  doc._sharedPdfLibDoc = null;
+  doc._sharedPdfLibDocPromise = null;
 }
 
 // Mark all annotation pages as loaded (prevents background loader from overwriting after page ops)
-export function markAllAnnotationPagesLoaded(numPages) {
+export function markAllAnnotationPagesLoaded(numPages, doc) {
+  if (!doc) {
+    doc = getActiveDocument();
+  }
+  if (!doc) return;
   for (let i = 1; i <= numPages; i++) {
-    loadedAnnotationPages.add(i);
+    doc._loadedAnnotationPages.add(i);
   }
 }
 
 // Get or lazily load the shared pdf-lib document for color extraction
-async function getSharedPdfLibDoc() {
-  if (sharedPdfLibDoc) return sharedPdfLibDoc;
-  if (sharedPdfLibDocPromise) return sharedPdfLibDocPromise;
-  const pdfBytes = originalBytesCache.get(state.currentPdfPath);
+async function getSharedPdfLibDoc(doc) {
+  if (!doc) {
+    doc = getActiveDocument();
+  }
+  if (!doc) return null;
+  if (doc._sharedPdfLibDoc) return doc._sharedPdfLibDoc;
+  if (doc._sharedPdfLibDocPromise) return doc._sharedPdfLibDocPromise;
+  const pdfBytes = originalBytesCache.get(doc.filePath);
   if (!pdfBytes) return null;
-  sharedPdfLibDocPromise = PDFDocument.load(pdfBytes, { ignoreEncryption: true }).then(doc => {
-    sharedPdfLibDoc = doc;
-    sharedPdfLibDocPromise = null;
-    return doc;
+  doc._sharedPdfLibDocPromise = PDFDocument.load(pdfBytes, { ignoreEncryption: true }).then(pdfLibDoc => {
+    doc._sharedPdfLibDoc = pdfLibDoc;
+    doc._sharedPdfLibDocPromise = null;
+    return pdfLibDoc;
   });
-  return sharedPdfLibDocPromise;
+  return doc._sharedPdfLibDocPromise;
 }
-
-// Track pages that were loaded on-demand without color data (need color update later)
-const pagesNeedingColorUpdate = new Set();
 
 // Load annotations for a single page on-demand (called when user navigates to a page)
 // If waitForColors=false, skips color extraction when pdf-lib isn't ready yet
-async function loadAnnotationsForSinglePage(pageNum, waitForColors = false) {
-  if (!state.pdfDoc) return;
+async function loadAnnotationsForSinglePage(doc, pageNum, waitForColors = false) {
+  if (!doc || !doc.pdfDoc) return;
 
-  let t0 = performance.now();
-  const page = await state.pdfDoc.getPage(pageNum);
+  const page = await doc.pdfDoc.getPage(pageNum);
   const viewport = page.getViewport({ scale: 1 });
 
-  t0 = performance.now();
   const annotations = await page.getAnnotations();
 
   if (annotations.length === 0) return;
@@ -365,86 +397,84 @@ async function loadAnnotationsForSinglePage(pageNum, waitForColors = false) {
   let annotColorMap = null;
 
   if (stampAnnots.length > 0) {
-    t0 = performance.now();
     stampImageMap = await extractStampImagesViaPdfJs(page, viewport, stampAnnots);
   }
 
   if (needsExtraData) {
     if (waitForColors) {
       // Background loader path: always wait for pdf-lib
-      const pdfLibDoc = await getSharedPdfLibDoc();
+      const pdfLibDoc = await getSharedPdfLibDoc(doc);
       if (pdfLibDoc) {
-        t0 = performance.now();
         annotColorMap = await extractAnnotationColors(pageNum, pdfLibDoc);
       }
-    } else if (sharedPdfLibDoc) {
+    } else if (doc._sharedPdfLibDoc) {
       // On-demand path: pdf-lib already ready, use it
-      t0 = performance.now();
-      annotColorMap = await extractAnnotationColors(pageNum, sharedPdfLibDoc);
+      annotColorMap = await extractAnnotationColors(pageNum, doc._sharedPdfLibDoc);
     } else {
       // On-demand path: pdf-lib not ready, skip colors for now
-      pagesNeedingColorUpdate.add(pageNum);
+      doc._pagesNeedingColorUpdate.add(pageNum);
     }
   }
 
-  t0 = performance.now();
   for (const annot of annotations) {
     const converted = await convertPdfAnnotation(annot, pageNum, viewport, stampImageMap, annotColorMap);
     if (converted) {
-      state.annotations.push(converted);
+      doc.annotations.push(converted);
     }
   }
 }
 
 // Ensure annotations are loaded for a given page (on-demand, called from renderer)
-export async function ensureAnnotationsForPage(pageNum) {
-  if (loadedAnnotationPages.has(pageNum)) {
+export async function ensureAnnotationsForPage(pageNum, doc) {
+  if (!doc) {
+    doc = getActiveDocument();
+  }
+  if (!doc) return;
+  if (doc._loadedAnnotationPages.has(pageNum)) {
     return;
   }
-  loadedAnnotationPages.add(pageNum);
-  await loadAnnotationsForSinglePage(pageNum, false);
+  doc._loadedAnnotationPages.add(pageNum);
+  await loadAnnotationsForSinglePage(doc, pageNum, false);
 }
 
 // Load existing annotations from PDF
-export async function loadExistingAnnotations() {
-  if (!state.pdfDoc) return;
+export async function loadExistingAnnotations(doc) {
+  if (!doc) {
+    doc = getActiveDocument();
+  }
+  if (!doc || !doc.pdfDoc) return;
 
-  const loadId = ++annotationLoadId;
-  const pdfDoc = state.pdfDoc;
+  const loadId = ++doc._annotationLoadId;
+  const pdfDoc = doc.pdfDoc;
   const numPages = pdfDoc.numPages;
   const BATCH_SIZE = 50;
-  let totalGetPage = 0, totalGetAnnotations = 0, totalStampExtract = 0, totalColorExtract = 0, totalConvert = 0;
-  let pagesWithAnnotations = 0, totalAnnotations = 0, pagesSkipped = 0;
 
   for (let batchStart = 1; batchStart <= numPages; batchStart += BATCH_SIZE) {
-    if (loadId !== annotationLoadId) {
-      return;
-    }
+    if (loadId !== doc._annotationLoadId) return;
+    if (!state.documents.includes(doc)) return;
 
     const batchEnd = Math.min(batchStart + BATCH_SIZE - 1, numPages);
 
     // Collect page numbers not yet loaded on-demand
     const pagesToLoad = [];
     for (let p = batchStart; p <= batchEnd; p++) {
-      if (loadedAnnotationPages.has(p)) {
-        pagesSkipped++;
+      if (doc._loadedAnnotationPages.has(p)) {
+        // already loaded
       } else {
         pagesToLoad.push(p);
-        loadedAnnotationPages.add(p);
+        doc._loadedAnnotationPages.add(p);
       }
     }
 
     if (pagesToLoad.length === 0) continue;
 
     // Fetch all pages in this batch in parallel
-    let t0 = performance.now();
     const pages = await Promise.all(pagesToLoad.map(p => pdfDoc.getPage(p)));
-    totalGetPage += performance.now() - t0;
+    if (loadId !== doc._annotationLoadId || !state.documents.includes(doc)) return;
 
     // Fetch all annotations in this batch in parallel
-    t0 = performance.now();
     const annotResults = await Promise.all(pages.map(page => page.getAnnotations()));
-    totalGetAnnotations += performance.now() - t0;
+    if (loadId !== doc._annotationLoadId || !state.documents.includes(doc)) return;
 
     // Process each page's annotations
     for (let i = 0; i < pages.length; i++) {
@@ -455,9 +485,6 @@ export async function loadExistingAnnotations() {
 
       if (annotations.length === 0) continue;
 
-      pagesWithAnnotations++;
-      totalAnnotations += annotations.length;
-
       const stampAnnots = annotations.filter(a => a.subtype === 'Stamp');
       const needsExtraData = annotations.some(a => ['FreeText', 'Square', 'Circle', 'Line', 'PolyLine', 'Polygon', 'Ink', 'Text', 'Highlight', 'Underline', 'StrikeOut', 'Squiggly'].includes(a.subtype));
 
@@ -465,45 +492,44 @@ export async function loadExistingAnnotations() {
       let annotColorMap = null;
 
       if (stampAnnots.length > 0) {
-        t0 = performance.now();
         stampImageMap = await extractStampImagesViaPdfJs(page, viewport, stampAnnots);
-        totalStampExtract += performance.now() - t0;
+        if (loadId !== doc._annotationLoadId || !state.documents.includes(doc)) return;
       }
 
       if (needsExtraData) {
-        const pdfLibDoc = await getSharedPdfLibDoc();
+        const pdfLibDoc = await getSharedPdfLibDoc(doc);
+        if (loadId !== doc._annotationLoadId || !state.documents.includes(doc)) return;
         if (pdfLibDoc) {
-          t0 = performance.now();
           annotColorMap = await extractAnnotationColors(pageNum, pdfLibDoc);
-          totalColorExtract += performance.now() - t0;
+          if (loadId !== doc._annotationLoadId || !state.documents.includes(doc)) return;
         }
       }
 
-      t0 = performance.now();
       for (const annot of annotations) {
         const converted = await convertPdfAnnotation(annot, pageNum, viewport, stampImageMap, annotColorMap);
         if (converted) {
-          state.annotations.push(converted);
+          doc.annotations.push(converted);
         }
       }
-      totalConvert += performance.now() - t0;
     }
   }
 
   // Fix up pages that were loaded on-demand without color data
-  if (pagesNeedingColorUpdate.size > 0 && loadId === annotationLoadId) {
-    const pdfLibDoc = await getSharedPdfLibDoc();
-    if (pdfLibDoc && loadId === annotationLoadId) {
-      for (const pageNum of pagesNeedingColorUpdate) {
-        if (loadId !== annotationLoadId) break;
+  if (doc._pagesNeedingColorUpdate.size > 0 && loadId === doc._annotationLoadId && state.documents.includes(doc)) {
+    const pdfLibDoc = await getSharedPdfLibDoc(doc);
+    if (pdfLibDoc && loadId === doc._annotationLoadId && state.documents.includes(doc)) {
+      for (const pageNum of doc._pagesNeedingColorUpdate) {
+        if (loadId !== doc._annotationLoadId || !state.documents.includes(doc)) break;
 
         // Remove old annotations for this page
-        state.annotations = state.annotations.filter(a => a.page !== pageNum);
+        doc.annotations = doc.annotations.filter(a => a.page !== pageNum);
 
         // Reload with full color data
         const page = await pdfDoc.getPage(pageNum);
+        if (loadId !== doc._annotationLoadId || !state.documents.includes(doc)) break;
         const viewport = page.getViewport({ scale: 1 });
         const annotations = await page.getAnnotations();
+        if (loadId !== doc._annotationLoadId || !state.documents.includes(doc)) break;
 
         if (annotations.length === 0) continue;
 
@@ -523,11 +549,11 @@ export async function loadExistingAnnotations() {
         for (const annot of annotations) {
           const converted = await convertPdfAnnotation(annot, pageNum, viewport, stampImageMap, annotColorMap);
           if (converted) {
-            state.annotations.push(converted);
+            doc.annotations.push(converted);
           }
         }
       }
-      pagesNeedingColorUpdate.clear();
+      doc._pagesNeedingColorUpdate.clear();
     }
   }
 }

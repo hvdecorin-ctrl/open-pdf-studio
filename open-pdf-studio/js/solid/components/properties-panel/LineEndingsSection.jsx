@@ -6,7 +6,7 @@ import { useTranslation } from '../../../i18n/useTranslation.js';
 export default function LineEndingsSection() {
   const { t } = useTranslation('properties');
   const { t: tCommon } = useTranslation('common');
-  const isLocked = () => annotProps.locked;
+  const isLocked = () => annotProps.locked === true || annotProps.locked === 'mixed';
 
   return (
     <Show when={sectionVis.lineEndings}>
@@ -16,6 +16,9 @@ export default function LineEndingsSection() {
           <select value={annotProps.startHead} disabled={isLocked()}
             onDblClick={cycleSelectNext}
             onChange={(e) => updateAnnotProp('startHead', e.target.value)}>
+            <Show when={annotProps.startHead === 'mixed'}>
+              <option value="mixed" disabled hidden>{tCommon('mixed')}</option>
+            </Show>
             <option value="none">{tCommon('none')}</option>
             <option value="open">{t('lineEndings.openArrow')}</option>
             <option value="closed">{t('lineEndings.closedArrow')}</option>
@@ -31,6 +34,9 @@ export default function LineEndingsSection() {
           <select value={annotProps.endHead} disabled={isLocked()}
             onDblClick={cycleSelectNext}
             onChange={(e) => updateAnnotProp('endHead', e.target.value)}>
+            <Show when={annotProps.endHead === 'mixed'}>
+              <option value="mixed" disabled hidden>{tCommon('mixed')}</option>
+            </Show>
             <option value="none">{tCommon('none')}</option>
             <option value="open">{t('lineEndings.openArrow')}</option>
             <option value="closed">{t('lineEndings.closedArrow')}</option>
@@ -44,7 +50,9 @@ export default function LineEndingsSection() {
         <div class="property-group">
           <label>{t('lineEndings.headSize')}</label>
           <input type="number" min="4" max="40"
-            value={annotProps.headSize} disabled={isLocked()}
+            value={annotProps.headSize === 'mixed' ? '' : annotProps.headSize}
+            placeholder={annotProps.headSize === 'mixed' ? tCommon('mixed') : undefined}
+            disabled={isLocked()}
             onInput={(e) => updateAnnotProp('headSize', e.target.value)} />
         </div>
       </CollapsibleSection>

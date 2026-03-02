@@ -6,14 +6,14 @@ use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use tauri::{Emitter, Manager};
 use tauri_plugin_fs::FsExt;
 
-// Store the file path passed via command line
-struct OpenedFile(Mutex<Option<String>>);
+// Store the file paths passed via command line
+struct OpenedFiles(Mutex<Vec<String>>);
 
 // Store locked file handles to prevent other apps from writing
 struct LockedFiles(Mutex<HashMap<String, File>>);
 
 #[tauri::command]
-fn get_opened_file(state: tauri::State<OpenedFile>) -> Option<String> {
+fn get_opened_file(state: tauri::State<OpenedFiles>) -> Vec<String> {
     state.0.lock().unwrap().clone()
 }
 
@@ -515,15 +515,16 @@ fn list_pdf_files(dir: String) -> Result<Vec<String>, String> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    // Check for PDF file in command line arguments
+    // Check for PDF files in command line arguments
     let args: Vec<String> = std::env::args().collect();
-    let opened_file = args.iter()
+    let opened_files: Vec<String> = args.iter()
         .skip(1)
-        .find(|arg| arg.to_lowercase().ends_with(".pdf") && !arg.starts_with('-'))
-        .cloned();
+        .filter(|arg| arg.to_lowercase().ends_with(".pdf") && !arg.starts_with('-'))
+        .cloned()
+        .collect();
 
     let mut builder = tauri::Builder::default()
-        .manage(OpenedFile(Mutex::new(opened_file)))
+        .manage(OpenedFiles(Mutex::new(opened_files)))
         .manage(LockedFiles(Mutex::new(HashMap::new())))
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
@@ -541,12 +542,15 @@ pub fn run() {
                     let _ = window.unminimize();
                     let _ = window.set_focus();
                 }
-                let file = argv.iter()
-                    .find(|arg: &&String| arg.to_lowercase().ends_with(".pdf") && !arg.starts_with('-'))
-                    .cloned();
-                if let Some(ref path) = file {
+                let files: Vec<String> = argv.iter()
+                    .filter(|arg: &&String| arg.to_lowercase().ends_with(".pdf") && !arg.starts_with('-'))
+                    .cloned()
+                    .collect();
+                for path in &files {
                     let _ = app.fs_scope().allow_file(path);
-                    let _ = app.emit("open-file", path);
+                }
+                if !files.is_empty() {
+                    let _ = app.emit("open-files", &files);
                 }
             }))
             .plugin(tauri_plugin_updater::Builder::new().build());
@@ -554,8 +558,8 @@ pub fn run() {
 
     builder
         .setup(|app| {
-            // Grant FS plugin scope for the command-line file (file association)
-            if let Some(ref path) = app.state::<OpenedFile>().0.lock().unwrap().clone() {
+            // Grant FS plugin scope for command-line files (file association)
+            for path in app.state::<OpenedFiles>().0.lock().unwrap().iter() {
                 let _ = app.fs_scope().allow_file(path);
             }
 

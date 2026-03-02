@@ -29,6 +29,13 @@ export function createDocument(filePath = null) {
     pdfaCompliance: null,
     pdfADismissed: false,
     measureScale: null, // { pixelsPerUnit, unit, method, scaleRatio }
+    // Per-document loader state (used by loader.js for parallel loading)
+    _loadedAnnotationPages: new Set(),
+    _sharedPdfLibDoc: null,
+    _sharedPdfLibDocPromise: null,
+    _pagesNeedingColorUpdate: new Set(),
+    _annotationLoadId: 0,
+    _isLoading: false,
   };
 }
 
@@ -102,8 +109,8 @@ export const state = createMutable({
   // Modal dialog state (blocks all tool interaction)
   modalDialogOpen: false,
 
-  // Backstage state
-  backstageOpen: false,
+  // App menu state
+  appMenuOpen: false,
 
   // Text editing state (annotation inline editing)
   isEditingText: false,

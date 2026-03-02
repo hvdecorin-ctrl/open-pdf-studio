@@ -67,17 +67,17 @@
   margin-left: 0;
 }
 
-/* Backstage / File menu */
-[dir="rtl"] .backstage-overlay {
+/* App Menu / File menu */
+[dir="rtl"] .app-menu-overlay {
   direction: rtl;
 }
 
-[dir="rtl"] .backstage-sidebar {
+[dir="rtl"] .app-menu-sidebar {
   border-right: none;
-  border-left: 1px solid var(--theme-backstage-border);
+  border-left: 1px solid var(--theme-app-menu-border);
 }
 
-[dir="rtl"] .backstage-menu-item .shortcut {
+[dir="rtl"] .app-menu-menu-item .shortcut {
   margin-left: 0;
   margin-right: auto;
 }

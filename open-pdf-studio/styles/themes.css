@@ -68,17 +68,17 @@
   --theme-ctx-tab-hover-bg: rgba(233, 69, 96, 0.15);
   --theme-ctx-tab-active-text: #ff6b8a;
 
-  /* Backstage */
-  --theme-backstage-bg: #1e293b;
-  --theme-backstage-sidebar: #16213e;
-  --theme-backstage-sidebar-border: #0f3460;
-  --theme-backstage-text: #eaeaea;
-  --theme-backstage-item-hover: #334155;
-  --theme-backstage-item-hover-text: #ffffff;
-  --theme-backstage-icon: #8b8b8b;
-  --theme-backstage-shortcut: #64748b;
-  --theme-backstage-shortcut-hover: #8b8b8b;
-  --theme-backstage-divider: #0f3460;
+  /* App Menu */
+  --theme-app-menu-bg: #1e293b;
+  --theme-app-menu-sidebar: #16213e;
+  --theme-app-menu-sidebar-border: #0f3460;
+  --theme-app-menu-text: #eaeaea;
+  --theme-app-menu-item-hover: #334155;
+  --theme-app-menu-item-hover-text: #ffffff;
+  --theme-app-menu-icon: #8b8b8b;
+  --theme-app-menu-shortcut: #64748b;
+  --theme-app-menu-shortcut-hover: #8b8b8b;
+  --theme-app-menu-divider: #0f3460;
 
   /* Document tabs */
   --theme-tab-bg: #16213e;
@@ -226,16 +226,16 @@
   --theme-ctx-tab-hover-bg: rgba(233, 69, 96, 0.1);
   --theme-ctx-tab-active-text: #b3213c;
 
-  --theme-backstage-bg: #fafafa;
-  --theme-backstage-sidebar: #f5f5f5;
-  --theme-backstage-sidebar-border: #d1d5db;
-  --theme-backstage-text: #1f2937;
-  --theme-backstage-item-hover: #e5e7eb;
-  --theme-backstage-item-hover-text: #1f2937;
-  --theme-backstage-icon: #6b7280;
-  --theme-backstage-shortcut: #9ca3af;
-  --theme-backstage-shortcut-hover: #6b7280;
-  --theme-backstage-divider: #e5e7eb;
+  --theme-app-menu-bg: #fafafa;
+  --theme-app-menu-sidebar: #f5f5f5;
+  --theme-app-menu-sidebar-border: #d1d5db;
+  --theme-app-menu-text: #1f2937;
+  --theme-app-menu-item-hover: #e5e7eb;
+  --theme-app-menu-item-hover-text: #1f2937;
+  --theme-app-menu-icon: #6b7280;
+  --theme-app-menu-shortcut: #9ca3af;
+  --theme-app-menu-shortcut-hover: #6b7280;
+  --theme-app-menu-divider: #e5e7eb;
 
   --theme-tab-bg: #f5f5f5;
   --theme-tab-border: #d1d5db;
@@ -376,16 +376,16 @@
   --theme-ctx-tab-hover-bg: rgba(0, 180, 216, 0.15);
   --theme-ctx-tab-active-text: #90e0ef;
 
-  --theme-backstage-bg: #1b263b;
-  --theme-backstage-sidebar: #0d1b2a;
-  --theme-backstage-sidebar-border: #2c4a6b;
-  --theme-backstage-text: #e0e1dd;
-  --theme-backstage-item-hover: #3d5a80;
-  --theme-backstage-item-hover-text: #ffffff;
-  --theme-backstage-icon: #98c1d9;
-  --theme-backstage-shortcut: #778da9;
-  --theme-backstage-shortcut-hover: #98c1d9;
-  --theme-backstage-divider: #2c4a6b;
+  --theme-app-menu-bg: #1b263b;
+  --theme-app-menu-sidebar: #0d1b2a;
+  --theme-app-menu-sidebar-border: #2c4a6b;
+  --theme-app-menu-text: #e0e1dd;
+  --theme-app-menu-item-hover: #3d5a80;
+  --theme-app-menu-item-hover-text: #ffffff;
+  --theme-app-menu-icon: #98c1d9;
+  --theme-app-menu-shortcut: #778da9;
+  --theme-app-menu-shortcut-hover: #98c1d9;
+  --theme-app-menu-divider: #2c4a6b;
 
   --theme-tab-bg: #1b263b;
   --theme-tab-border: #2c4a6b;
@@ -526,16 +526,16 @@
   --theme-ctx-tab-hover-bg: rgba(255, 255, 0, 0.15);
   --theme-ctx-tab-active-text: #ffff00;
 
-  --theme-backstage-bg: #000000;
-  --theme-backstage-sidebar: #0a0a0a;
-  --theme-backstage-sidebar-border: #ffffff;
-  --theme-backstage-text: #ffffff;
-  --theme-backstage-item-hover: #333333;
-  --theme-backstage-item-hover-text: #ffff00;
-  --theme-backstage-icon: #ffffff;
-  --theme-backstage-shortcut: #cccccc;
-  --theme-backstage-shortcut-hover: #ffff00;
-  --theme-backstage-divider: #ffffff;
+  --theme-app-menu-bg: #000000;
+  --theme-app-menu-sidebar: #0a0a0a;
+  --theme-app-menu-sidebar-border: #ffffff;
+  --theme-app-menu-text: #ffffff;
+  --theme-app-menu-item-hover: #333333;
+  --theme-app-menu-item-hover-text: #ffff00;
+  --theme-app-menu-icon: #ffffff;
+  --theme-app-menu-shortcut: #cccccc;
+  --theme-app-menu-shortcut-hover: #ffff00;
+  --theme-app-menu-divider: #ffffff;
 
   --theme-tab-bg: #0a0a0a;
   --theme-tab-border: #ffffff;
