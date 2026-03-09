@@ -43,7 +43,17 @@
     "opacity": "Gennemsigtighed",
     "lineWidth": "Linjebredde",
     "borderWidth": "Kantbredde",
-    "borderStyle": "Kantstil",
+    "borderStyle": "Border Style",
+    "hatchPattern": "Hatch Pattern",
+    "hatchColor": "Hatch Color",
+    "hatchScale": "Hatch Scale",
+    "hatchDiagonalLeft": "Diagonal Left",
+    "hatchDiagonalRight": "Diagonal Right",
+    "hatchCrosshatch": "Crosshatch",
+    "hatchHorizontal": "Horizontal",
+    "hatchVertical": "Vertical",
+    "hatchDots": "Dots",
+    "hatchGrid": "Grid",
     "rotation": "Rotation"
   },
   "content": {

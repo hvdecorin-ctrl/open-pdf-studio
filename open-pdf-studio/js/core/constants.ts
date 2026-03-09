@@ -115,13 +115,19 @@ export const DEFAULT_PREFERENCES: Preferences = {
   highlightColor: '#FFFF00',
 
   // Polygon defaults
+  polygonFillColor: '#FFFBEB',
+  polygonFillNone: true,
   polygonStrokeColor: '#FF0000',
   polygonLineWidth: 1,
+  polygonBorderStyle: 'solid',
   polygonOpacity: 100,
 
   // Cloud defaults
+  cloudFillColor: '#FFFBEB',
+  cloudFillNone: true,
   cloudStrokeColor: '#FF0000',
   cloudLineWidth: 1,
+  cloudBorderStyle: 'solid',
   cloudOpacity: 100,
 
   // Comment/Note defaults
@@ -131,6 +137,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   // Polyline defaults
   polylineStrokeColor: '#FF0000',
   polylineLineWidth: 1,
+  polylineBorderStyle: 'solid',
   polylineOpacity: 100,
 
   // Redaction defaults
@@ -159,6 +166,10 @@ export const DEFAULT_PREFERENCES: Preferences = {
 
   // Panels
   propertiesPanelVisible: true,
+  toolPaletteVisible: true,
+  toolPaletteMode: 'docked-left',
+  toolPaletteFloatX: 200,
+  toolPaletteFloatY: 150,
 
   // Language
   language: 'auto'

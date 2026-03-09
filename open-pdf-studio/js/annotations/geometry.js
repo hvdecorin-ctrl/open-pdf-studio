@@ -106,8 +106,8 @@ export function findAnnotationAt(x, y) {
         // Transform click point by inverse rotation if annotation is rotated
         const circleCenter = { x: findCircX + findCircW / 2, y: findCircY + findCircH / 2 };
         const circleLocal = transformPointByInverseRotation(x, y, circleCenter.x, circleCenter.y, ann.rotation);
-        // If has fill color, check if inside the ellipse
-        if (ann.fillColor) {
+        // If has fill color or hatch pattern, check if inside the ellipse
+        if (ann.fillColor || (ann.hatchPattern && ann.hatchPattern !== 'none')) {
           const ellCX = findCircX + findCircW / 2;
           const ellCY = findCircY + findCircH / 2;
           const ellRX = Math.abs(findCircW / 2);
@@ -122,8 +122,8 @@ export function findAnnotationAt(x, y) {
         // Transform click point by inverse rotation if annotation is rotated
         const boxCenter = { x: ann.x + ann.width / 2, y: ann.y + ann.height / 2 };
         const boxLocal = transformPointByInverseRotation(x, y, boxCenter.x, boxCenter.y, ann.rotation);
-        // If has fill color, check if inside the rectangle
-        if (ann.fillColor) {
+        // If has fill color or hatch pattern, check if inside the rectangle
+        if (ann.fillColor || (ann.hatchPattern && ann.hatchPattern !== 'none')) {
           if (boxLocal.x >= ann.x && boxLocal.x <= ann.x + ann.width && boxLocal.y >= ann.y && boxLocal.y <= ann.y + ann.height) return ann;
         }
         // Also check near the border (stroke)

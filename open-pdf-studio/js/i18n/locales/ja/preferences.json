@@ -147,6 +147,7 @@
     "rendering": "レンダリング",
     "thinLines": "細い線（すべての線を1pxの幅で表示）",
     "panels": "Panels",
-    "showPropertiesPanel": "Show Properties Panel by default"
+    "showPropertiesPanel": "Show Properties Panel by default",
+    "showToolPalette": "Show Tool Palette by default"
   }
 }

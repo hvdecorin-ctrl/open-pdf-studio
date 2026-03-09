@@ -6,6 +6,7 @@ import DocInfoView from './DocInfoView.jsx';
 import GeneralSection from './GeneralSection.jsx';
 import RepliesSection from './RepliesSection.jsx';
 import AppearanceSection from './AppearanceSection.jsx';
+import HatchPatternSection from './HatchPatternSection.jsx';
 import LineEndingsSection from './LineEndingsSection.jsx';
 import DimensionsSection from './DimensionsSection.jsx';
 import TextFormatSection from './TextFormatSection.jsx';
@@ -38,6 +39,7 @@ export default function PropertiesPanel() {
           <GeneralSection />
           <RepliesSection />
           <AppearanceSection />
+          <HatchPatternSection />
           <LineEndingsSection />
           <DimensionsSection />
           <TextFormatSection />

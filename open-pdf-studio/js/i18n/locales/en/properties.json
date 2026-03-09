@@ -44,7 +44,17 @@
     "lineWidth": "Line Width",
     "borderWidth": "Border Width",
     "borderStyle": "Border Style",
-    "rotation": "Rotation"
+    "rotation": "Rotation",
+    "hatchPattern": "Hatch Pattern",
+    "hatchColor": "Hatch Color",
+    "hatchScale": "Hatch Scale",
+    "hatchDiagonalLeft": "Diagonal Left",
+    "hatchDiagonalRight": "Diagonal Right",
+    "hatchCrosshatch": "Crosshatch",
+    "hatchHorizontal": "Horizontal",
+    "hatchVertical": "Vertical",
+    "hatchDots": "Dots",
+    "hatchGrid": "Grid"
   },
   "content": {
     "title": "Content",

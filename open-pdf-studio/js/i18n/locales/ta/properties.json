@@ -43,7 +43,17 @@
     "opacity": "ஒளிபுகாமை",
     "lineWidth": "கோட்டு அகலம்",
     "borderWidth": "கரை அகலம்",
-    "borderStyle": "கரை பாணி",
+    "borderStyle": "Border Style",
+    "hatchPattern": "Hatch Pattern",
+    "hatchColor": "Hatch Color",
+    "hatchScale": "Hatch Scale",
+    "hatchDiagonalLeft": "Diagonal Left",
+    "hatchDiagonalRight": "Diagonal Right",
+    "hatchCrosshatch": "Crosshatch",
+    "hatchHorizontal": "Horizontal",
+    "hatchVertical": "Vertical",
+    "hatchDots": "Dots",
+    "hatchGrid": "Grid",
     "rotation": "சுழற்சி"
   },
   "content": {

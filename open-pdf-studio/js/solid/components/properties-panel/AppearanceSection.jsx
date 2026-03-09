@@ -106,6 +106,11 @@ export default function AppearanceSection() {
               <option value="solid">{tCommon('solid')}</option>
               <option value="dashed">{tCommon('dashed')}</option>
               <option value="dotted">{tCommon('dotted')}</option>
+              <option value="dash-dot">{tCommon('dashDot')}</option>
+              <option value="dash-dot-dot">{tCommon('dashDotDot')}</option>
+              <option value="long-dash">{tCommon('longDash')}</option>
+              <option value="long-dash-dot">{tCommon('longDashDot')}</option>
+              <option value="long-dash-dot-dot">{tCommon('longDashDotDot')}</option>
             </select>
           </div>
         </Show>

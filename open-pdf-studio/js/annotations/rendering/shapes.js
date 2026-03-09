@@ -1,5 +1,5 @@
-// Draw polygon shape
-export function drawPolygonShape(ctx, x, y, width, height, sides = 6) {
+// Build polygon path without stroking (for fill/hatch/stroke to be applied by caller)
+export function buildPolygonPath(ctx, x, y, width, height, sides = 6) {
   const cx = x + width / 2;
   const cy = y + height / 2;
   const rx = width / 2;
@@ -17,11 +17,16 @@ export function drawPolygonShape(ctx, x, y, width, height, sides = 6) {
     }
   }
   ctx.closePath();
+}
+
+// Draw polygon shape (stroke only - legacy convenience wrapper)
+export function drawPolygonShape(ctx, x, y, width, height, sides = 6) {
+  buildPolygonPath(ctx, x, y, width, height, sides);
   ctx.stroke();
 }
 
-// Draw cloud shape (bumpy rectangle)
-export function drawCloudShape(ctx, x, y, width, height) {
+// Build cloud path without stroking (for fill/hatch/stroke to be applied by caller)
+export function buildCloudPath(ctx, x, y, width, height) {
   const bumpRadius = Math.min(width, height) / 8;
   const numBumpsH = Math.max(3, Math.floor(width / (bumpRadius * 1.5)));
   const numBumpsV = Math.max(2, Math.floor(height / (bumpRadius * 1.5)));
@@ -55,6 +60,11 @@ export function drawCloudShape(ctx, x, y, width, height) {
   }
 
   ctx.closePath();
+}
+
+// Draw cloud shape (stroke only - legacy convenience wrapper)
+export function drawCloudShape(ctx, x, y, width, height) {
+  buildCloudPath(ctx, x, y, width, height);
   ctx.stroke();
 }
 

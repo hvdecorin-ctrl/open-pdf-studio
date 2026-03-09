@@ -12,7 +12,7 @@ import { openStickyPopup } from '../bridge.js';
 import { findTextEditAtPosition, startTextEditEditing } from './text-edit-tool.js';
 import { markDocumentModified } from '../ui/chrome/tabs.js';
 import { recordAdd, recordModify, recordBulkModify } from '../core/undo-manager.js';
-import { showStampPicker } from '../annotations/stamps.js';
+import { showStampPicker, placeNorthArrow } from '../annotations/stamps.js';
 import { showSignatureDialog } from '../annotations/signature.js';
 import { startPan, startContinuousPan, handlePanMove, handleMiddleButtonPanEnd } from './pan-handler.js';
 import { snapAngle } from '../utils/helpers.js';
@@ -373,6 +373,9 @@ export function handleMouseDown(e) {
     state.isDrawing = false;
   } else if (state.currentTool === 'stamp') {
     showStampPicker(x, y);
+    state.isDrawing = false;
+  } else if (state.currentTool === 'northArrow') {
+    placeNorthArrow(x, y);
     state.isDrawing = false;
   } else if (state.currentTool === 'signature') {
     showSignatureDialog(x, y);

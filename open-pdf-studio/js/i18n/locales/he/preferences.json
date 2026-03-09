@@ -164,6 +164,7 @@
     "rendering": "עיבוד",
     "thinLines": "קווים דקים (הצגת כל הקווים ברוחב 1px)",
     "panels": "Panels",
-    "showPropertiesPanel": "Show Properties Panel by default"
+    "showPropertiesPanel": "Show Properties Panel by default",
+    "showToolPalette": "Show Tool Palette by default"
   }
 }

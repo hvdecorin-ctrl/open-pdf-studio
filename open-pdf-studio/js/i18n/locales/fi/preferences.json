@@ -164,6 +164,7 @@
     "rendering": "Renderöinti",
     "thinLines": "Ohuet viivat (näytä kaikki viivat 1px leveydellä)",
     "panels": "Panels",
-    "showPropertiesPanel": "Show Properties Panel by default"
+    "showPropertiesPanel": "Show Properties Panel by default",
+    "showToolPalette": "Show Tool Palette by default"
   }
 }

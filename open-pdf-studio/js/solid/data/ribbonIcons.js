@@ -94,6 +94,8 @@ export const stampIcon = `<svg fill="none" stroke="currentColor" viewBox="0 0 24
 
 export const signatureIcon = `<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/><path stroke-linecap="round" stroke-width="2" d="M3 21c2-2 4-3 6-1s4-1 6-3"/></svg>`;
 
+export const northArrowIcon = `<svg viewBox="0 0 24 26" stroke="currentColor"><polygon points="12,3 9,15 12,15 12,21" fill="currentColor" stroke="currentColor" stroke-width="0.7"/><polygon points="12,3 15,15 12,15" fill="none" stroke="currentColor" stroke-width="0.7"/><polygon points="12,15 15,15 12,21" fill="none" stroke="currentColor" stroke-width="0.7"/><line x1="4" y1="15" x2="9" y2="15" stroke="currentColor" stroke-width="0.7"/><line x1="15" y1="15" x2="20" y2="15" stroke="currentColor" stroke-width="0.7"/></svg>`;
+
 // --- Comment tab: Measure ---
 
 export const measureDistanceIcon = `<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 20L20 4"/><path stroke-linecap="round" stroke-width="2" d="M4 20v-4m0 4h4M20 4v4m0-4h-4"/></svg>`;

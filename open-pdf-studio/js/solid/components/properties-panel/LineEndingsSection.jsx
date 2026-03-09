@@ -1,6 +1,7 @@
 import { Show } from 'solid-js';
 import { annotProps, sectionVis, updateAnnotProp, cycleSelectNext } from '../../stores/propertiesStore.js';
 import CollapsibleSection from './CollapsibleSection.jsx';
+import PrefComboBox from '../preferences/PrefComboBox.jsx';
 import { useTranslation } from '../../../i18n/useTranslation.js';
 
 export default function LineEndingsSection() {
@@ -49,11 +50,13 @@ export default function LineEndingsSection() {
 
         <div class="property-group">
           <label>{t('lineEndings.headSize')}</label>
-          <input type="number" min="4" max="40"
-            value={annotProps.headSize === 'mixed' ? '' : annotProps.headSize}
-            placeholder={annotProps.headSize === 'mixed' ? tCommon('mixed') : undefined}
-            disabled={isLocked()}
-            onInput={(e) => updateAnnotProp('headSize', e.target.value)} />
+          <PrefComboBox
+            value={() => annotProps.headSize}
+            setValue={(val) => updateAnnotProp('headSize', val)}
+            options={[4, 6, 8, 10, 12, 16, 20, 24, 32]}
+            min={1} max={40} fallback={1} suffix="pt"
+            disabled={isLocked}
+          />
         </div>
       </CollapsibleSection>
     </Show>

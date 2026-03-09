@@ -95,7 +95,8 @@
     "snapToDrawing": "Snap",
     "snapToDrawingTitle": "Snap to PDF Drawing",
     "snapActive": "Snap On",
-    "loading": "Loading..."
+    "loading": "Loading...",
+    "northArrow": "North Arrow"
   },
   "view": {
     "pageDisplay": "Exibição de página",

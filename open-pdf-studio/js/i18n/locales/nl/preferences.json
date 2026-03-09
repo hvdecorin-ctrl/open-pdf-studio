@@ -147,6 +147,7 @@
     "rendering": "Weergave",
     "thinLines": "Dunne lijnen (alle lijnen weergeven met 1px breedte)",
     "panels": "Panels",
-    "showPropertiesPanel": "Show Properties Panel by default"
+    "showPropertiesPanel": "Show Properties Panel by default",
+    "showToolPalette": "Show Tool Palette by default"
   }
 }

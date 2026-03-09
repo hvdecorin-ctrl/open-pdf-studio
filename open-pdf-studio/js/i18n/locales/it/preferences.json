@@ -147,6 +147,7 @@
     "rendering": "Rendering",
     "thinLines": "Linee sottili (visualizza tutte le linee con larghezza 1px)",
     "panels": "Panels",
-    "showPropertiesPanel": "Show Properties Panel by default"
+    "showPropertiesPanel": "Show Properties Panel by default",
+    "showToolPalette": "Show Tool Palette by default"
   }
 }

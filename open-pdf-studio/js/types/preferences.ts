@@ -133,6 +133,10 @@ export interface Preferences {
 
   // Panels
   propertiesPanelVisible: boolean;
+  toolPaletteVisible: boolean;
+  toolPaletteMode: string;
+  toolPaletteFloatX: number;
+  toolPaletteFloatY: number;
 
   // Language
   language: string;

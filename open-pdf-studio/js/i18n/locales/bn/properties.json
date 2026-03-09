@@ -43,7 +43,17 @@
     "opacity": "অস্বচ্ছতা",
     "lineWidth": "রেখার প্রস্থ",
     "borderWidth": "সীমানার প্রস্থ",
-    "borderStyle": "সীমানা শৈলী",
+    "borderStyle": "Border Style",
+    "hatchPattern": "Hatch Pattern",
+    "hatchColor": "Hatch Color",
+    "hatchScale": "Hatch Scale",
+    "hatchDiagonalLeft": "Diagonal Left",
+    "hatchDiagonalRight": "Diagonal Right",
+    "hatchCrosshatch": "Crosshatch",
+    "hatchHorizontal": "Horizontal",
+    "hatchVertical": "Vertical",
+    "hatchDots": "Dots",
+    "hatchGrid": "Grid",
     "rotation": "ঘূর্ণন"
   },
   "content": {

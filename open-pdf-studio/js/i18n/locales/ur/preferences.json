@@ -164,6 +164,7 @@
     "rendering": "رینڈرنگ",
     "thinLines": "پتلی لکیریں (تمام لکیریں 1px چوڑائی میں دکھائیں)",
     "panels": "Panels",
-    "showPropertiesPanel": "Show Properties Panel by default"
+    "showPropertiesPanel": "Show Properties Panel by default",
+    "showToolPalette": "Show Tool Palette by default"
   }
 }

@@ -164,6 +164,7 @@
     "rendering": "Отрисовка",
     "thinLines": "Тонкие линии (отображать все линии шириной 1px)",
     "panels": "Panels",
-    "showPropertiesPanel": "Show Properties Panel by default"
+    "showPropertiesPanel": "Show Properties Panel by default",
+    "showToolPalette": "Show Tool Palette by default"
   }
 }

@@ -10,6 +10,7 @@ import { state } from './core/state.js';
 import { loadPreferences, savePreferences } from './core/preferences.js';
 import { initDomElements } from './ui/dom-elements.js';
 import { initPropertiesPanel } from './ui/panels/properties-panel.js';
+import { initToolPalette } from './solid/components/ToolPalette.jsx';
 
 // UI initialization
 import { initMenus } from './ui/chrome/menus.js';
@@ -166,6 +167,9 @@ async function init() {
 
   // Restore properties panel visibility from preferences
   initPropertiesPanel();
+
+  // Restore tool palette visibility, mode and position from preferences
+  initToolPalette();
 
   // Show the window after the browser has painted the first frame.
   // Double requestAnimationFrame ensures layout + paint have completed.

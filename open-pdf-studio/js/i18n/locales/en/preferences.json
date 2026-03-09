@@ -138,7 +138,8 @@
     "rendering": "Rendering",
     "thinLines": "Thin Lines (display all lines at 1px width)",
     "panels": "Panels",
-    "showPropertiesPanel": "Show Properties Panel by default"
+    "showPropertiesPanel": "Show Properties Panel by default",
+    "showToolPalette": "Show Tool Palette by default"
   },
   "fileAssoc": {
     "defaultPdfApplication": "Default PDF Application",

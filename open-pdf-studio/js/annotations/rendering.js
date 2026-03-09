@@ -5,14 +5,15 @@ import { updateAnnotationsList } from '../ui/panels/annotations-list.js';
 import { renderWatermarksBehind, renderWatermarksInFront } from '../watermark/watermark-renderer.js';
 
 // Import from sub-modules
-import { drawPolygonShape, drawCloudShape, drawTextboxContent } from './rendering/shapes.js';
+import { drawPolygonShape, drawCloudShape, buildPolygonPath, buildCloudPath, drawTextboxContent } from './rendering/shapes.js';
 import { drawArrowheadOnCanvas, applyBorderStyle } from './rendering/decorations.js';
+import { applyHatchFill } from './rendering/hatch-patterns.js';
 import { drawSelectionHandles } from './rendering/selection.js';
 import { updateQuickAccessButtons, updateContextualTabs, drawGrid, snapToGrid } from './rendering/ui-state.js';
 import { drawCommentIcon } from './rendering/comment-icons.js';
 
 // Re-export everything that external code needs
-export { drawPolygonShape, drawCloudShape } from './rendering/shapes.js';
+export { drawPolygonShape, drawCloudShape, buildPolygonPath, buildCloudPath } from './rendering/shapes.js';
 export { updateQuickAccessButtons, snapToGrid } from './rendering/ui-state.js';
 
 // Resolve line width, clamping to 1px when thin-lines view mode is active
@@ -184,8 +185,17 @@ export function drawAnnotation(ctx, annotation) {
         ctx.fill();
       }
 
+      // Hatch pattern fill
+      if (annotation.hatchPattern && annotation.hatchPattern !== 'none') {
+        ctx.beginPath();
+        ctx.ellipse(ellipseCX, ellipseCY, Math.abs(ellipseW / 2), Math.abs(ellipseH / 2), 0, 0, 2 * Math.PI);
+        applyHatchFill(ctx, annotation);
+      }
+
       ctx.strokeStyle = strokeColor;
       applyBorderStyle(ctx, annotation.borderStyle);
+      ctx.beginPath();
+      ctx.ellipse(ellipseCX, ellipseCY, Math.abs(ellipseW / 2), Math.abs(ellipseH / 2), 0, 0, 2 * Math.PI);
       ctx.stroke();
       ctx.setLineDash([]);
       ctx.restore();
@@ -208,6 +218,13 @@ export function drawAnnotation(ctx, annotation) {
         ctx.fillRect(annotation.x, annotation.y, annotation.width, annotation.height);
       }
 
+      // Hatch pattern fill
+      if (annotation.hatchPattern && annotation.hatchPattern !== 'none') {
+        ctx.beginPath();
+        ctx.rect(annotation.x, annotation.y, annotation.width, annotation.height);
+        applyHatchFill(ctx, annotation);
+      }
+
       ctx.strokeStyle = strokeColor;
       applyBorderStyle(ctx, annotation.borderStyle);
       ctx.strokeRect(annotation.x, annotation.y, annotation.width, annotation.height);
@@ -225,6 +242,19 @@ export function drawAnnotation(ctx, annotation) {
         if (annotation.flipX || annotation.flipY) ctx.scale(annotation.flipX ? -1 : 1, annotation.flipY ? -1 : 1);
         ctx.translate(-polyCX, -polyCY);
       }
+      // Fill if fillColor is set
+      if (annotation.fillColor && annotation.fillColor !== 'none' && annotation.fillColor !== null) {
+        buildPolygonPath(ctx, annotation.x, annotation.y, annotation.width, annotation.height, annotation.sides || 6);
+        ctx.fillStyle = annotation.fillColor;
+        ctx.fill();
+      }
+
+      // Hatch pattern fill
+      if (annotation.hatchPattern && annotation.hatchPattern !== 'none') {
+        buildPolygonPath(ctx, annotation.x, annotation.y, annotation.width, annotation.height, annotation.sides || 6);
+        applyHatchFill(ctx, annotation);
+      }
+
       ctx.strokeStyle = strokeColor;
       applyBorderStyle(ctx, annotation.borderStyle);
       drawPolygonShape(ctx, annotation.x, annotation.y, annotation.width, annotation.height, annotation.sides || 6);
@@ -242,6 +272,19 @@ export function drawAnnotation(ctx, annotation) {
         if (annotation.flipX || annotation.flipY) ctx.scale(annotation.flipX ? -1 : 1, annotation.flipY ? -1 : 1);
         ctx.translate(-cloudCX, -cloudCY);
       }
+      // Fill if fillColor is set
+      if (annotation.fillColor && annotation.fillColor !== 'none' && annotation.fillColor !== null) {
+        buildCloudPath(ctx, annotation.x, annotation.y, annotation.width, annotation.height);
+        ctx.fillStyle = annotation.fillColor;
+        ctx.fill();
+      }
+
+      // Hatch pattern fill
+      if (annotation.hatchPattern && annotation.hatchPattern !== 'none') {
+        buildCloudPath(ctx, annotation.x, annotation.y, annotation.width, annotation.height);
+        applyHatchFill(ctx, annotation);
+      }
+
       ctx.strokeStyle = strokeColor;
       drawCloudShape(ctx, annotation.x, annotation.y, annotation.width, annotation.height);
       ctx.restore();

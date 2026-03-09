@@ -147,6 +147,7 @@
     "rendering": "رندر",
     "thinLines": "خطوط نازک (نمایش تمام خطوط با عرض 1 پیکسل)",
     "panels": "Panels",
-    "showPropertiesPanel": "Show Properties Panel by default"
+    "showPropertiesPanel": "Show Properties Panel by default",
+    "showToolPalette": "Show Tool Palette by default"
   }
 }

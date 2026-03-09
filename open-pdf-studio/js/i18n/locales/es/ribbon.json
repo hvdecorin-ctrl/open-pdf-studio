@@ -95,7 +95,8 @@
     "snapToDrawing": "Snap",
     "snapToDrawingTitle": "Ajustar al dibujo PDF",
     "snapActive": "Snap Act.",
-    "loading": "Cargando..."
+    "loading": "Cargando...",
+    "northArrow": "North Arrow"
   },
   "view": {
     "pageDisplay": "Visualización de página",

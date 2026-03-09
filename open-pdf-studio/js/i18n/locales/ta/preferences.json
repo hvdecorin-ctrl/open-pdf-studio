@@ -164,6 +164,7 @@
     "rendering": "ரெண்டரிங்",
     "thinLines": "மெல்லிய கோடுகள் (அனைத்து கோடுகளையும் 1px அகலத்தில் காட்டு)",
     "panels": "Panels",
-    "showPropertiesPanel": "Show Properties Panel by default"
+    "showPropertiesPanel": "Show Properties Panel by default",
+    "showToolPalette": "Show Tool Palette by default"
   }
 }

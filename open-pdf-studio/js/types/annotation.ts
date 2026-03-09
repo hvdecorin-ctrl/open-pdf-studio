@@ -138,6 +138,11 @@ export type Annotation = AnnotationBase & {
   lineWidth?: number;
   borderStyle?: string;
   borderWidth?: number;
+  // Hatch pattern
+  hatchPattern?: string;
+  hatchColor?: string;
+  hatchScale?: number;
+  hatchAngle?: number;
   // Arrow/line
   startHead?: string;
   endHead?: string;

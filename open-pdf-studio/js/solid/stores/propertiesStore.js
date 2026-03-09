@@ -124,9 +124,10 @@ function computeSectionVisibility(type) {
   const isLineOrArrow = type === 'arrow' || type === 'line';
   const isTextMarkup = ['textHighlight', 'textStrikethrough', 'textUnderline'].includes(type);
   const hideLineWidth = ['highlight', 'comment', 'image', 'textHighlight'].includes(type);
-  const hasFillColor = ['highlight', 'box', 'circle', 'textbox', 'callout', 'arrow', 'line'].includes(type);
-  const hideColor = ['line', 'arrow', 'box', 'circle', 'draw', 'highlight', 'image', 'textbox', 'callout'].includes(type);
-  const hasBorderStyle = ['textbox', 'callout', 'arrow', 'line'].includes(type);
+  const hasFillColor = ['highlight', 'box', 'circle', 'polygon', 'cloud', 'textbox', 'callout', 'arrow', 'line'].includes(type);
+  const hideColor = ['line', 'arrow', 'box', 'circle', 'draw', 'highlight', 'image', 'textbox', 'callout', 'polygon', 'cloud'].includes(type);
+  const hasBorderStyle = ['textbox', 'callout', 'arrow', 'line', 'box', 'circle', 'polygon', 'cloud', 'draw', 'polyline'].includes(type);
+  const hasHatchPattern = ['box', 'circle', 'polygon', 'cloud'].includes(type);
   const hasRotation = ['box', 'circle', 'polygon', 'cloud', 'highlight', 'redaction', 'comment', 'stamp', 'signature'].includes(type);
 
   setSectionVis({
@@ -146,6 +147,7 @@ function computeSectionVisibility(type) {
     colorGroup: !hideColor || isTextMarkup,
     lineWidthGroup: !hideLineWidth,
     borderStyleGroup: hasBorderStyle,
+    hatchPatternGroup: hasHatchPattern,
     textGroup: isTextContent,
     fontSizeGroup: type === 'text',
     opacityGroup: true,
@@ -179,6 +181,9 @@ export function storeShowProperties(annotation) {
     opacity: annotation.opacity !== undefined ? Math.round(annotation.opacity * 100) : 100,
     icon: annotation.icon || 'comment',
     borderStyle: annotation.borderStyle || 'solid',
+    hatchPattern: annotation.hatchPattern || 'none',
+    hatchColor: annotation.hatchColor || annotation.strokeColor || annotation.color || '#000000',
+    hatchScale: annotation.hatchScale ?? 100,
     text: annotation.text || '',
     fontSize: annotation.fontSize || 16,
     fontFamily: annotation.fontFamily || 'Arial',
@@ -278,6 +283,9 @@ export function storeShowMultiSelection(selected) {
   const sharedLineWidth = sharedValue(selected, a => a.lineWidth !== undefined ? a.lineWidth : 3, 'mixed');
   const sharedOpacity = sharedValue(selected, a => a.opacity !== undefined ? Math.round(a.opacity * 100) : 100, 'mixed');
   const sharedBorderStyle = sharedValue(selected, a => a.borderStyle || 'solid', 'mixed');
+  const sharedHatchPattern = sharedValue(selected, a => a.hatchPattern || 'none', 'mixed');
+  const sharedHatchColor = sharedValue(selected, a => a.hatchColor || a.strokeColor || a.color || '#000000', 'mixed');
+  const sharedHatchScale = sharedValue(selected, a => a.hatchScale ?? 100, 'mixed');
   const sharedFontSize = sharedValue(selected, a => a.fontSize || 16, 'mixed');
   const sharedFontFamily = sharedValue(selected, a => a.fontFamily || 'Arial', 'mixed');
   const allLocked = selected.every(a => a.locked);
@@ -313,6 +321,9 @@ export function storeShowMultiSelection(selected) {
     opacity: sharedOpacity,
     icon: sharedValue(selected, a => a.icon || 'comment', 'mixed'),
     borderStyle: sharedBorderStyle,
+    hatchPattern: sharedHatchPattern,
+    hatchColor: sharedHatchColor,
+    hatchScale: sharedHatchScale,
     text: '',
     fontSize: sharedFontSize,
     fontFamily: sharedFontFamily,
@@ -336,35 +347,43 @@ export function storeShowMultiSelection(selected) {
     multiCount: selected.length,
   });
 
-  // Show more sections when all selected annotations share the same type
-  const allSameType = sharedType !== '';
+  // Helper: check if ALL selected annotations satisfy a predicate on their type
+  const allMatch = (predicate) => selected.every(a => predicate(a.type));
 
-  const isTextbox = allSameType && ['textbox', 'callout'].includes(sharedType);
-  const isArrow = allSameType && sharedType === 'arrow';
-  const isTextContent = allSameType && (sharedType === 'text' || sharedType === 'comment');
-  const hasRotation = allSameType && ['box', 'circle', 'polygon', 'cloud', 'highlight', 'redaction', 'comment', 'stamp', 'signature'].includes(sharedType);
+  const fillColorTypes = new Set(['highlight', 'box', 'circle', 'polygon', 'cloud', 'textbox', 'callout', 'arrow', 'line']);
+  const strokeColorTypes = new Set(['line', 'arrow', 'box', 'circle', 'draw', 'textbox', 'callout', 'polygon', 'cloud']);
+  const hideColorTypes = new Set(['line', 'arrow', 'box', 'circle', 'draw', 'highlight', 'image', 'textbox', 'callout', 'polygon', 'cloud']);
+  const hideLineWidthTypes = new Set(['highlight', 'comment', 'image', 'textHighlight']);
+  const borderStyleTypes = new Set(['textbox', 'callout', 'arrow', 'line', 'box', 'circle', 'polygon', 'cloud', 'draw', 'polyline']);
+  const hatchPatternTypes = new Set(['box', 'circle', 'polygon', 'cloud']);
+  const rotationTypes = new Set(['box', 'circle', 'polygon', 'cloud', 'highlight', 'redaction', 'comment', 'stamp', 'signature']);
+  const textboxTypes = new Set(['textbox', 'callout']);
+  const textMarkupTypes = new Set(['textHighlight', 'textStrikethrough', 'textUnderline']);
+
+  const allSameType = sharedType !== '';
 
   setSectionVis({
     general: true,
     replies: false,
     appearance: true,
-    lineEndings: isArrow,
+    lineEndings: allSameType && sharedType === 'arrow',
     dimensions: false,
-    textFormat: isTextbox,
-    paragraph: isTextbox,
+    textFormat: allMatch(t => textboxTypes.has(t)),
+    paragraph: allMatch(t => textboxTypes.has(t)),
     content: false,
     image: false,
     actions: true,
     iconGroup: allSameType && sharedType === 'comment',
-    fillColorGroup: allSameType && ['highlight', 'box', 'circle', 'textbox', 'callout', 'arrow', 'line'].includes(sharedType),
-    strokeColorGroup: allSameType && ['line', 'arrow', 'box', 'circle', 'draw', 'textbox', 'callout'].includes(sharedType),
-    colorGroup: allSameType && !['line', 'arrow', 'box', 'circle', 'draw', 'highlight', 'image', 'textbox', 'callout'].includes(sharedType),
-    lineWidthGroup: allSameType && !['highlight', 'comment', 'image', 'textHighlight'].includes(sharedType),
-    borderStyleGroup: allSameType && ['textbox', 'callout', 'arrow', 'line'].includes(sharedType),
-    textGroup: isTextContent,
+    fillColorGroup: allMatch(t => fillColorTypes.has(t)),
+    strokeColorGroup: allMatch(t => strokeColorTypes.has(t)),
+    colorGroup: allMatch(t => !hideColorTypes.has(t) || textMarkupTypes.has(t)),
+    lineWidthGroup: allMatch(t => !hideLineWidthTypes.has(t)),
+    borderStyleGroup: allMatch(t => borderStyleTypes.has(t)),
+    hatchPatternGroup: allMatch(t => hatchPatternTypes.has(t)),
+    textGroup: allSameType && (sharedType === 'text' || sharedType === 'comment'),
     fontSizeGroup: allSameType && sharedType === 'text',
     opacityGroup: true,
-    rotationGroup: hasRotation,
+    rotationGroup: allMatch(t => rotationTypes.has(t)),
   });
 
   setPanelMode('multi');
@@ -529,6 +548,9 @@ function applyPropToAnnotation(ann, key, value) {
     case 'opacity': ann.opacity = parseInt(value) / 100; break;
     case 'icon': ann.icon = value; break;
     case 'borderStyle': ann.borderStyle = value; break;
+    case 'hatchPattern': ann.hatchPattern = value; break;
+    case 'hatchColor': ann.hatchColor = value; break;
+    case 'hatchScale': ann.hatchScale = parseInt(value); break;
     case 'text': ann.text = value; break;
     case 'fontSize': ann.fontSize = parseInt(value); break;
     case 'textColor':
@@ -613,6 +635,9 @@ export function updateAnnotProp(key, value) {
       break;
     case 'icon': currentAnnotation.icon = value; break;
     case 'borderStyle': currentAnnotation.borderStyle = value; break;
+    case 'hatchPattern': currentAnnotation.hatchPattern = value; break;
+    case 'hatchColor': currentAnnotation.hatchColor = value; break;
+    case 'hatchScale': currentAnnotation.hatchScale = parseInt(value); break;
     case 'text': currentAnnotation.text = value; break;
     case 'fontSize': currentAnnotation.fontSize = parseInt(value); break;
     case 'textColor':

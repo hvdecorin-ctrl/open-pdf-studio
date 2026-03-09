@@ -147,6 +147,7 @@
     "rendering": "İşleme",
     "thinLines": "İnce çizgiler (tüm çizgileri 1px genişliğinde göster)",
     "panels": "Panels",
-    "showPropertiesPanel": "Show Properties Panel by default"
+    "showPropertiesPanel": "Show Properties Panel by default",
+    "showToolPalette": "Show Tool Palette by default"
   }
 }

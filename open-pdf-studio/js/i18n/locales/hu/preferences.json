@@ -164,6 +164,7 @@
     "rendering": "Megjelenítés",
     "thinLines": "Vékony vonalak (minden vonal megjelenítése 1px szélességgel)",
     "panels": "Panels",
-    "showPropertiesPanel": "Show Properties Panel by default"
+    "showPropertiesPanel": "Show Properties Panel by default",
+    "showToolPalette": "Show Tool Palette by default"
   }
 }

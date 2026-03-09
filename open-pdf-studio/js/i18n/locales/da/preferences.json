@@ -164,6 +164,7 @@
     "rendering": "Gengivelse",
     "thinLines": "Tynde linjer (vis alle linjer med 1px bredde)",
     "panels": "Panels",
-    "showPropertiesPanel": "Show Properties Panel by default"
+    "showPropertiesPanel": "Show Properties Panel by default",
+    "showToolPalette": "Show Tool Palette by default"
   }
 }

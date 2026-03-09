@@ -55,13 +55,32 @@ export function drawArrowheadOnCanvas(ctx, x, y, angle, size, style) {
   ctx.restore();
 }
 
-// Apply border style (dashed/dotted/solid) to canvas context
+// Apply border style (dashed/dotted/solid and extended patterns) to canvas context
 export function applyBorderStyle(ctx, borderStyle) {
-  if (borderStyle === 'dashed') {
-    ctx.setLineDash([8, 4]);
-  } else if (borderStyle === 'dotted') {
-    ctx.setLineDash([2, 2]);
-  } else {
-    ctx.setLineDash([]);
+  switch (borderStyle) {
+    case 'dashed':
+      ctx.setLineDash([8, 4]);
+      break;
+    case 'dotted':
+      ctx.setLineDash([2, 2]);
+      break;
+    case 'dash-dot':
+      ctx.setLineDash([8, 4, 2, 4]);
+      break;
+    case 'dash-dot-dot':
+      ctx.setLineDash([8, 4, 2, 4, 2, 4]);
+      break;
+    case 'long-dash':
+      ctx.setLineDash([16, 6]);
+      break;
+    case 'long-dash-dot':
+      ctx.setLineDash([16, 6, 2, 6]);
+      break;
+    case 'long-dash-dot-dot':
+      ctx.setLineDash([16, 6, 2, 6, 2, 6]);
+      break;
+    default:
+      ctx.setLineDash([]);
+      break;
   }
 }

@@ -6,16 +6,17 @@ import {
   highlightIcon, freehandIcon, lineIcon, arrowIcon, polylineIcon,
   rectIcon, ellipseIcon, polygonIcon, cloudIcon,
   textboxIcon, calloutIcon, noteIcon,
-  stampIcon, signatureIcon,
+  stampIcon, signatureIcon, northArrowIcon,
   measureDistanceIcon, measureAreaIcon, measurePerimeterIcon
 } from '../data/ribbonIcons.js';
 import { useTranslation } from '../../i18n/useTranslation.js';
+import { savePreferences } from '../../core/preferences.js';
 
 const handIcon = `<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 11.5V14m0-2.5v-6a1.5 1.5 0 113 0m-3 6a1.5 1.5 0 00-3 0v2a7.5 7.5 0 0015 0v-5a1.5 1.5 0 00-3 0m-6-3V11m0-5.5v-1a1.5 1.5 0 013 0v1m0 0V11m0-5.5a1.5 1.5 0 013 0v3m0 0V11"/></svg>`;
 const selectIcon = `<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5M7.188 2.239l.777 2.897M5.136 7.965l-2.898-.777M13.95 4.05l-2.122 2.122m-5.657 5.656l-2.12 2.122"/></svg>`;
 
 // --- State ---
-const [paletteVisible, setPaletteVisible] = createSignal(false);
+const [paletteVisible, setPaletteVisible] = createSignal(true);
 const [paletteMode, setPaletteMode] = createSignal('docked-left');
 const [floatPos, setFloatPos] = createSignal({ x: 200, y: 150 });
 const [isDragging, setIsDragging] = createSignal(false);
@@ -23,8 +24,25 @@ const [dockPreview, setDockPreview] = createSignal(null); // null | 'left' | 'ri
 
 export { paletteVisible, paletteMode };
 
+function savePaletteState() {
+  state.preferences.toolPaletteVisible = paletteVisible();
+  state.preferences.toolPaletteMode = paletteMode();
+  const pos = floatPos();
+  state.preferences.toolPaletteFloatX = pos.x;
+  state.preferences.toolPaletteFloatY = pos.y;
+  savePreferences();
+}
+
 export function toggleToolPalette() {
   setPaletteVisible(v => !v);
+  savePaletteState();
+}
+
+export function initToolPalette() {
+  const prefs = state.preferences;
+  setPaletteVisible(prefs.toolPaletteVisible);
+  setPaletteMode(prefs.toolPaletteMode || 'docked-left');
+  setFloatPos({ x: prefs.toolPaletteFloatX ?? 200, y: prefs.toolPaletteFloatY ?? 150 });
 }
 
 window.__toggleToolPalette = toggleToolPalette;
@@ -52,6 +70,7 @@ const tools = [
   { tool: 'measureDistance', key: 'comment.measureDistance', icon: measureDistanceIcon, group: 5 },
   { tool: 'measureArea', key: 'comment.measureArea', icon: measureAreaIcon, group: 5 },
   { tool: 'measurePerimeter', key: 'comment.measurePerimeter', icon: measurePerimeterIcon, group: 5 },
+  { tool: 'northArrow', key: 'comment.northArrow', icon: northArrowIcon, group: 6 },
 ];
 
 // --- Shared drag logic ---
@@ -107,6 +126,7 @@ function startDrag(e, fromDocked) {
     if (snap) {
       setPaletteMode(`docked-${snap}`);
     }
+    savePaletteState();
   }
 
   document.addEventListener('mousemove', onMove);
@@ -149,8 +169,8 @@ function ToolList() {
   );
 }
 
-// Height needed for all tools in a single column (19 btns × 30px + 5 seps × 7px)
-const SINGLE_COL_HEIGHT = 610;
+// Height needed for all tools in a single column (20 btns × 30px + 5 seps × 7px)
+const SINGLE_COL_HEIGHT = 635;
 
 // Docked strip — sits in the flex layout
 export function DockedToolPalette(props) {
@@ -186,7 +206,7 @@ export function DockedToolPalette(props) {
         <div class={`tp-docked-tools${twoCol() ? ' two-col' : ''}`}>
           <ToolList />
         </div>
-        <button class="tp-close" onClick={() => setPaletteVisible(false)}>
+        <button class="tp-close" onClick={() => { setPaletteVisible(false); savePaletteState(); }}>
           <svg width="8" height="8" viewBox="0 0 10 10">
             <line x1="2" y1="2" x2="8" y2="8" stroke="currentColor" stroke-width="1.5"/>
             <line x1="8" y1="2" x2="2" y2="8" stroke="currentColor" stroke-width="1.5"/>
@@ -215,7 +235,7 @@ export function FloatingToolPalette() {
           startDrag(e, false);
         }}>
           <span class="tp-float-title">{t('view.toolPaletteLabel')}</span>
-          <button class="tp-float-close" onClick={() => setPaletteVisible(false)}>
+          <button class="tp-float-close" onClick={() => { setPaletteVisible(false); savePaletteState(); }}>
             <svg width="8" height="8" viewBox="0 0 10 10">
               <line x1="1" y1="1" x2="9" y2="9" stroke="currentColor" stroke-width="1.5"/>
               <line x1="9" y1="1" x2="1" y2="9" stroke="currentColor" stroke-width="1.5"/>

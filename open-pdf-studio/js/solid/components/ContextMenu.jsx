@@ -26,7 +26,7 @@ import { bringToFront, sendToBack, bringForward, sendBackward, rotateAnnotation,
 import { startTextEditing } from '../../tools/text-editing.js';
 import { openStickyPopup, closeStickyPopup } from '../stores/stickyNotePopupStore.js';
 import { createTextMarkupAnnotation } from '../../text/text-markup.js';
-import { setAsDefaultStyle } from '../../core/preferences.js';
+import { setAsDefaultStyle, applyDefaultStyle } from '../../core/preferences.js';
 import { setTool } from '../../tools/manager.js';
 import { alignAnnotations } from '../../annotations/smart-guides.js';
 import { getSelectedText, clearTextSelection } from '../../text/text-selection.js';
@@ -327,13 +327,7 @@ function AnnotationMenuContent() {
         <MenuItem label={t('annotation.applyDefaultStyle')} onClick={() => {
           const a = ann();
           if (a) {
-            const prefs = state.preferences;
-            const prefix = a.type;
-            if (prefs[prefix + 'StrokeColor']) a.strokeColor = prefs[prefix + 'StrokeColor'];
-            if (prefs[prefix + 'FillColor']) a.fillColor = prefs[prefix + 'FillColor'];
-            if (prefs[prefix + 'LineWidth']) a.lineWidth = prefs[prefix + 'LineWidth'];
-            if (prefs[prefix + 'Opacity'] !== undefined) a.opacity = prefs[prefix + 'Opacity'] / 100;
-            a.modifiedAt = new Date().toISOString();
+            applyDefaultStyle(a);
             redraw();
           }
         }} />
