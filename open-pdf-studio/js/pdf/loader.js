@@ -408,14 +408,9 @@ async function loadAnnotationsForSinglePage(doc, pageNum, waitForColors = false)
   }
 
   if (stampAnnots.length > 0) {
-    // Prefer pdf-lib extraction (preserves transparency) over PDF.js crop (bakes in page background)
-    if (pdfLibDoc) {
-      stampImageMap = await extractStampImages(pageNum, pdfLibDoc);
-    }
-    // Fallback to PDF.js rendering if pdf-lib didn't extract any images
-    if (!stampImageMap || stampImageMap.size === 0) {
-      stampImageMap = await extractStampImagesViaPdfJs(page, viewport, stampAnnots);
-    }
+    // Use PDF.js rendering fallback — renders page with annotations and crops each stamp region
+    // This correctly handles nested Form XObjects, transparency groups, and complex color spaces
+    stampImageMap = await extractStampImagesViaPdfJs(page, viewport, stampAnnots);
   }
 
   if (needsExtraData) {
@@ -507,12 +502,7 @@ export async function loadExistingAnnotations(doc) {
       if (loadId !== doc._annotationLoadId || !state.documents.includes(doc)) return;
 
       if (stampAnnots.length > 0) {
-        if (pdfLibDoc) {
-          stampImageMap = await extractStampImages(pageNum, pdfLibDoc);
-        }
-        if (!stampImageMap || stampImageMap.size === 0) {
-          stampImageMap = await extractStampImagesViaPdfJs(page, viewport, stampAnnots);
-        }
+        stampImageMap = await extractStampImagesViaPdfJs(page, viewport, stampAnnots);
         if (loadId !== doc._annotationLoadId || !state.documents.includes(doc)) return;
       }
 
@@ -556,12 +546,7 @@ export async function loadExistingAnnotations(doc) {
         let annotColorMap = null;
 
         if (stampAnnots.length > 0) {
-          if (pdfLibDoc) {
-            stampImageMap = await extractStampImages(pageNum, pdfLibDoc);
-          }
-          if (!stampImageMap || stampImageMap.size === 0) {
-            stampImageMap = await extractStampImagesViaPdfJs(page, viewport, stampAnnots);
-          }
+          stampImageMap = await extractStampImagesViaPdfJs(page, viewport, stampAnnots);
         }
         if (needsExtraData) {
           annotColorMap = await extractAnnotationColors(pageNum, pdfLibDoc);
