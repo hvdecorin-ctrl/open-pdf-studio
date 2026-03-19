@@ -315,7 +315,6 @@ function setupSessionSaveOnClose() {
   }
 
   window.addEventListener('beforeunload', async () => {
-    if (!isTauri()) return;
     await saveSessionData();
   });
 }

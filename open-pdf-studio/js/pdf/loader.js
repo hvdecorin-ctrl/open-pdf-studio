@@ -117,26 +117,27 @@ export async function loadPDF(filePath, docIndex, preloadedData = null) {
       // Use pre-loaded bytes (e.g. from virtual printer capture, or browser file input)
       typedArray = preloadedData instanceof Uint8Array ? preloadedData : new Uint8Array(preloadedData);
       originalBytesCache.set(filePath, typedArray.slice());
-    } else if (isTauri()) {
-      // Lock the file to prevent other apps from writing while we have it open
-      // (skip on Android — content:// URIs don't support filesystem locking)
-      const { isMobile } = await import('../core/platform.js');
-      if (isClosed()) return;
-      if (!isMobile()) {
-        await lockFile(filePath);
+    } else {
+      if (isTauri()) {
+        // Lock the file to prevent other apps from writing while we have it open
+        // (skip on Android — content:// URIs don't support filesystem locking)
+        const { isMobile } = await import('../core/platform.js');
         if (isClosed()) return;
+        if (!isMobile()) {
+          await lockFile(filePath);
+          if (isClosed()) return;
+        }
       }
 
-      // Read file using Tauri fs plugin (handles content:// URIs on Android)
+      // Read file using Tauri fs plugin or web file cache
       const data = await readBinaryFile(filePath);
       if (isClosed()) return;
+      if (!data) throw new Error('File system access not available');
       typedArray = new Uint8Array(data);
 
       // Cache a copy of original bytes for saver (pdf.js transfers the buffer
       // to a web worker, which detaches the original Uint8Array making it length 0)
       originalBytesCache.set(filePath, typedArray.slice());
-    } else {
-      throw new Error('File system access not available');
     }
 
     // Load PDF using pdf.js (this transfers the buffer to a worker)
@@ -256,11 +257,6 @@ export async function loadPDF(filePath, docIndex, preloadedData = null) {
 
 // Open file dialog and load PDF
 export async function openPDFFile() {
-  if (!isTauri()) {
-    console.warn('File dialogs require Tauri environment');
-    return;
-  }
-
   try {
     const result = await openFileDialog();
     if (result) {

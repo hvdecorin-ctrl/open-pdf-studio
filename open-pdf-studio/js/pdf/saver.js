@@ -18,11 +18,6 @@ export async function savePDF(saveAsPath = null) {
     return await savePDFAs();
   }
 
-  if (!isTauri()) {
-    showMessage(i18next.t('saveRequiresTauri'));
-    return false;
-  }
-
   try {
     showLoading('Saving PDF...');
 
@@ -1659,11 +1654,6 @@ function saveBookmarksToOutline(pdfDocLib) {
 export async function savePDFAs() {
   if (!state.pdfDoc) {
     showMessage(i18next.t('noPdfLoaded'));
-    return false;
-  }
-
-  if (!isTauri()) {
-    showMessage(i18next.t('saveRequiresTauri'));
     return false;
   }
 

@@ -2,7 +2,13 @@
  * Tauri API wrapper module
  * Provides a unified interface for Tauri 2.x APIs
  * Uses the global __TAURI__ object instead of ES module imports
+ * Falls back to Web APIs when running in a browser (non-Tauri)
  */
+
+// ── Web file cache ──────────────────────────────────────────────────────────
+// When running in a browser, files opened via <input type="file"> are stored
+// here so that readBinaryFile() can retrieve them by name.
+const _webFileCache = new Map(); // filename -> Uint8Array
 
 // Extract a display-friendly file name from a path or content:// URI
 export function extractFileName(pathOrUri) {
@@ -95,47 +101,79 @@ export async function closeWindow() {
 }
 
 // File dialogs - using Tauri commands since plugin APIs may not be globally available
-export async function openFileDialog() {
-  if (!isTauri()) return null;
+export async function openFileDialog(extensions) {
+  if (isTauri()) {
+    const filters = extensions
+      ? [{ name: 'Files', extensions }]
+      : [{ name: 'PDF Files', extensions: ['pdf'] }];
 
-  // Try using the dialog plugin via window.__TAURI__.dialog
-  if (window.__TAURI__.dialog) {
-    try {
-      const result = await window.__TAURI__.dialog.open({
-        multiple: false,
-        filters: [{ name: 'PDF Files', extensions: ['pdf'] }]
-      });
-      return result;
-    } catch (e) {
-      console.error('Dialog plugin error:', e);
+    // Try using the dialog plugin via window.__TAURI__.dialog
+    if (window.__TAURI__.dialog) {
+      try {
+        const result = await window.__TAURI__.dialog.open({
+          multiple: false,
+          filters
+        });
+        return result;
+      } catch (e) {
+        console.error('Dialog plugin error:', e);
+      }
     }
+
+    // Fallback: use invoke to call a custom command
+    return await invoke('open_file_dialog');
   }
 
-  // Fallback: use invoke to call a custom command
-  return await invoke('open_file_dialog');
+  // Web fallback: use HTML <input type="file">
+  const accept = extensions
+    ? extensions.map(e => '.' + e).join(',')
+    : '.pdf';
+  return new Promise((resolve) => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = accept;
+    input.style.display = 'none';
+    input.addEventListener('change', async () => {
+      const file = input.files?.[0];
+      document.body.removeChild(input);
+      if (!file) { resolve(null); return; }
+      const data = new Uint8Array(await file.arrayBuffer());
+      _webFileCache.set(file.name, data);
+      resolve(file.name);
+    });
+    input.addEventListener('cancel', () => {
+      document.body.removeChild(input);
+      resolve(null);
+    });
+    document.body.appendChild(input);
+    input.click();
+  });
 }
 
 export async function saveFileDialog(defaultPath, filters) {
-  if (!isTauri()) return null;
-
-  if (!filters) {
-    filters = [{ name: 'PDF Files', extensions: ['pdf'] }];
-  }
-
-  // Try using the dialog plugin
-  if (window.__TAURI__.dialog) {
-    try {
-      const result = await window.__TAURI__.dialog.save({
-        defaultPath: defaultPath,
-        filters: filters
-      });
-      return result;
-    } catch (e) {
-      console.error('Dialog plugin error:', e);
+  if (isTauri()) {
+    if (!filters) {
+      filters = [{ name: 'PDF Files', extensions: ['pdf'] }];
     }
+
+    // Try using the dialog plugin
+    if (window.__TAURI__.dialog) {
+      try {
+        const result = await window.__TAURI__.dialog.save({
+          defaultPath: defaultPath,
+          filters: filters
+        });
+        return result;
+      } catch (e) {
+        console.error('Dialog plugin error:', e);
+      }
+    }
+
+    return null;
   }
 
-  return null;
+  // Web fallback: return the suggested filename (writeBinaryFile will trigger download)
+  return defaultPath || 'document.pdf';
 }
 
 // Folder picker dialog
@@ -160,7 +198,12 @@ export async function openFolderDialog(title) {
 
 // File system operations
 export async function readBinaryFile(path) {
-  if (!isTauri()) return null;
+  // Web fallback: check the in-memory file cache first
+  if (!isTauri()) {
+    const cached = _webFileCache.get(path);
+    if (cached) return cached;
+    return null;
+  }
 
   // Use the fs plugin directly
   if (window.__TAURI__.fs) {
@@ -171,7 +214,26 @@ export async function readBinaryFile(path) {
 }
 
 export async function writeBinaryFile(path, data) {
-  if (!isTauri()) return false;
+  if (!isTauri()) {
+    // Web fallback: trigger a browser download
+    const fileName = path.replace(/^.*[\\/]/, '') || 'download';
+    const ext = fileName.split('.').pop()?.toLowerCase();
+    const mimeMap = {
+      pdf: 'application/pdf', png: 'image/png', jpg: 'image/jpeg',
+      jpeg: 'image/jpeg', csv: 'text/csv', xfdf: 'application/xml',
+      xml: 'application/xml',
+    };
+    const blob = new Blob([data], { type: mimeMap[ext] || 'application/octet-stream' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = fileName;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    return true;
+  }
 
   // Use the fs plugin directly - no fallback to slow base64 method
   if (window.__TAURI__.fs) {
@@ -322,7 +384,9 @@ export async function buildUserAgent() {
 
 // Get app version from Tauri config
 export async function getAppVersion() {
-  if (!isTauri()) return null;
+  if (!isTauri()) {
+    return typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : null;
+  }
   try {
     return await window.__TAURI__.app.getVersion();
   } catch {
@@ -346,10 +410,20 @@ export async function getOpenedFiles() {
 
 // Session management
 export async function saveSession(data) {
+  if (!isTauri()) {
+    try { localStorage.setItem('pdfStudioSession', JSON.stringify(data)); } catch { /* ignore */ }
+    return;
+  }
   return await invoke('save_session', { data: JSON.stringify(data) });
 }
 
 export async function loadSession() {
+  if (!isTauri()) {
+    try {
+      const s = localStorage.getItem('pdfStudioSession');
+      return s ? JSON.parse(s) : null;
+    } catch { return null; }
+  }
   const result = await invoke('load_session');
   if (result) {
     try {
