@@ -1,7 +1,7 @@
 import { createSignal, createMemo, onMount, For, Show } from 'solid-js';
 import Dialog from '../Dialog.jsx';
 import { closeDialog } from '../../stores/dialogStore.js';
-import { state, getPageRotation } from '../../../core/state.js';
+import { state, getActiveDocument, getPageRotation } from '../../../core/state.js';
 import { invoke } from '../../../core/platform.js';
 import { parsePageRange, renderPageOffscreen, canvasToBytes } from '../../../pdf/exporter.js';
 import { PDFDocument } from 'pdf-lib';
@@ -50,14 +50,15 @@ export default function PrintDialog(props) {
   }
 
   function getPrintPages() {
-    if (!state.pdfDoc) return [];
-    const totalPages = state.pdfDoc.numPages;
+    const doc = getActiveDocument();
+    if (!doc?.pdfDoc) return [];
+    const totalPages = doc.pdfDoc.numPages;
     let pages = [];
 
     if (activeRange() === 'all') {
       for (let i = 1; i <= totalPages; i++) pages.push(i);
     } else if (activeRange() === 'current') {
-      const cp = props.data?.currentPage || state.currentPage || 1;
+      const cp = props.data?.currentPage || getActiveDocument()?.currentPage || 1;
       pages = [cp];
     } else if (activeRange() === 'custom') {
       pages = parsePageRange(customPages(), totalPages);
@@ -88,7 +89,8 @@ export default function PrintDialog(props) {
   }
 
   async function renderPreview() {
-    if (!canvasRef || !state.pdfDoc) return;
+    const doc = getActiveDocument();
+    if (!canvasRef || !doc?.pdfDoc) return;
     const pages = previewPages();
     if (pages.length === 0) {
       const ctx = canvasRef.getContext('2d');
@@ -103,7 +105,7 @@ export default function PrintDialog(props) {
     const pageNum = pages[Math.min(idx, pages.length - 1)];
 
     try {
-      const page = await state.pdfDoc.getPage(pageNum);
+      const page = await doc.pdfDoc.getPage(pageNum);
       const extraRotation = getPageRotation(pageNum);
       const viewportOpts = { scale: 1 };
       if (extraRotation) {
@@ -238,7 +240,7 @@ export default function PrintDialog(props) {
         const jpegBytes = await canvasToBytes(canvas, 'jpeg', 0.92);
         const jpegImage = await newPdf.embedJpg(jpegBytes);
 
-        const origPage = await state.pdfDoc.getPage(pageNum);
+        const origPage = await getActiveDocument().pdfDoc.getPage(pageNum);
         const extraRotation = getPageRotation(pageNum);
         const origViewportOpts = { scale: 1 };
         if (extraRotation) {
@@ -321,7 +323,7 @@ export default function PrintDialog(props) {
     renderPreview();
   });
 
-  const currentPageNum = props.data?.currentPage || state.currentPage || 1;
+  const currentPageNum = props.data?.currentPage || getActiveDocument()?.currentPage || 1;
 
   const footer = (
     <>

@@ -151,7 +151,8 @@ function getLinkType(link) {
 // --- Filtering & store push ---
 
 export function filterLinks(filterValue) {
-  const currentPage = state.currentPage;
+  const doc = getActiveDocument();
+  const currentPage = doc ? doc.currentPage : 1;
 
   const filtered = allLinks.filter(link => {
     if (filterValue === 'current') return link.sourcePage === currentPage;

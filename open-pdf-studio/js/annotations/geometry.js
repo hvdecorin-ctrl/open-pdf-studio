@@ -1,4 +1,4 @@
-import { state } from '../core/state.js';
+import { state, getActiveDocument } from '../core/state.js';
 import { annotationCtx } from '../ui/dom-elements.js';
 import { distanceToLine, isPointNearRect, isPointNearEllipse } from '../utils/math.js';
 import { getAnnotationType } from '../plugins/annotation-type-registry.js';
@@ -81,12 +81,15 @@ function getAnnotationCenterAndSize(ann) {
 // Find annotation at coordinates
 export function findAnnotationAt(x, y) {
   // Scale-aware hit tolerance: stay ~10 screen pixels at any zoom level
-  const tol = Math.max(10 / state.scale, 2);
+  const doc = getActiveDocument();
+  const scale = doc?.scale || 1.5;
+  const tol = Math.max(10 / scale, 2);
 
   // Search in reverse order (top annotations first)
-  for (let i = state.annotations.length - 1; i >= 0; i--) {
-    const ann = state.annotations[i];
-    if (ann.page !== state.currentPage) continue;
+  const annotations = doc?.annotations || [];
+  for (let i = annotations.length - 1; i >= 0; i--) {
+    const ann = annotations[i];
+    if (ann.page !== (doc ? doc.currentPage : 1)) continue;
 
     switch (ann.type) {
       case 'draw':

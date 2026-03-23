@@ -7,7 +7,7 @@
 
 import { registerAnnotationType, unregisterAnnotationType } from './annotation-type-registry.js';
 import { registerToolPalette, unregisterToolPalette } from './palette-registry.js';
-import { state } from '../core/state.js';
+import { state, getActiveDocument } from '../core/state.js';
 import { setTool } from '../tools/manager.js';
 import { createAnnotation } from '../annotations/factory.js';
 import { redrawAnnotations } from '../annotations/rendering.js';
@@ -63,7 +63,8 @@ export function createPluginApi(pluginId) {
     },
 
     getCurrentPage() {
-      return state.currentPage;
+      const doc = getActiveDocument();
+      return doc ? doc.currentPage : 1;
     },
 
     // --- Annotation helpers ---

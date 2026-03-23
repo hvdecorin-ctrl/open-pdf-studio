@@ -1,4 +1,4 @@
-import { state } from '../core/state.js';
+import { state, getActiveDocument } from '../core/state.js';
 import { getAnnotationBounds } from '../core/state.js';
 
 const SNAP_THRESHOLD = 6; // pixels
@@ -17,8 +17,10 @@ export function findAlignmentGuides(movingAnnotation, offsetX, offsetY) {
   const mRight = mx + moving.width;
   const mBottom = my + moving.height;
 
-  const pageAnnotations = state.annotations.filter(a =>
-    a.page === state.currentPage && a !== movingAnnotation && !state.selectedAnnotations.includes(a)
+  const doc = getActiveDocument();
+  const _sgSel = doc ? doc.selectedAnnotations : [];
+  const pageAnnotations = (doc?.annotations || []).filter(a =>
+    a.page === (doc?.currentPage || 1) && a !== movingAnnotation && !_sgSel.includes(a)
   );
 
   for (const ann of pageAnnotations) {
@@ -88,9 +90,11 @@ export function drawAlignmentGuides(ctx, guides, canvasWidth, canvasHeight) {
 
 // Multi-selection alignment operations
 export function alignAnnotations(alignment) {
-  if (state.selectedAnnotations.length < 2) return;
+  const _alignDoc = getActiveDocument();
+  const _alignSel = _alignDoc ? _alignDoc.selectedAnnotations : [];
+  if (_alignSel.length < 2) return;
 
-  const annotations = state.selectedAnnotations;
+  const annotations = _alignSel;
   const bounds = annotations.map(a => getAnnotationBounds(a)).filter(Boolean);
   if (bounds.length < 2) return;
 

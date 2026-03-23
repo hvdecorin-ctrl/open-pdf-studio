@@ -1,4 +1,4 @@
-import { state, isSelected } from '../../core/state.js';
+import { state, getActiveDocument, isSelected } from '../../core/state.js';
 import { annotationCanvas } from '../dom-elements.js';
 import { setTool } from '../../tools/manager.js';
 import { recordAdd } from '../../core/undo-manager.js';
@@ -9,9 +9,11 @@ import {
 
 export function showContextMenu(e, annotation) {
   e.preventDefault();
-  const isMultiSelect = state.selectedAnnotations.length > 1 && isSelected(annotation);
+  const _cmDoc = getActiveDocument();
+  const _cmSel = _cmDoc ? _cmDoc.selectedAnnotations : [];
+  const isMultiSelect = _cmSel.length > 1 && isSelected(annotation);
   if (isMultiSelect) {
-    showMultiAnnotationMenu(e.clientX, e.clientY, state.selectedAnnotations.length);
+    showMultiAnnotationMenu(e.clientX, e.clientY, _cmSel.length);
   } else {
     showAnnotationMenu(e.clientX, e.clientY, annotation);
   }
@@ -46,7 +48,7 @@ export function initContextMenus() {
 
   if (annotationCanvas) {
     annotationCanvas.addEventListener('contextmenu', (e) => {
-      if (!state.pdfDoc) return;
+      if (!getActiveDocument()?.pdfDoc) return;
 
       // Let tool handle its own right-click behavior (polyline finish, measurement finish, etc.)
       // These are handled via the pointerdown handler with e.button === 2
@@ -58,8 +60,10 @@ export function initContextMenus() {
       }
 
       const rect = annotationCanvas.getBoundingClientRect();
-      const x = (e.clientX - rect.left) / state.scale;
-      const y = (e.clientY - rect.top) / state.scale;
+      const doc = getActiveDocument();
+      const scale = doc?.scale || 1.5;
+      const x = (e.clientX - rect.left) / scale;
+      const y = (e.clientY - rect.top) / scale;
 
       import('../../annotations/geometry.js').then(({ findAnnotationAt }) => {
         const annotation = findAnnotationAt(x, y);

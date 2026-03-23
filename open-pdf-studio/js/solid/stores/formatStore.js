@@ -1,5 +1,5 @@
 import { createSignal } from 'solid-js';
-import { state } from '../../core/state.js';
+import { state, getActiveDocument } from '../../core/state.js';
 import { recordPropertyChange, recordBulkModify } from '../../core/undo-manager.js';
 import { cloneAnnotation } from '../../annotations/factory.js';
 import { redrawAnnotations, redrawContinuous } from '../../annotations/rendering.js';
@@ -44,7 +44,7 @@ export const PALETTE_COLUMNS = [
 ];
 
 function redraw() {
-  if (state.viewMode === 'continuous') {
+  if (getActiveDocument()?.viewMode === 'continuous') {
     redrawContinuous();
   } else {
     redrawAnnotations();
@@ -53,7 +53,8 @@ function redraw() {
 
 // Apply a property change to all selected annotations with single undo
 export function applyToSelected(applyFn) {
-  const selected = state.selectedAnnotations;
+  const _fmtDoc = getActiveDocument();
+  const selected = _fmtDoc ? _fmtDoc.selectedAnnotations : [];
   if (!selected || selected.length === 0) return;
 
   if (selected.length === 1) {

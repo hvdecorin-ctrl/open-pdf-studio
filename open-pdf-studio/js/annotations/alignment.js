@@ -1,10 +1,10 @@
-import { state, getAnnotationBounds } from '../core/state.js';
+import { state, getActiveDocument, getAnnotationBounds } from '../core/state.js';
 import { recordBulkModify } from '../core/undo-manager.js';
 import { cloneAnnotation } from './factory.js';
 import { redrawAnnotations, redrawContinuous } from './rendering.js';
 
 function redraw() {
-  if (state.viewMode === 'continuous') {
+  if (getActiveDocument()?.viewMode === 'continuous') {
     redrawContinuous();
   } else {
     redrawAnnotations();
@@ -13,7 +13,9 @@ function redraw() {
 
 // Get selected annotations (multi-selection or single)
 function getSelected() {
-  if (state.selectedAnnotations.length >= 2) return state.selectedAnnotations;
+  const _alDoc = getActiveDocument();
+  const _alSel = _alDoc ? _alDoc.selectedAnnotations : [];
+  if (_alSel.length >= 2) return _alSel;
   return [];
 }
 

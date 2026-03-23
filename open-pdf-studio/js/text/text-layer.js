@@ -260,7 +260,7 @@ export function injectSyntheticTextSpans(textLayerDiv, pageNum, pageWidth, pageH
   // Create a temporary canvas for text measurement (--scale-x computation)
   const measureCanvas = document.createElement('canvas');
   const measureCtx = measureCanvas.getContext('2d');
-  const scale = state.scale * (window.devicePixelRatio || 1);
+  const scale = (doc.scale || 1.5) * (window.devicePixelRatio || 1);
 
   const ascentRatio = 0.8;
 
@@ -353,7 +353,8 @@ export async function createSinglePageTextLayer(page, viewport) {
   // Remove existing text layer for current page
   clearSinglePageTextLayer();
 
-  await createTextLayer(page, viewport, container, state.currentPage);
+  const doc = getActiveDocument();
+  await createTextLayer(page, viewport, container, doc ? doc.currentPage : 1);
 }
 
 /**
@@ -369,7 +370,8 @@ export function clearSinglePageTextLayer() {
   }
 
   // Clear from tracking map
-  textLayers.delete(state.currentPage);
+  const clDoc = getActiveDocument();
+  textLayers.delete(clDoc ? clDoc.currentPage : 1);
 }
 
 /**

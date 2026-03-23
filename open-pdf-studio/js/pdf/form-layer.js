@@ -1,4 +1,4 @@
-import { state } from '../core/state.js';
+import { state, getActiveDocument } from '../core/state.js';
 import { AnnotationLayer } from 'pdfjs-dist';
 import { showFormFieldsBar as showBar, hideFormFieldsBar as hideBar } from '../bridge.js';
 
@@ -67,7 +67,8 @@ export function resetAnnotationStorage() {
 }
 
 export function getAnnotationStorage() {
-  return state.pdfDoc ? state.pdfDoc.annotationStorage : null;
+  const doc = getActiveDocument();
+  return doc?.pdfDoc ? doc.pdfDoc.annotationStorage : null;
 }
 
 export function getAnnotIdToFieldName() {
@@ -124,7 +125,7 @@ export async function createFormLayer(page, viewport, container, pageNum) {
   // Load and parse document-level JavaScript (contains validation functions + messages)
   if (!documentJS) {
     try {
-      const jsActions = await state.pdfDoc.getJSActions();
+      const jsActions = await getActiveDocument()?.pdfDoc?.getJSActions();
       if (jsActions) {
         documentJS = Object.values(jsActions).flat().join('\n');
         jsConstants = parseJSConstants(documentJS);
@@ -728,7 +729,8 @@ export async function createSinglePageFormLayer(page, viewport) {
   if (!container) return;
 
   clearSinglePageFormLayer();
-  await createFormLayer(page, viewport, container, state.currentPage);
+  const doc = getActiveDocument();
+  await createFormLayer(page, viewport, container, doc ? doc.currentPage : 1);
 }
 
 export function clearSinglePageFormLayer() {
@@ -739,7 +741,8 @@ export function clearSinglePageFormLayer() {
   if (existingLayer) {
     existingLayer.remove();
   }
-  formLayers.delete(state.currentPage);
+  const doc = getActiveDocument();
+  formLayers.delete(doc ? doc.currentPage : 1);
   initializedRadioGroups.clear();
 }
 

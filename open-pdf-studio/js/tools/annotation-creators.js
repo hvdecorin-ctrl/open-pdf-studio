@@ -1,4 +1,4 @@
-import { state } from '../core/state.js';
+import { state, getActiveDocument } from '../core/state.js';
 import { getColorPickerValue, getLineWidthValue } from '../bridge.js';
 import { createAnnotation } from '../annotations/factory.js';
 import { snapAngle } from '../utils/helpers.js';
@@ -38,7 +38,7 @@ export function buildAnnotationProps(tool, startX, startY, endX, endY, e) {
       if (state.currentPath.length > 1) {
         return {
           type: 'draw',
-          page: state.currentPage,
+          page: getActiveDocument()?.currentPage || 1,
           path: state.currentPath,
           color: prefs.drawStrokeColor || getColorPickerValue(),
           strokeColor: prefs.drawStrokeColor || getColorPickerValue(),
@@ -52,7 +52,7 @@ export function buildAnnotationProps(tool, startX, startY, endX, endY, e) {
       const b = bbox(startX, startY, endX, endY);
       return {
         type: 'highlight',
-        page: state.currentPage,
+        page: getActiveDocument()?.currentPage || 1,
         ...b,
         color: prefs.highlightColor || getColorPickerValue(),
         fillColor: prefs.highlightColor || getColorPickerValue()
@@ -63,7 +63,7 @@ export function buildAnnotationProps(tool, startX, startY, endX, endY, e) {
       const end = snap(startX, startY, endX, endY);
       return {
         type: 'line',
-        page: state.currentPage,
+        page: getActiveDocument()?.currentPage || 1,
         startX, startY,
         endX: end.x, endY: end.y,
         color: prefs.lineStrokeColor || getColorPickerValue(),
@@ -78,7 +78,7 @@ export function buildAnnotationProps(tool, startX, startY, endX, endY, e) {
       const end = snap(startX, startY, endX, endY);
       return {
         type: 'arrow',
-        page: state.currentPage,
+        page: getActiveDocument()?.currentPage || 1,
         startX, startY,
         endX: end.x, endY: end.y,
         color: prefs.arrowStrokeColor || getColorPickerValue(),
@@ -98,7 +98,7 @@ export function buildAnnotationProps(tool, startX, startY, endX, endY, e) {
       const b = bbox(startX, startY, endX, endY);
       return {
         type: 'circle',
-        page: state.currentPage,
+        page: getActiveDocument()?.currentPage || 1,
         ...b,
         color: prefs.circleStrokeColor,
         strokeColor: prefs.circleStrokeColor,
@@ -114,7 +114,7 @@ export function buildAnnotationProps(tool, startX, startY, endX, endY, e) {
       const b = bbox(startX, startY, endX, endY);
       return {
         type: 'box',
-        page: state.currentPage,
+        page: getActiveDocument()?.currentPage || 1,
         ...b,
         color: prefs.rectStrokeColor,
         strokeColor: prefs.rectStrokeColor,
@@ -129,7 +129,7 @@ export function buildAnnotationProps(tool, startX, startY, endX, endY, e) {
     case 'polygon':
       return {
         type: 'polygon',
-        page: state.currentPage,
+        page: getActiveDocument()?.currentPage || 1,
         x: startX, y: startY,
         width: endX - startX, height: endY - startY,
         sides: 6,
@@ -143,7 +143,7 @@ export function buildAnnotationProps(tool, startX, startY, endX, endY, e) {
       const b = bbox(startX, startY, endX, endY);
       return {
         type: 'cloud',
-        page: state.currentPage,
+        page: getActiveDocument()?.currentPage || 1,
         ...b,
         color: prefs.cloudStrokeColor || getColorPickerValue(),
         strokeColor: prefs.cloudStrokeColor || getColorPickerValue(),
@@ -156,7 +156,7 @@ export function buildAnnotationProps(tool, startX, startY, endX, endY, e) {
       const b = bbox(startX, startY, endX, endY);
       return {
         type: 'textbox',
-        page: state.currentPage,
+        page: getActiveDocument()?.currentPage || 1,
         ...b,
         text: '',
         color: prefs.textboxStrokeColor,
@@ -185,7 +185,7 @@ export function buildAnnotationProps(tool, startX, startY, endX, endY, e) {
       const kneeY = armOriginY;
       return {
         type: 'callout',
-        page: state.currentPage,
+        page: getActiveDocument()?.currentPage || 1,
         x: coX, y: coY,
         width: defaultWidth, height: defaultHeight,
         arrowX: startX, arrowY: startY,
@@ -208,7 +208,7 @@ export function buildAnnotationProps(tool, startX, startY, endX, endY, e) {
       const b = bbox(startX, startY, endX, endY);
       return {
         type: 'redaction',
-        page: state.currentPage,
+        page: getActiveDocument()?.currentPage || 1,
         ...b,
         overlayColor: prefs.redactionOverlayColor
       };
@@ -220,7 +220,7 @@ export function buildAnnotationProps(tool, startX, startY, endX, endY, e) {
       const dist = calculateDistance(startX, startY, end.x, end.y);
       return {
         type: 'measureDistance',
-        page: state.currentPage,
+        page: getActiveDocument()?.currentPage || 1,
         startX, startY,
         endX: end.x, endY: end.y,
         color: prefs.measureDistStrokeColor,
@@ -239,7 +239,7 @@ export function buildAnnotationProps(tool, startX, startY, endX, endY, e) {
       const typeHandler = getAnnotationType(tool);
       if (typeHandler && typeHandler.create) {
         const ann = typeHandler.create(startX, startY, endX, endY, e, state);
-        if (ann) return { ...ann, page: state.currentPage, ...o };
+        if (ann) return { ...ann, page: getActiveDocument()?.currentPage || 1, ...o };
       }
       return null;
     }
@@ -275,7 +275,7 @@ export function createMeasureAreaAnnotation(points) {
   const mPrefs = state.preferences;
   const annProps = {
     type: 'measureArea',
-    page: state.currentPage,
+    page: getActiveDocument()?.currentPage || 1,
     points,
     color: mPrefs.measureAreaStrokeColor,
     strokeColor: mPrefs.measureAreaStrokeColor,
@@ -308,7 +308,7 @@ export function createMeasurePerimeterAnnotation(points) {
   const mPrefs = state.preferences;
   const perimProps = {
     type: 'measurePerimeter',
-    page: state.currentPage,
+    page: getActiveDocument()?.currentPage || 1,
     points,
     color: mPrefs.measurePerimStrokeColor,
     strokeColor: mPrefs.measurePerimStrokeColor,

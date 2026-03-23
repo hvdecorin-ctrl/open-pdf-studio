@@ -5,6 +5,9 @@ const [resultsText, setResultsText] = createSignal('');
 const [messageText, setMessageText] = createSignal('');
 const [notFound, setNotFound] = createSignal(false);
 const [navDisabled, setNavDisabled] = createSignal(true);
+const [searching, setSearching] = createSignal(false);
+const [replaceMode, setReplaceMode] = createSignal(false);
+const [replaceText, setReplaceText] = createSignal('');
 
 export {
   visible, setVisible,
@@ -12,4 +15,7 @@ export {
   messageText, setMessageText,
   notFound, setNotFound,
   navDisabled, setNavDisabled,
+  searching, setSearching,
+  replaceMode, setReplaceMode,
+  replaceText, setReplaceText,
 };

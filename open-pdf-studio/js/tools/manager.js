@@ -1,4 +1,4 @@
-import { state } from '../core/state.js';
+import { state, getActiveDocument } from '../core/state.js';
 import { annotationCanvas, pdfContainer } from '../ui/dom-elements.js';
 import { hideProperties } from '../ui/panels/properties-panel.js';
 import { redrawAnnotations, redrawContinuous } from '../annotations/rendering.js';
@@ -82,7 +82,7 @@ export function setTool(tool) {
     const currentToolObj = getTool(state.currentTool);
     if (currentToolObj && currentToolObj.onDeactivate) {
       // Build a minimal context for deactivation
-      const redraw = () => { if (state.viewMode === 'continuous') redrawContinuous(); else redrawAnnotations(); };
+      const redraw = () => { if (getActiveDocument()?.viewMode === 'continuous') redrawContinuous(); else redrawAnnotations(); };
       const ctx = { state, redraw, redrawAnnotations, redrawContinuous };
       currentToolObj.onDeactivate(ctx);
     }

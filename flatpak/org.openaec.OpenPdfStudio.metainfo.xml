@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>org.openaec.OpenPdfStudio</id>
+
+  <name>Open PDF Studio</name>
+  <summary>A free, open-source PDF annotation editor</summary>
+
+  <developer id="org.openaec">
+    <name>OpenAEC Foundation</name>
+  </developer>
+
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>LGPL-3.0-or-later</project_license>
+
+  <url type="homepage">https://github.com/OpenAEC-Foundation/OpenPDFStudio</url>
+  <url type="bugtracker">https://github.com/OpenAEC-Foundation/OpenPDFStudio/issues</url>
+  <url type="vcs-browser">https://github.com/OpenAEC-Foundation/OpenPDFStudio</url>
+
+  <description>
+    <p>
+      Open PDF Studio is a free and open-source PDF annotation editor built with
+      Tauri. It provides a familiar, Windows Forms-style interface for viewing,
+      annotating, and editing PDF documents.
+    </p>
+    <p>Features include:</p>
+    <ul>
+      <li>View and navigate PDF documents with thumbnails, bookmarks, and page management</li>
+      <li>Add annotations: text boxes, highlights, stamps, images, shapes, arrows, freehand drawings</li>
+      <li>Add and edit form fields</li>
+      <li>Measurement tools for distance, area, and perimeter</li>
+      <li>Signature support</li>
+      <li>Watermarks and redaction</li>
+      <li>Multiple themes and language support</li>
+      <li>Undo/redo, copy/paste, and multi-selection editing</li>
+    </ul>
+  </description>
+
+  <launchable type="desktop-id">org.openaec.OpenPdfStudio.desktop</launchable>
+
+  <branding>
+    <color type="primary" scheme_preference="light">#e8f0fe</color>
+    <color type="primary" scheme_preference="dark">#1a3a5c</color>
+  </branding>
+
+  <supports>
+    <control>pointing</control>
+    <control>keyboard</control>
+    <control>touch</control>
+  </supports>
+
+  <requires>
+    <display_length compare="ge">768</display_length>
+  </requires>
+
+  <categories>
+    <category>Office</category>
+    <category>Viewer</category>
+    <category>Graphics</category>
+  </categories>
+
+  <provides>
+    <mediatype>application/pdf</mediatype>
+  </provides>
+
+  <content_rating type="oars-1.1" />
+
+  <screenshots>
+    <screenshot type="default">
+      <caption>Open PDF Studio main interface with annotation tools</caption>
+      <image>https://raw.githubusercontent.com/OpenAEC-Foundation/OpenPDFStudio/main/screenshots/main.png</image>
+    </screenshot>
+  </screenshots>
+
+  <releases>
+    <release version="1.33.0" date="2026-03-23">
+      <description>
+        <p>Latest release with annotation hover cursors, selection borders, and panel resize improvements.</p>
+      </description>
+    </release>
+  </releases>
+</component>

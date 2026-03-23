@@ -16,9 +16,10 @@ const SCALE_PRESETS = [
  * Scans text content in the bottom-right area of the page for patterns like "1:100".
  */
 async function detectScaleFromTitleBlock() {
-  if (!state.pdfDoc) return null;
+  const doc = getActiveDocument();
+  if (!doc?.pdfDoc) return null;
 
-  const page = await state.pdfDoc.getPage(state.currentPage);
+  const page = await doc.pdfDoc.getPage(doc.currentPage);
   const vp = page.getViewport({ scale: 1 });
   const textContent = await page.getTextContent();
 
@@ -109,7 +110,8 @@ export default function CalibrationDialog(props) {
     }
 
     // Load existing scale from document
-    const ms = state.measureScale;
+    const doc = getActiveDocument();
+    const ms = doc?.measureScale;
     if (ms) {
       setUnit(ms.unit || 'mm');
       setRatioUnit(ms.unit || 'mm');
@@ -125,8 +127,9 @@ export default function CalibrationDialog(props) {
 
     // Detect PDF page size
     try {
-      if (state.pdfDoc) {
-        const page = await state.pdfDoc.getPage(state.currentPage);
+      const calDoc = getActiveDocument();
+      if (calDoc?.pdfDoc) {
+        const page = await calDoc.pdfDoc.getPage(calDoc.currentPage);
         const vp = page.getViewport({ scale: 1 });
         // PDF points to mm: 1 pt = 25.4/72 mm
         const wMm = (vp.width * 25.4 / 72).toFixed(0);
@@ -216,7 +219,8 @@ export default function CalibrationDialog(props) {
     }
 
     if (scaleData) {
-      state.measureScale = scaleData;
+      const doc = getActiveDocument();
+      if (doc) doc.measureScale = scaleData;
       saveDocumentScale();
       recalculateAllMeasurements();
     }
@@ -224,7 +228,8 @@ export default function CalibrationDialog(props) {
   }
 
   function handleReset() {
-    state.measureScale = null;
+    const doc = getActiveDocument();
+    if (doc) doc.measureScale = null;
     saveDocumentScale();
     recalculateAllMeasurements();
     closeDialog('calibration');

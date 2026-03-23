@@ -3,7 +3,7 @@ import { renderPage, renderContinuous, clearPdfView } from '../../pdf/renderer.j
 import { hideFormFieldsBar } from '../../pdf/form-layer.js';
 import { redrawAnnotations, redrawContinuous, updateQuickAccessButtons } from '../../annotations/rendering.js';
 import { updateAllStatus } from './status-bar.js';
-import { generateThumbnails, clearThumbnails, clearThumbnailCache, refreshActiveTab, refreshAllTabs } from '../panels/left-panel.js';
+import { generateThumbnails, clearThumbnails, clearThumbnailCache, refreshActiveTab, refreshAllTabs, saveThumbnailScrollPosition } from '../panels/left-panel.js';
 import { cancelAnnotationLoading, hidePdfABar } from '../../pdf/loader.js';
 import { savePDF } from '../../pdf/saver.js';
 import { unlockFile, lockFile, renameFile, fileExists } from '../../core/platform.js';
@@ -64,16 +64,22 @@ export function switchToTab(index) {
     }
   }
 
+  // Save thumbnail panel scroll position
+  saveThumbnailScrollPosition();
+
   // Cancel any pending zoom render from the previous document
   cancelPendingZoom();
 
   // Clear any selected annotation (panel stays open per user preference)
-  state.selectedAnnotation = null;
+  const curDoc = getActiveDocument();
+  if (curDoc) {
+    curDoc.selectedAnnotation = null;
+    curDoc.selectedAnnotations = [];
+  }
   import('../../solid/stores/propertiesStore.js').then(m => m.storeHideProperties());
 
   // Switch active document
   state.activeDocumentIndex = index;
-
 
   // Update tab bar UI
   updateTabBar();
@@ -192,6 +198,7 @@ export async function closeTab(index, force = false) {
     clearThumbnails();
     refreshAllTabs();
     updateWindowTitle();
+    import('../../search/find-bar.js').then(m => m.closeFindBar());
   } else if (index <= state.activeDocumentIndex) {
     // If closing current or earlier tab, adjust index
     state.activeDocumentIndex = Math.max(0, state.activeDocumentIndex - 1);
@@ -323,7 +330,11 @@ export async function renameDocument(index, newName) {
     }
 
     // Update document state
-    state.currentPdfPath = newPath;
+    const doc = getActiveDocument();
+    if (doc) {
+      doc.filePath = newPath;
+      doc.fileName = newPath ? newPath.split(/[\\/]/).pop() : 'Untitled';
+    }
     updateWindowTitle();
     return true;
   } catch (err) {

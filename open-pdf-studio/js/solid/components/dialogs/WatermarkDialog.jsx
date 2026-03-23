@@ -1,7 +1,7 @@
 import { createSignal, Show } from 'solid-js';
 import Dialog from '../Dialog.jsx';
 import { closeDialog, showMessage } from '../../stores/dialogStore.js';
-import { state } from '../../../core/state.js';
+import { state, getActiveDocument } from '../../../core/state.js';
 import { recordAddWatermark, recordModifyWatermark } from '../../../core/undo-manager.js';
 import { markDocumentModified } from '../../../ui/chrome/tabs.js';
 import { redrawAnnotations, redrawContinuous } from '../../../annotations/rendering.js';
@@ -12,7 +12,7 @@ function generateId() {
 }
 
 function refresh() {
-  if (state.viewMode === 'continuous') {
+  if (getActiveDocument()?.viewMode === 'continuous') {
     redrawContinuous();
   } else {
     redrawAnnotations();
@@ -151,15 +151,17 @@ export default function WatermarkDialog(props) {
       return;
     }
 
+    const doc = getActiveDocument();
     if (isEditing) {
       const oldState = { ...editWm };
-      const idx = state.watermarks.findIndex(w => w.id === editWm.id);
+      const watermarks = doc?.watermarks;
+      const idx = watermarks ? watermarks.findIndex(w => w.id === editWm.id) : -1;
       if (idx !== -1) {
-        Object.assign(state.watermarks[idx], wm);
-        recordModifyWatermark(editWm.id, oldState, { ...state.watermarks[idx] });
+        Object.assign(watermarks[idx], wm);
+        recordModifyWatermark(editWm.id, oldState, { ...watermarks[idx] });
       }
     } else {
-      state.watermarks.push(wm);
+      if (doc) doc.watermarks.push(wm);
       recordAddWatermark(wm);
     }
 

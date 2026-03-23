@@ -3,7 +3,7 @@ import RibbonButton from './RibbonButton.jsx';
 import RibbonButtonStack from './RibbonButtonStack.jsx';
 import SplitButton from './SplitButton.jsx';
 import { setTool } from '../../../tools/manager.js';
-import { state, getPageRotation, noPdf } from '../../../core/state.js';
+import { state, getPageRotation, noPdf, getActiveDocument } from '../../../core/state.js';
 import { isPdfAReadOnly } from '../../../pdf/loader.js';
 import { zoomIn, zoomOut, fitWidth, fitPage, actualSize, goToPage, rotatePage } from '../../../pdf/renderer.js';
 import { recordPageRotation } from '../../../core/undo-manager.js';
@@ -85,15 +85,19 @@ export default function HomeTab() {
           <RibbonButtonStack>
             <RibbonButton size="small" id="rotate-left" title={t('home.rotateLeft')} icon={rotateLeftIcon} label={t('home.rotateLeft')}
               disabled={noPdf() || isPdfAReadOnly()} onClick={() => {
-                const oldRot = getPageRotation(state.currentPage);
+                const doc = getActiveDocument();
+                const pg = doc ? doc.currentPage : 1;
+                const oldRot = getPageRotation(pg);
                 rotatePage(-90);
-                recordPageRotation(state.currentPage, oldRot, getPageRotation(state.currentPage));
+                recordPageRotation(pg, oldRot, getPageRotation(pg));
               }} />
             <RibbonButton size="small" id="rotate-right" title={t('home.rotateRight')} icon={rotateRightIcon} label={t('home.rotateRight')}
               disabled={noPdf() || isPdfAReadOnly()} onClick={() => {
-                const oldRot = getPageRotation(state.currentPage);
+                const doc = getActiveDocument();
+                const pg = doc ? doc.currentPage : 1;
+                const oldRot = getPageRotation(pg);
                 rotatePage(90);
-                recordPageRotation(state.currentPage, oldRot, getPageRotation(state.currentPage));
+                recordPageRotation(pg, oldRot, getPageRotation(pg));
               }} />
           </RibbonButtonStack>
         </RibbonGroup>
@@ -104,21 +108,21 @@ export default function HomeTab() {
           <RibbonButton id="add-text" title={t('home.addText')} icon={addTextIcon} label={t('home.addText')}
             disabled={noPdf() || isPdfAReadOnly()} onClick={() => setTool('text')} />
           <RibbonButton id="crop-margins" title={t('home.cropMargins')} icon={cropMarginsIcon} label={t('home.crop')}
-            disabled={noPdf() || isPdfAReadOnly()} onClick={() => openDialog('crop-margins', { totalPages: state.pdfDoc?.numPages, currentPage: state.currentPage })} />
+            disabled={noPdf() || isPdfAReadOnly()} onClick={() => { const doc = getActiveDocument(); openDialog('crop-margins', { totalPages: doc?.pdfDoc?.numPages, currentPage: doc?.currentPage || 1 }); }} />
         </RibbonGroup>
 
         <RibbonGroup label={t('home.navigate')}>
           <RibbonButtonStack>
             <RibbonButton size="medium" id="first-page" title={t('home.firstPage')} icon={firstPageIcon} label={t('home.first')}
-              disabled={noPdf() || state.currentPage === 1} onClick={() => goToPage(1)} />
+              disabled={noPdf() || (state.documents[state.activeDocumentIndex]?.currentPage || 1) === 1} onClick={() => goToPage(1)} />
             <RibbonButton size="medium" id="prev-page-ribbon" title={t('home.previousPage')} icon={prevPageIcon} label={t('home.previous')}
-              disabled={noPdf() || state.currentPage <= 1} onClick={() => goToPage(state.currentPage - 1)} />
+              disabled={noPdf() || (state.documents[state.activeDocumentIndex]?.currentPage || 1) <= 1} onClick={() => goToPage((getActiveDocument()?.currentPage || 1) - 1)} />
           </RibbonButtonStack>
           <RibbonButtonStack>
             <RibbonButton size="medium" id="next-page-ribbon" title={t('home.nextPage')} icon={nextPageIcon} label={t('home.next')}
-              disabled={noPdf() || state.currentPage >= state.pdfDoc?.numPages} onClick={() => goToPage(state.currentPage + 1)} />
+              disabled={noPdf() || (state.documents[state.activeDocumentIndex]?.currentPage || 1) >= state.documents[state.activeDocumentIndex]?.pdfDoc?.numPages} onClick={() => goToPage((getActiveDocument()?.currentPage || 1) + 1)} />
             <RibbonButton size="medium" id="last-page" title={t('home.lastPage')} icon={lastPageIcon} label={t('home.last')}
-              disabled={noPdf() || state.currentPage >= state.pdfDoc?.numPages} onClick={() => goToPage(state.pdfDoc.numPages)} />
+              disabled={noPdf() || (state.documents[state.activeDocumentIndex]?.currentPage || 1) >= state.documents[state.activeDocumentIndex]?.pdfDoc?.numPages} onClick={() => goToPage(state.documents[state.activeDocumentIndex]?.pdfDoc?.numPages)} />
           </RibbonButtonStack>
         </RibbonGroup>
 

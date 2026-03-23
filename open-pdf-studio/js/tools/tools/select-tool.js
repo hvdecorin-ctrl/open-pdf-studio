@@ -1,3 +1,6 @@
+import { getAnnotationHoverCursor } from '../../ui/cursors/annotation-cursors.js';
+import { getActiveDocument } from '../../core/state.js';
+
 /**
  * Select tool — click-select, rubber band, drag, resize, Ctrl+drag copy
  * Also used for selectComments tool (same behavior)
@@ -9,9 +12,11 @@ export const selectTool = {
   onPointerDown(ctx, e) {
     const { x, y, state, canvas } = ctx;
     const pdfaLocked = ctx.isPdfAReadOnly();
+    const doc = getActiveDocument();
+    const selAnns = doc ? doc.selectedAnnotations : [];
 
     // Check resize handle on selected annotation
-    const selAnn = state.selectedAnnotations.length === 1 ? state.selectedAnnotations[0] : null;
+    const selAnn = selAnns.length === 1 ? selAnns[0] : null;
     if (!pdfaLocked && selAnn) {
       const handleType = ctx.findHandleAt(x, y, selAnn);
       if (handleType) {
@@ -33,22 +38,24 @@ export const selectTool = {
 
       // Click on comment: open popup
       if (clickedAnnotation.type === 'comment') {
-        state.selectedAnnotations = [clickedAnnotation];
+        if (doc) { doc.selectedAnnotations = [clickedAnnotation]; doc.selectedAnnotation = clickedAnnotation; }
         ctx.showProperties(clickedAnnotation);
         ctx.openStickyPopup(clickedAnnotation);
         return;
       }
 
       if (e.ctrlKey || e.metaKey) {
+        // Re-read after potential addToSelection
+        const selAnns2 = () => doc ? doc.selectedAnnotations : [];
         if (ctx.isSelected(clickedAnnotation)) {
           // Ctrl+click on already selected: initiate Ctrl+drag copy
           if (!pdfaLocked) {
             state.isDragging = true;
             state._ctrlDragCopy = true;
             state._ctrlCopiesCreated = false;
-            state.originalAnnotations = state.selectedAnnotations.map(a => ctx.cloneAnnotation(a));
-            if (state.selectedAnnotations.length === 1) {
-              state.originalAnnotation = ctx.cloneAnnotation(state.selectedAnnotations[0]);
+            state.originalAnnotations = selAnns2().map(a => ctx.cloneAnnotation(a));
+            if (selAnns2().length === 1) {
+              state.originalAnnotation = ctx.cloneAnnotation(selAnns2()[0]);
             }
             canvas.style.cursor = 'copy';
           }
@@ -59,16 +66,16 @@ export const selectTool = {
             state.isDragging = true;
             state._ctrlDragCopy = true;
             state._ctrlCopiesCreated = false;
-            state.originalAnnotations = state.selectedAnnotations.map(a => ctx.cloneAnnotation(a));
-            if (state.selectedAnnotations.length === 1) {
-              state.originalAnnotation = ctx.cloneAnnotation(state.selectedAnnotations[0]);
+            state.originalAnnotations = selAnns2().map(a => ctx.cloneAnnotation(a));
+            if (selAnns2().length === 1) {
+              state.originalAnnotation = ctx.cloneAnnotation(selAnns2()[0]);
             }
             canvas.style.cursor = 'copy';
           }
         }
-        if (state.selectedAnnotations.length === 1) {
-          ctx.showProperties(state.selectedAnnotations[0]);
-        } else if (state.selectedAnnotations.length > 1) {
+        if (selAnns2().length === 1) {
+          ctx.showProperties(selAnns2()[0]);
+        } else if (selAnns2().length > 1) {
           ctx.showMultiSelectionProperties();
         } else {
           ctx.hideProperties();
@@ -76,14 +83,14 @@ export const selectTool = {
         ctx.redraw();
       } else {
         const isTextMarkup = ['textHighlight', 'textStrikethrough', 'textUnderline'].includes(clickedAnnotation.type);
-        if (ctx.isSelected(clickedAnnotation) && state.selectedAnnotations.length > 1) {
+        if (ctx.isSelected(clickedAnnotation) && selAnns.length > 1) {
           if (!pdfaLocked && !isTextMarkup) {
             state.isDragging = true;
-            state.originalAnnotations = state.selectedAnnotations.map(a => ctx.cloneAnnotation(a));
+            state.originalAnnotations = selAnns.map(a => ctx.cloneAnnotation(a));
             canvas.style.cursor = 'move';
           }
         } else {
-          state.selectedAnnotations = [clickedAnnotation];
+          if (doc) { doc.selectedAnnotations = [clickedAnnotation]; doc.selectedAnnotation = clickedAnnotation; }
           ctx.showProperties(clickedAnnotation);
           if (!pdfaLocked && !isTextMarkup) {
             state.isDragging = true;
@@ -114,11 +121,12 @@ export const selectTool = {
     // Rubber band drawing
     if (state.isRubberBanding) {
       ctx.redraw();
+      const sc = state.documents[state.activeDocumentIndex]?.scale || 1.5;
       canvasCtx.save();
-      canvasCtx.scale(state.scale, state.scale);
+      canvasCtx.scale(sc, sc);
       canvasCtx.strokeStyle = '#0066cc';
-      canvasCtx.lineWidth = 1 / state.scale;
-      canvasCtx.setLineDash([4 / state.scale, 4 / state.scale]);
+      canvasCtx.lineWidth = 1 / sc;
+      canvasCtx.setLineDash([4 / sc, 4 / sc]);
       canvasCtx.fillStyle = 'rgba(0, 102, 204, 0.1)';
       const rbX = Math.min(state.rubberBandStartX, x);
       const rbY = Math.min(state.rubberBandStartY, y);
@@ -132,7 +140,9 @@ export const selectTool = {
     }
 
     // Hover: show handle cursors
-    const hoverAnn = state.selectedAnnotations.length === 1 ? state.selectedAnnotations[0] : null;
+    const doc = getActiveDocument();
+    const selAnns = doc ? doc.selectedAnnotations : [];
+    const hoverAnn = selAnns.length === 1 ? selAnns[0] : null;
     if (hoverAnn) {
       const handleType = ctx.findHandleAt(x, y, hoverAnn);
       if (handleType) {
@@ -143,7 +153,7 @@ export const selectTool = {
     const hoverAnnotation = ctx.findAnnotationAt(x, y);
     canvas.title = (hoverAnnotation?.type === 'comment' && !hoverAnnotation.popupOpen && hoverAnnotation.text)
       ? hoverAnnotation.text.split('\n').slice(0, 5).join('\n') : '';
-    canvas.style.cursor = 'default';
+    canvas.style.cursor = hoverAnnotation ? getAnnotationHoverCursor(hoverAnnotation.type) : 'default';
   },
 
   onPointerUp(ctx, e) {
@@ -160,7 +170,8 @@ export const selectTool = {
 
       if (rbW > 3 || rbH > 3) {
         const selected = [];
-        for (const ann of state.annotations) {
+        const doc = state.documents[state.activeDocumentIndex];
+        for (const ann of (doc?.annotations || [])) {
           if (ann.page !== ctx.pageNum) continue;
           const bounds = ctx.getAnnotationBounds(ann);
           if (!bounds) continue;
@@ -170,7 +181,11 @@ export const selectTool = {
           }
         }
         if (selected.length > 0) {
-          state.selectedAnnotations = selected;
+          const doc = getActiveDocument();
+          if (doc) {
+            doc.selectedAnnotations = selected;
+            doc.selectedAnnotation = selected.length > 0 ? selected[0] : null;
+          }
           if (selected.length === 1) {
             ctx.showProperties(selected[0]);
           } else {

@@ -1,4 +1,4 @@
-import { state, clearSelection, addToSelection, removeFromSelection, isSelected, getAnnotationBounds, getSelectionBounds } from '../core/state.js';
+import { state, getActiveDocument, clearSelection, addToSelection, removeFromSelection, isSelected, getAnnotationBounds, getSelectionBounds } from '../core/state.js';
 import { annotationCanvas, annotationCtx } from '../ui/dom-elements.js';
 import { createAnnotation, cloneAnnotation } from '../annotations/factory.js';
 import { findAnnotationAt } from '../annotations/geometry.js';
@@ -47,31 +47,34 @@ export function isModalOpen() {
  * Works for both single-page and continuous modes.
  */
 export function resolvePointerCoords(e) {
-  if (state.viewMode === 'continuous') {
+  const doc = getActiveDocument();
+  const docCurrentPage = doc ? doc.currentPage : 1;
+  const scale = doc?.scale || 1.5;
+  if (doc?.viewMode === 'continuous') {
     const canvas = e.target.closest ? e.target.closest('.annotation-canvas') || e.target : e.target;
     if (!canvas || !canvas.getBoundingClientRect) {
-      return { x: 0, y: 0, pageNum: state.currentPage, canvas: null, canvasCtx: null };
+      return { x: 0, y: 0, pageNum: docCurrentPage, canvas: null, canvasCtx: null };
     }
     const pageNum = parseInt(canvas?.dataset?.page, 10);
     const rect = canvas.getBoundingClientRect();
     return {
-      x: (e.clientX - rect.left) / state.scale,
-      y: (e.clientY - rect.top) / state.scale,
-      pageNum: isNaN(pageNum) ? state.currentPage : pageNum,
+      x: (e.clientX - rect.left) / scale,
+      y: (e.clientY - rect.top) / scale,
+      pageNum: isNaN(pageNum) ? docCurrentPage : pageNum,
       canvas,
       canvasCtx: canvas.getContext ? canvas.getContext('2d') : null
     };
   } else {
     const canvas = annotationCanvas;
     if (!canvas) {
-      return { x: 0, y: 0, pageNum: state.currentPage, canvas: null, canvasCtx: null };
+      return { x: 0, y: 0, pageNum: docCurrentPage, canvas: null, canvasCtx: null };
     }
     const ctx = annotationCtx || canvas.getContext('2d');
     const rect = canvas.getBoundingClientRect();
     return {
-      x: (e.clientX - rect.left) / state.scale,
-      y: (e.clientY - rect.top) / state.scale,
-      pageNum: state.currentPage,
+      x: (e.clientX - rect.left) / scale,
+      y: (e.clientY - rect.top) / scale,
+      pageNum: docCurrentPage,
       canvas,
       canvasCtx: ctx
     };
@@ -83,6 +86,8 @@ export function resolvePointerCoords(e) {
  * This gives each tool a clean API to work with.
  */
 export function buildToolContext(e, coords) {
+  const ctxDoc = getActiveDocument();
+  const ctxScale = ctxDoc?.scale || 1.5;
   return {
     // Coordinates
     x: coords.x,
@@ -95,25 +100,25 @@ export function buildToolContext(e, coords) {
     // State access
     state,
     prefs: state.preferences,
-    scale: state.scale,
-    viewMode: state.viewMode,
+    scale: ctxScale,
+    viewMode: ctxDoc?.viewMode || 'single',
 
     // Snapping
-    snap: (x, y, excludeId, extraPoints) => performSnap(x, y, state.annotations, coords.pageNum, state.scale, excludeId, extraPoints),
+    snap: (x, y, excludeId, extraPoints) => performSnap(x, y, ctxDoc?.annotations || [], coords.pageNum, ctxScale, excludeId, extraPoints),
     snapToGrid,
     snapAngle,
     snapDistanceTo10,
     drawSnapIndicator: (snapResult) => {
       if (!coords.canvasCtx) return;
       coords.canvasCtx.save();
-      coords.canvasCtx.scale(state.scale, state.scale);
-      drawSnapIndicator(coords.canvasCtx, snapResult, state.scale);
+      coords.canvasCtx.scale(ctxScale, ctxScale);
+      drawSnapIndicator(coords.canvasCtx, snapResult, ctxScale);
       coords.canvasCtx.restore();
     },
 
     // Annotation operations
     findAnnotationAt,
-    findHandleAt: (x, y, ann) => findHandleAt(x, y, ann, state.scale),
+    findHandleAt: (x, y, ann) => findHandleAt(x, y, ann, ctxScale),
     getCursorForHandle: (handle, rotation, ann) => getCursorForHandle(handle, rotation, ann),
     createAnnotation,
     cloneAnnotation,
@@ -180,7 +185,7 @@ export function buildToolContext(e, coords) {
 
     // Rendering
     redraw: () => {
-      if (state.viewMode === 'continuous') redrawContinuous();
+      if (getActiveDocument()?.viewMode === 'continuous') redrawContinuous();
       else redrawAnnotations();
     },
     redrawAnnotations,

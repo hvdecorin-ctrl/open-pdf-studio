@@ -1,6 +1,6 @@
-import { createEffect } from 'solid-js';
+import { createEffect, createSignal } from 'solid-js';
 import {
-  visible, resultsText, messageText, notFound, navDisabled,
+  visible, resultsText, messageText, notFound, navDisabled, searching,
 } from '../stores/findBarStore.js';
 import { useTranslation } from '../../i18n/useTranslation.js';
 
@@ -8,10 +8,13 @@ export default function FindBar() {
   const { t } = useTranslation('statusbar');
   let inputRef;
 
+  const [matchCase, setMatchCase] = createSignal(false);
+  const [wholeWord, setWholeWord] = createSignal(false);
+  const [highlightAll, setHighlightAll] = createSignal(true);
+
   // Focus input when find bar becomes visible
   createEffect(() => {
     if (visible()) {
-      // Delay to ensure DOM is updated
       setTimeout(() => {
         inputRef?.focus();
         inputRef?.select();
@@ -52,68 +55,107 @@ export default function FindBar() {
     import('../../search/find-bar.js').then(m => m.onFindNext());
   };
 
-  const handleMatchCase = (e) => {
-    const checkboxes = e.target.closest('.find-options').querySelectorAll('input[type="checkbox"]');
+  const fireOptionsChange = (mc, ww) => {
     import('../../search/find-bar.js').then(m => m.onOptionsChange({
-      matchCase: checkboxes[0].checked,
-      wholeWord: checkboxes[1].checked,
+      matchCase: mc,
+      wholeWord: ww,
     }));
   };
 
-  const handleWholeWord = (e) => {
-    const checkboxes = e.target.closest('.find-options').querySelectorAll('input[type="checkbox"]');
-    import('../../search/find-bar.js').then(m => m.onOptionsChange({
-      matchCase: checkboxes[0].checked,
-      wholeWord: checkboxes[1].checked,
-    }));
+  const toggleMatchCase = () => {
+    const v = !matchCase();
+    setMatchCase(v);
+    fireOptionsChange(v, wholeWord());
   };
 
-  const handleHighlightAll = (e) => {
-    import('../../search/find-bar.js').then(m => m.onHighlightChange(e.target.checked));
+  const toggleWholeWord = () => {
+    const v = !wholeWord();
+    setWholeWord(v);
+    fireOptionsChange(matchCase(), v);
+  };
+
+  const toggleHighlightAll = () => {
+    const v = !highlightAll();
+    setHighlightAll(v);
+    import('../../search/find-bar.js').then(m => m.onHighlightChange(v));
   };
 
   return (
     <div class="find-bar" classList={{ visible: visible() }}>
-      <button class="find-close-btn" title={t('closeEsc')} onClick={handleClose}>&times;</button>
-      <div class="find-input-container">
-        <input
-          class="find-input"
-          classList={{ 'not-found': notFound() }}
-          placeholder={t('findPlaceholder')}
-          autocomplete="off"
-          ref={inputRef}
-          onInput={handleInput}
-          onKeyDown={handleKeyDown}
-        />
+      <div class="find-rows">
+        {/* Row 1: Find */}
+        <div class="find-row">
+          {/* Search input with inline count */}
+          <div class="find-input-wrapper" classList={{ 'not-found': notFound() }}>
+            <input
+              class="find-input"
+              placeholder={t('findPlaceholder')}
+              autocomplete="off"
+              ref={inputRef}
+              onInput={handleInput}
+              onKeyDown={handleKeyDown}
+            />
+            <span class="find-count-inline" classList={{ 'is-searching': searching() }}>
+              {resultsText()}
+            </span>
+          </div>
+
+          {/* Nav buttons */}
+          <button class="find-btn" title={t('previousShiftEnter')} disabled={navDisabled()} onClick={handlePrev}>
+            <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5">
+              <path d="M11 13L5.5 8 11 3"/>
+            </svg>
+          </button>
+          <button class="find-btn" title={t('nextEnter')} disabled={navDisabled()} onClick={handleNext}>
+            <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5">
+              <path d="M5 3l5.5 5L5 13"/>
+            </svg>
+          </button>
+
+          <div class="find-separator" />
+
+          {/* Toggle buttons (icon-only) */}
+          <button
+            class="find-toggle-btn"
+            classList={{ active: matchCase() }}
+            title={t('matchCase')}
+            onClick={toggleMatchCase}
+          >Aa</button>
+
+          <button
+            class="find-toggle-btn"
+            classList={{ active: wholeWord() }}
+            title={t('wholeWords')}
+            onClick={toggleWholeWord}
+          >
+            <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor">
+              <path d="M1 3h2v1H2v8h1v1H1V3zm12 0h2v10h-2v-1h1V4h-1V3zM5.2 11L4.5 9H7l-.7 2h1.1l2-6H8.2l.5-1h2.7l-.5 1H9.8l-2 6H5.2zM5.1 8l.7-2.2L6.5 8H5.1z"/>
+            </svg>
+          </button>
+
+          <button
+            class="find-toggle-btn"
+            classList={{ active: highlightAll() }}
+            title={t('highlightAll')}
+            onClick={toggleHighlightAll}
+          >
+            <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor">
+              <path d="M11.3 1.3l3.4 3.4c.4.4.4 1 0 1.4L7.4 13.4c-.2.2-.4.3-.7.3H3.3c-.5 0-1-.4-1-1V9.3c0-.3.1-.5.3-.7L9.9 1.3c.4-.4 1-.4 1.4 0zM4.3 9.7v2h2l6.3-6.3-2-2-6.3 6.3z"/>
+            </svg>
+          </button>
+
+          {/* Close */}
+          <button class="find-close-btn" title={t('closeEsc')} onClick={handleClose}>
+            <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5">
+              <path d="M3 3l10 10M13 3L3 13"/>
+            </svg>
+          </button>
+        </div>
+
       </div>
-      <div class="find-nav-buttons">
-        <button class="find-nav-btn" title={t('previousShiftEnter')} disabled={navDisabled()} onClick={handlePrev}>
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M15 18l-6-6 6-6"/>
-          </svg>
-        </button>
-        <button class="find-nav-btn" title={t('nextEnter')} disabled={navDisabled()} onClick={handleNext}>
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M9 18l6-6-6-6"/>
-          </svg>
-        </button>
-      </div>
-      <span class="find-results-count">{resultsText()}</span>
-      <span class="find-message" classList={{ 'not-found': notFound() }}>{messageText()}</span>
-      <div class="find-options">
-        <label class="find-option">
-          <input type="checkbox" onChange={handleMatchCase} />
-          <span>{t('matchCase')}</span>
-        </label>
-        <label class="find-option">
-          <input type="checkbox" onChange={handleWholeWord} />
-          <span>{t('wholeWords')}</span>
-        </label>
-        <label class="find-option">
-          <input type="checkbox" checked onChange={handleHighlightAll} />
-          <span>{t('highlightAll')}</span>
-        </label>
-      </div>
+
+      {/* Not found message */}
+      {notFound() && <span class="find-message">{messageText()}</span>}
     </div>
   );
 }

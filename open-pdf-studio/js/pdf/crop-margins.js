@@ -18,7 +18,7 @@ const MM_TO_POINTS = 72 / 25.4;
  */
 async function detectContentBounds(pageNum, threshold) {
   // Determine render scale — reduce for very large pages
-  const page = await state.pdfDoc.getPage(pageNum);
+  const page = await getActiveDocument().pdfDoc.getPage(pageNum);
   const vp = page.getViewport({ scale: 1 });
   const basePixels = vp.width * vp.height;
   let scale = 1;
@@ -182,22 +182,22 @@ function computeCropBox(bounds, pdfPage, paddingPt) {
  * @returns {Promise<{cropped: number, skipped: number}>}
  */
 export async function cropMargins(applyTo, rangeStr, paddingMm, threshold) {
-  if (!state.pdfDoc) return { cropped: 0, skipped: 0 };
+  if (!getActiveDocument()?.pdfDoc) return { cropped: 0, skipped: 0 };
 
   const cacheKey = getCacheKey();
   const currentBytes = getCachedPdfBytes(cacheKey);
   if (!currentBytes) return { cropped: 0, skipped: 0 };
 
   const doc = getActiveDocument();
-  const oldAnnotations = state.annotations.map((a) => ({ ...a }));
+  const oldAnnotations = doc.annotations.map((a) => ({ ...a }));
   const oldRotations = { ...doc.pageRotations };
-  const oldPage = state.currentPage;
+  const oldPage = doc.currentPage;
 
   // Determine which pages to process
-  const totalPages = state.pdfDoc.numPages;
+  const totalPages = doc.pdfDoc.numPages;
   let pageNumbers;
   if (applyTo === "current") {
-    pageNumbers = [state.currentPage];
+    pageNumbers = [doc.currentPage];
   } else if (applyTo === "all") {
     pageNumbers = Array.from({ length: totalPages }, (_, i) => i + 1);
   } else {
@@ -242,7 +242,7 @@ export async function cropMargins(applyTo, rangeStr, paddingMm, threshold) {
     // Annotations and rotations stay the same — CropBox doesn't change page structure
     const newAnnotations = oldAnnotations;
     const newRotations = { ...oldRotations };
-    const targetPage = state.currentPage;
+    const targetPage = doc.currentPage;
 
     await reloadFromBytes(newBytes, newAnnotations, newRotations, targetPage);
     recordPageStructure(

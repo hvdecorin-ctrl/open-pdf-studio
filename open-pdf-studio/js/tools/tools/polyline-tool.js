@@ -1,3 +1,5 @@
+import { getActiveDocument } from '../../core/state.js';
+
 /**
  * Polyline tool — multi-click placement, double-click/right-click to finish
  * Also handles cloudPolyline
@@ -7,7 +9,7 @@ export const polylineTool = {
   cursor: 'crosshair',
 
   onPointerDown(ctx, e) {
-    const { x, y, state, canvasCtx } = ctx;
+    const { x, y, state, canvasCtx, scale } = ctx;
     const prefs = state.preferences;
 
     // Right-click finishes
@@ -33,7 +35,7 @@ export const polylineTool = {
     // Draw in-progress polyline
     if (state.polylinePoints.length > 0) {
       canvasCtx.save();
-      canvasCtx.scale(state.scale, state.scale);
+      canvasCtx.scale(scale, scale);
       canvasCtx.strokeStyle = prefs.polylineStrokeColor;
       canvasCtx.lineWidth = prefs.polylineLineWidth;
       canvasCtx.lineCap = 'round';
@@ -49,7 +51,7 @@ export const polylineTool = {
   },
 
   onPointerMove(ctx, e) {
-    const { x, y, state, canvasCtx } = ctx;
+    const { x, y, state, canvasCtx, scale } = ctx;
     if (!state.isDrawingPolyline || state.polylinePoints.length === 0) {
       _drawHoverSnap(ctx, x, y);
       return;
@@ -63,7 +65,7 @@ export const polylineTool = {
 
     ctx.redraw();
     canvasCtx.save();
-    canvasCtx.scale(state.scale, state.scale);
+    canvasCtx.scale(scale, scale);
     canvasCtx.strokeStyle = prefs.polylineStrokeColor;
     canvasCtx.lineWidth = prefs.polylineLineWidth;
     canvasCtx.lineCap = 'round';
@@ -96,7 +98,7 @@ export const cloudPolylineTool = {
   cursor: 'crosshair',
 
   onPointerDown(ctx, e) {
-    const { x, y, state, canvasCtx } = ctx;
+    const { x, y, state, canvasCtx, scale } = ctx;
     const prefs = state.preferences;
 
     // Right-click finishes
@@ -121,7 +123,7 @@ export const cloudPolylineTool = {
       const first = state.cloudPolylinePoints[0];
       const dx = ptX - first.x;
       const dy = ptY - first.y;
-      if (Math.sqrt(dx * dx + dy * dy) < 10 / state.scale) {
+      if (Math.sqrt(dx * dx + dy * dy) < 10 / scale) {
         _createCloudPolylineAnnotation(ctx, state.cloudPolylinePoints);
         state.cloudPolylinePoints = [];
         state.isDrawingCloudPolyline = false;
@@ -137,7 +139,7 @@ export const cloudPolylineTool = {
     // Draw in-progress cloud polyline
     if (state.cloudPolylinePoints.length > 1) {
       canvasCtx.save();
-      canvasCtx.scale(state.scale, state.scale);
+      canvasCtx.scale(scale, scale);
       canvasCtx.strokeStyle = prefs.cloudPolylineStrokeColor;
       canvasCtx.lineWidth = prefs.cloudPolylineLineWidth;
       ctx.buildCloudPolylinePath(canvasCtx, state.cloudPolylinePoints, false);
@@ -147,7 +149,7 @@ export const cloudPolylineTool = {
   },
 
   onPointerMove(ctx, e) {
-    const { x, y, state, canvasCtx } = ctx;
+    const { x, y, state, canvasCtx, scale } = ctx;
     if (!state.isDrawingCloudPolyline || state.cloudPolylinePoints.length === 0) {
       _drawHoverSnap(ctx, x, y);
       return;
@@ -165,7 +167,7 @@ export const cloudPolylineTool = {
       const first = state.cloudPolylinePoints[0];
       const dx = snapX - first.x;
       const dy = snapY - first.y;
-      if (Math.sqrt(dx * dx + dy * dy) < 10 / state.scale) {
+      if (Math.sqrt(dx * dx + dy * dy) < 10 / scale) {
         snapX = first.x;
         snapY = first.y;
         nearFirst = true;
@@ -174,7 +176,7 @@ export const cloudPolylineTool = {
 
     ctx.redraw();
     canvasCtx.save();
-    canvasCtx.scale(state.scale, state.scale);
+    canvasCtx.scale(scale, scale);
     canvasCtx.strokeStyle = prefs.cloudPolylineStrokeColor;
     canvasCtx.lineWidth = prefs.cloudPolylineLineWidth;
     const previewPts = [...state.cloudPolylinePoints, { x: snapX, y: snapY }];
@@ -184,7 +186,7 @@ export const cloudPolylineTool = {
     if (nearFirst) {
       const first = state.cloudPolylinePoints[0];
       canvasCtx.beginPath();
-      canvasCtx.arc(first.x, first.y, 5 / state.scale, 0, Math.PI * 2);
+      canvasCtx.arc(first.x, first.y, 5 / scale, 0, Math.PI * 2);
       canvasCtx.fillStyle = prefs.cloudPolylineStrokeColor;
       canvasCtx.globalAlpha = 0.3;
       canvasCtx.fill();
@@ -214,14 +216,15 @@ function _finishPolyline(ctx) {
     const prefs = state.preferences;
     const ann = ctx.createAnnotation({
       type: 'polyline',
-      page: state.currentPage,
+      page: getActiveDocument()?.currentPage || 1,
       points: [...state.polylinePoints],
       color: prefs.polylineStrokeColor,
       strokeColor: prefs.polylineStrokeColor,
       lineWidth: prefs.polylineLineWidth,
       opacity: (prefs.polylineOpacity || 100) / 100
     });
-    state.annotations.push(ann);
+    const doc = getActiveDocument();
+    if (doc) doc.annotations.push(ann);
     ctx.recordAdd(ann);
   }
   state.polylinePoints = [];
@@ -247,7 +250,7 @@ function _createCloudPolylineAnnotation(ctx, points) {
   const ys = pts.map(p => p.y);
   const ann = ctx.createAnnotation({
     type: 'cloudPolyline',
-    page: state.currentPage,
+    page: getActiveDocument()?.currentPage || 1,
     points: pts,
     x: Math.min(...xs),
     y: Math.min(...ys),
@@ -258,7 +261,8 @@ function _createCloudPolylineAnnotation(ctx, points) {
     lineWidth: prefs.cloudPolylineLineWidth,
     opacity: (prefs.cloudPolylineOpacity || 100) / 100
   });
-  state.annotations.push(ann);
+  const doc = getActiveDocument();
+  if (doc) doc.annotations.push(ann);
   ctx.recordAdd(ann);
 }
 

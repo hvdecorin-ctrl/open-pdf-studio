@@ -1,4 +1,4 @@
-import { state, isSelected, getAnnotationBounds, addToSelection, removeFromSelection } from '../../core/state.js';
+import { state, getActiveDocument, isSelected, getAnnotationBounds, addToSelection, removeFromSelection } from '../../core/state.js';
 import { getTypeDisplayName, formatDate } from '../../utils/helpers.js';
 import { showProperties, showMultiSelectionProperties } from './properties-panel.js';
 import { goToPage } from '../../pdf/renderer.js';
@@ -58,7 +58,7 @@ export function updateAnnotationsList(filterValue) {
   let filteredAnnotations = [...annotations];
 
   if (activeFilter === 'current') {
-    filteredAnnotations = filteredAnnotations.filter(a => a.page === state.currentPage);
+    filteredAnnotations = filteredAnnotations.filter(a => a.page === (doc ? doc.currentPage : 1));
   } else if (activeFilter !== 'all') {
     filteredAnnotations = filteredAnnotations.filter(a => a.type === activeFilter);
   }
@@ -269,14 +269,15 @@ function scrollToAnnotation(annotation) {
   const bounds = getAnnotationBounds(annotation);
   if (!bounds) return;
 
-  const scale = state.scale;
+  const doc = getActiveDocument();
+  const scale = doc?.scale || 1.5;
   const pdfContainer = document.getElementById('pdf-container');
   if (!pdfContainer) return;
 
   const centerX = (bounds.x + bounds.width / 2) * scale;
   const centerY = (bounds.y + bounds.height / 2) * scale;
 
-  if (state.viewMode === 'continuous') {
+  if (getActiveDocument()?.viewMode === 'continuous') {
     const pageWrapper = document.querySelector(`.page-wrapper[data-page="${annotation.page}"]`);
     if (!pageWrapper) return;
     const canvasContainer = pageWrapper.querySelector('.canvas-container-cont');
@@ -297,30 +298,34 @@ function scrollToAnnotation(annotation) {
 // Select an annotation item - navigates to its page and selects it
 // When ctrlKey is true, toggles the annotation in/out of multi-selection
 export async function selectAnnotationItem(id, page, ctrlKey = false) {
-  const annotation = state.annotations.find(a => a.id === id);
+  const selDoc = getActiveDocument();
+  const annotation = (selDoc?.annotations || []).find(a => a.id === id);
   if (!annotation) return;
-
+  const selDocPage = selDoc ? selDoc.currentPage : 1;
   if (ctrlKey) {
     if (isSelected(annotation)) {
       removeFromSelection(annotation);
     } else {
-      if (annotation.page !== state.currentPage) {
+      if (annotation.page !== selDocPage) {
         await goToPage(annotation.page);
       }
       addToSelection(annotation);
     }
   } else {
-    if (annotation.page !== state.currentPage) {
+    if (annotation.page !== selDocPage) {
       await goToPage(annotation.page);
     }
-    state.selectedAnnotation = annotation;
+    const _selListDoc = getActiveDocument();
+    if (_selListDoc) { _selListDoc.selectedAnnotation = annotation; _selListDoc.selectedAnnotations = [annotation]; }
   }
 
   redrawAnnotations();
-  if (state.selectedAnnotations.length > 1) {
+  const _listDoc2 = getActiveDocument();
+  const _listSel = _listDoc2 ? _listDoc2.selectedAnnotations : [];
+  if (_listSel.length > 1) {
     showMultiSelectionProperties();
-  } else if (state.selectedAnnotation) {
-    showProperties(state.selectedAnnotation);
+  } else if (_listDoc2?.selectedAnnotation) {
+    showProperties(_listDoc2.selectedAnnotation);
   }
   updateAnnotationsList();
 

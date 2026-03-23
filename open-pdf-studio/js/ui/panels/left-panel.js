@@ -34,6 +34,9 @@ let priorityPages = new Set();
 // Track the last scroll position to continue loading from there
 let lastVisiblePage = 1;
 
+// Per-document thumbnail scroll position: Map<docId, number>
+const thumbnailScrollPositions = new Map();
+
 // Scroll debounce timer
 let scrollDebounceTimer = null;
 
@@ -232,8 +235,8 @@ export async function generateThumbnails() {
     }
   }
 
-  // Mark current page as active
-  updateActiveThumbnail();
+  // Mark current page as active and restore scroll position
+  updateActiveThumbnail(true);
 
   // Ensure scroll listener is attached (Solid may have re-rendered the container)
   scrollListenerAttached = false;
@@ -424,9 +427,10 @@ async function renderThumbnailToDataURL(pdfDoc, pageNum) {
 
 // Show page properties dialog
 export async function showPageProperties(pageNum) {
-  if (!state.pdfDoc) return;
+  const doc = getActiveDocument();
+  if (!doc?.pdfDoc) return;
   try {
-    const page = await state.pdfDoc.getPage(pageNum);
+    const page = await doc.pdfDoc.getPage(pageNum);
     const rotation = getPageRotation(pageNum);
     const viewport = page.getViewport({ scale: 1 });
     const widthPt = viewport.width;
@@ -476,17 +480,34 @@ export function clearThumbnailCache(docId) {
   }
 }
 
-// Update which thumbnail is marked as active
-export function updateActiveThumbnail() {
-  setActivePage(state.currentPage);
+// Save thumbnail scroll position for the current document
+export function saveThumbnailScrollPosition() {
+  const doc = getActiveDocument();
+  if (!doc) return;
+  const container = getContainerRef();
+  if (container) {
+    thumbnailScrollPositions.set(doc.id, container.scrollTop);
+  }
+}
 
-  // Scroll active thumbnail into view using container ref
+// Update which thumbnail is marked as active
+export function updateActiveThumbnail(restoreScroll = false) {
+  const doc = getActiveDocument();
+  setActivePage(doc ? doc.currentPage : 1);
+
   setTimeout(() => {
     const container = getContainerRef();
     if (!container) return;
-    const activeThumbnail = container.querySelector('.thumbnail-item.active');
-    if (activeThumbnail) {
-      activeThumbnail.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+
+    if (restoreScroll && doc && thumbnailScrollPositions.has(doc.id)) {
+      // Restore saved scroll position (tab switch)
+      container.scrollTop = thumbnailScrollPositions.get(doc.id);
+    } else {
+      // Scroll active thumbnail into view (page navigation)
+      const activeThumbnail = container.querySelector('.thumbnail-item.active');
+      if (activeThumbnail) {
+        activeThumbnail.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      }
     }
   }, 0);
 }

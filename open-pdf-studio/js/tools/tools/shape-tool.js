@@ -41,14 +41,16 @@ export const shapeTool = {
     const tool = state.currentTool;
     const ann = ctx.createAnnotationFromTool(tool, state.startX, state.startY, endX, endY, e);
     if (ann) {
-      state.annotations.push(ann);
+      const doc = state.documents[state.activeDocumentIndex];
+      if (doc) doc.annotations.push(ann);
       ctx.recordAdd(ann);
     }
     ctx.redraw();
 
     // Auto-start text editing for textbox/callout
     if (ann && ['textbox', 'callout'].includes(ann.type)) {
-      state.selectedAnnotations = [ann];
+      const doc = state.documents[state.activeDocumentIndex];
+      if (doc) { doc.selectedAnnotations = [ann]; doc.selectedAnnotation = ann; }
       ctx.showProperties(ann);
       ctx.startTextEditing(ann);
     }

@@ -1,3 +1,5 @@
+import { getActiveDocument } from '../../core/state.js';
+
 /**
  * Measurement tools — measureDistance (3-click dimension), measureArea, measurePerimeter
  */
@@ -6,7 +8,7 @@ export const measureDistanceTool = {
   cursor: 'crosshair',
 
   onPointerDown(ctx, e) {
-    const { x, y, state } = ctx;
+    const { x, y, state, scale } = ctx;
 
     // Right-click cancels
     if (e.button === 2) {
@@ -28,7 +30,7 @@ export const measureDistanceTool = {
       // Click 2: second measurement point
       const dx = dimX - state.dimPoints[0].x;
       const dy = dimY - state.dimPoints[0].y;
-      if (Math.sqrt(dx * dx + dy * dy) < 3 / state.scale) return;
+      if (Math.sqrt(dx * dx + dy * dy) < 3 / scale) return;
       let finalPt = { x: dimX, y: dimY };
       if (e.ctrlKey) finalPt = ctx.snapDistanceTo10(state.dimPoints[0].x, state.dimPoints[0].y, dimX, dimY);
       state.dimPoints.push(finalPt);
@@ -61,7 +63,7 @@ export const measureDistanceTool = {
       }
       const ann = ctx.createAnnotation({
         type: 'measureDistance',
-        page: state.currentPage,
+        page: getActiveDocument()?.currentPage || 1,
         startX, startY, endX, endY,
         leaderStartX: p1.x, leaderStartY: p1.y,
         leaderEndX: p2.x, leaderEndY: p2.y,
@@ -79,7 +81,8 @@ export const measureDistanceTool = {
         measureScale: dimScale || undefined,
         measurePrecision: dimPrecision,
       });
-      state.annotations.push(ann);
+      const doc = state.documents[state.activeDocumentIndex];
+      if (doc) doc.annotations.push(ann);
       ctx.recordAdd(ann);
       state.dimPoints = [];
       state.isDrawingDimension = false;
@@ -88,7 +91,7 @@ export const measureDistanceTool = {
   },
 
   onPointerMove(ctx, e) {
-    const { x, y, state, canvasCtx } = ctx;
+    const { x, y, state, canvasCtx, scale } = ctx;
     if (!state.isDrawingDimension || state.dimPoints.length === 0) {
       _drawHoverSnap(ctx, x, y);
       return;
@@ -114,7 +117,7 @@ export const measureDistanceTool = {
 
     ctx.redraw();
     canvasCtx.save();
-    canvasCtx.scale(state.scale, state.scale);
+    canvasCtx.scale(scale, scale);
     canvasCtx.strokeStyle = dimColor;
     canvasCtx.lineWidth = prefs.measureDistLineWidth || 1;
     canvasCtx.globalAlpha = (prefs.measureDistOpacity || 100) / 100;
@@ -258,7 +261,7 @@ function _measureMultiClickDown(ctx, e, toolType) {
   if (isArea && state.measurePoints.length >= 3) {
     const first = state.measurePoints[0];
     const dx = ptX - first.x, dy = ptY - first.y;
-    if (Math.sqrt(dx * dx + dy * dy) < 10 / state.scale) {
+    if (Math.sqrt(dx * dx + dy * dy) < 10 / ctx.scale) {
       _finishMeasure(ctx, toolType);
       return;
     }
@@ -272,7 +275,7 @@ function _measureMultiClickDown(ctx, e, toolType) {
 }
 
 function _measureMultiClickMove(ctx, e, toolType) {
-  const { x, y, state, canvasCtx } = ctx;
+  const { x, y, state, canvasCtx, scale } = ctx;
   if (!state.measurePoints || state.measurePoints.length === 0) {
     _drawHoverSnap(ctx, x, y);
     return;
@@ -295,7 +298,7 @@ function _measureMultiClickMove(ctx, e, toolType) {
   if (isArea && state.measurePoints.length >= 3) {
     const first = state.measurePoints[0];
     const dx = snapX - first.x, dy = snapY - first.y;
-    if (Math.sqrt(dx * dx + dy * dy) < 10 / state.scale) {
+    if (Math.sqrt(dx * dx + dy * dy) < 10 / scale) {
       snapX = first.x; snapY = first.y;
       nearFirst = true;
     }
@@ -319,7 +322,7 @@ function _measureMultiClickMove(ctx, e, toolType) {
 
   ctx.redraw();
   canvasCtx.save();
-  canvasCtx.scale(state.scale, state.scale);
+  canvasCtx.scale(scale, scale);
   canvasCtx.strokeStyle = mColor;
   canvasCtx.lineWidth = (isArea ? prefs.measureAreaLineWidth : prefs.measurePerimLineWidth) || 1;
   canvasCtx.globalAlpha = ((isArea ? prefs.measureAreaOpacity : prefs.measurePerimOpacity) || 100) / 100;
@@ -349,7 +352,7 @@ function _measureMultiClickMove(ctx, e, toolType) {
   if (nearFirst) {
     const first = state.measurePoints[0];
     canvasCtx.beginPath();
-    canvasCtx.arc(first.x, first.y, 5 / state.scale, 0, Math.PI * 2);
+    canvasCtx.arc(first.x, first.y, 5 / scale, 0, Math.PI * 2);
     canvasCtx.fillStyle = mColor;
     canvasCtx.globalAlpha = 0.3;
     canvasCtx.fill();
@@ -367,13 +370,14 @@ function _finishMeasure(ctx, toolType) {
   const { state } = ctx;
   if (!state.measurePoints) return;
   const points = [...state.measurePoints];
+  const doc = state.documents[state.activeDocumentIndex];
 
   if (toolType === 'measureArea' && points.length >= 3) {
     const ann = ctx.createMeasureAreaAnnotation(points);
-    if (ann) { state.annotations.push(ann); ctx.recordAdd(ann); }
+    if (ann) { if (doc) doc.annotations.push(ann); ctx.recordAdd(ann); }
   } else if (toolType === 'measurePerimeter' && points.length >= 2) {
     const ann = ctx.createMeasurePerimeterAnnotation(points);
-    if (ann) { state.annotations.push(ann); ctx.recordAdd(ann); }
+    if (ann) { if (doc) doc.annotations.push(ann); ctx.recordAdd(ann); }
   }
   state.measurePoints = null;
   ctx.redraw();
@@ -388,7 +392,7 @@ function _measureDeactivate(ctx) {
 }
 
 function _drawMeasureInProgress(ctx, toolType) {
-  const { state, canvasCtx } = ctx;
+  const { state, canvasCtx, scale } = ctx;
   if (!state.measurePoints || state.measurePoints.length === 0) return;
   const prefs = state.preferences;
   const isArea = toolType === 'measureArea';
@@ -397,7 +401,7 @@ function _drawMeasureInProgress(ctx, toolType) {
   const mFillColor = isArea ? (prefs.measureAreaFillNone ? 'none' : (prefs.measureAreaFillColor || null)) : null;
 
   canvasCtx.save();
-  canvasCtx.scale(state.scale, state.scale);
+  canvasCtx.scale(scale, scale);
   canvasCtx.strokeStyle = mColor;
   canvasCtx.lineWidth = (isArea ? prefs.measureAreaLineWidth : prefs.measurePerimLineWidth) || 1;
   canvasCtx.globalAlpha = ((isArea ? prefs.measureAreaOpacity : prefs.measurePerimOpacity) || 100) / 100;

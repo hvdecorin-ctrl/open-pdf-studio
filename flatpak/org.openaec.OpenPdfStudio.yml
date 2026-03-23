@@ -1,0 +1,59 @@
+app-id: org.openaec.OpenPdfStudio
+runtime: org.gnome.Platform
+runtime-version: '47'
+sdk: org.gnome.Sdk
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.rust-stable
+  - org.freedesktop.Sdk.Extension.node22
+
+command: open-pdf-studio
+
+finish-args:
+  # Windowing
+  - --socket=wayland
+  - --socket=fallback-x11
+  # GPU rendering (WebKitGTK)
+  - --device=dri
+  # File access (open/save PDFs)
+  - --filesystem=home
+  # Network (for update checks)
+  - --share=network
+  # IPC (X11 shared memory)
+  - --share=ipc
+
+build-options:
+  append-path: /usr/lib/sdk/rust-stable/bin:/usr/lib/sdk/node22/bin
+  env:
+    CARGO_HOME: /run/build/open-pdf-studio/cargo
+    npm_config_nodedir: /usr/lib/sdk/node22
+
+modules:
+  - name: open-pdf-studio
+    buildsystem: simple
+    build-commands:
+      # Install npm dependencies (offline from vendored sources)
+      - cd open-pdf-studio && npm ci --offline
+      # Build the frontend
+      - cd open-pdf-studio && npm run build
+      # Build the Tauri/Rust backend
+      - cd open-pdf-studio/src-tauri && cargo build --release --offline
+      # Install the binary
+      - install -Dm755 open-pdf-studio/src-tauri/target/release/open-pdf-studio ${FLATPAK_DEST}/bin/open-pdf-studio
+      # Install the desktop file
+      - install -Dm644 flatpak/org.openaec.OpenPdfStudio.desktop ${FLATPAK_DEST}/share/applications/org.openaec.OpenPdfStudio.desktop
+      # Install the AppStream metadata
+      - install -Dm644 flatpak/org.openaec.OpenPdfStudio.metainfo.xml ${FLATPAK_DEST}/share/metainfo/org.openaec.OpenPdfStudio.metainfo.xml
+      # Install icons
+      - install -Dm644 open-pdf-studio/src-tauri/icons/icon-new.svg ${FLATPAK_DEST}/share/icons/hicolor/scalable/apps/org.openaec.OpenPdfStudio.svg
+      - install -Dm644 open-pdf-studio/src-tauri/icons/128x128.png ${FLATPAK_DEST}/share/icons/hicolor/128x128/apps/org.openaec.OpenPdfStudio.png
+      - install -Dm644 open-pdf-studio/src-tauri/icons/32x32.png ${FLATPAK_DEST}/share/icons/hicolor/32x32/apps/org.openaec.OpenPdfStudio.png
+      - install -Dm644 open-pdf-studio/src-tauri/icons/64x64.png ${FLATPAK_DEST}/share/icons/hicolor/64x64/apps/org.openaec.OpenPdfStudio.png
+    sources:
+      - type: dir
+        path: ..
+      # Vendored npm dependencies — generate with:
+      #   flatpak-node-generator npm open-pdf-studio/package-lock.json -o flatpak/node-sources.json
+      - node-sources.json
+      # Vendored Cargo dependencies — generate with:
+      #   flatpak-cargo-generator open-pdf-studio/src-tauri/Cargo.lock -o flatpak/cargo-sources.json
+      - cargo-sources.json

@@ -1,7 +1,7 @@
 import RibbonGroup from './RibbonGroup.jsx';
 import RibbonButton from './RibbonButton.jsx';
 import { insertPageIcon, deletePageIcon, extractPagesIcon, mergePdfsIcon, watermarkIcon, headerFooterIcon, manageWatermarksIcon } from '../../data/ribbonIcons.js';
-import { state, noPdf } from '../../../core/state.js';
+import { state, noPdf, getActiveDocument } from '../../../core/state.js';
 import { isPdfAReadOnly } from '../../../pdf/loader.js';
 import { showInsertPageDialog, showExtractPagesDialog, showMergePdfsDialog } from '../../../ui/chrome/dialogs.js';
 import { useTranslation } from '../../../i18n/useTranslation.js';
@@ -18,7 +18,7 @@ export default function OrganizeTab() {
             disabled={noPdf() || isPdfAReadOnly()} onClick={() => showInsertPageDialog()} />
           <RibbonButton id="delete-page" title={t('organize.deletePage')} icon={deletePageIcon} label={t('organize.deleteLabel')}
             disabled={noPdf() || isPdfAReadOnly()}
-            onClick={() => openDialog('delete-pages', { totalPages: state.pdfDoc?.numPages, currentPage: state.currentPage })} />
+            onClick={() => { const doc = getActiveDocument(); openDialog('delete-pages', { totalPages: doc?.pdfDoc?.numPages, currentPage: doc?.currentPage || 1 }); }} />
           <RibbonButton id="extract-pages" title={t('organize.extractPages')} icon={extractPagesIcon} label={t('organize.extractLabel')}
             disabled={noPdf() || isPdfAReadOnly()} onClick={() => showExtractPagesDialog()} />
         </RibbonGroup>

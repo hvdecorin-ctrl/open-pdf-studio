@@ -1,4 +1,4 @@
-import { state } from '../core/state.js';
+import { state, getActiveDocument } from '../core/state.js';
 import { generateImageId } from '../utils/helpers.js';
 import { recordAdd } from '../core/undo-manager.js';
 import { showProperties } from '../ui/panels/properties-panel.js';
@@ -9,7 +9,7 @@ import { readBinaryFile } from '../core/platform.js';
 
 // Add an image file as an annotation on the current page (Tauri: reads by path)
 export async function addImageFromFile(filePath) {
-  if (!state.pdfDoc) {
+  if (!getActiveDocument()?.pdfDoc) {
     updateStatusMessage('Open a PDF first to add images');
     return;
   }
@@ -52,7 +52,7 @@ export async function addImageFromFile(filePath) {
     const annotation = {
       id: Date.now().toString(36) + Math.random().toString(36).substr(2, 9),
       type: 'image',
-      page: state.currentPage,
+      page: getActiveDocument()?.currentPage || 1,
       x: Math.max(10, x),
       y: Math.max(10, y),
       width,
@@ -71,12 +71,13 @@ export async function addImageFromFile(filePath) {
       modifiedAt: new Date().toISOString()
     };
 
-    state.annotations.push(annotation);
+    const doc = getActiveDocument();
+    if (doc) doc.annotations.push(annotation);
     recordAdd(annotation);
-    state.selectedAnnotation = annotation;
+    if (doc) { doc.selectedAnnotation = annotation; doc.selectedAnnotations = [annotation]; }
     showProperties(annotation);
 
-    if (state.viewMode === 'continuous') {
+    if (doc?.viewMode === 'continuous') {
       redrawContinuous();
     } else {
       redrawAnnotations();

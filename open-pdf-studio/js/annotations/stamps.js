@@ -1,4 +1,4 @@
-import { state } from '../core/state.js';
+import { state, getActiveDocument } from '../core/state.js';
 import { createAnnotation } from './factory.js';
 import { recordAdd } from '../core/undo-manager.js';
 import { showProperties } from '../ui/panels/properties-panel.js';
@@ -30,14 +30,14 @@ export function showStampPicker(x, y) {
 
 // Place a built-in stamp
 function placeStamp(stamp, x, y) {
-  if (!state.pdfDoc) return;
+  if (!getActiveDocument()?.pdfDoc) return;
 
   const width = 160;
   const height = 50;
 
   const ann = createAnnotation({
     type: 'stamp',
-    page: state.currentPage,
+    page: getActiveDocument()?.currentPage || 1,
     x: x - width / 2,
     y: y - height / 2,
     width: width,
@@ -51,15 +51,16 @@ function placeStamp(stamp, x, y) {
     rotation: 0
   });
 
-  state.annotations.push(ann);
+  const _doc = getActiveDocument();
+  if (_doc) _doc.annotations.push(ann);
   recordAdd(ann);
 
   if (state.preferences.autoSelectAfterCreate) {
-    state.selectedAnnotation = ann;
+    if (_doc) { _doc.selectedAnnotation = ann; _doc.selectedAnnotations = [ann]; }
     showProperties(ann);
   }
 
-  if (state.viewMode === 'continuous') {
+  if (getActiveDocument()?.viewMode === 'continuous') {
     redrawContinuous();
   } else {
     redrawAnnotations();
@@ -95,7 +96,7 @@ function rasterizeSvg(svgString) {
 // Place a preconfigured image stamp from tool overrides (used by extensions).
 // Supports stampSvg (SVG string) or stampImage (data URL) in state.toolOverrides.
 export async function placeOverrideStamp(x, y) {
-  if (!state.pdfDoc) return;
+  if (!getActiveDocument()?.pdfDoc) return;
 
   const overrides = state.toolOverrides;
   if (!overrides?.stampSvg && !overrides?.stampImage) {
@@ -127,8 +128,10 @@ export async function placeOverrideStamp(x, y) {
   if (overrides.stampFillPage) {
     // Fill the page with margin
     const canvas = document.getElementById('annotation-canvas') || document.getElementById('pdf-canvas');
-    const pageW = canvas ? canvas.width / state.scale : 600;
-    const pageH = canvas ? canvas.height / state.scale : 800;
+    const doc = getActiveDocument();
+    const stampScale = doc?.scale || 1.5;
+    const pageW = canvas ? canvas.width / stampScale : 600;
+    const pageH = canvas ? canvas.height / stampScale : 800;
     const margin = overrides.stampPageMargin || 20;
     stampWidth = Math.round(pageW - margin * 2);
     stampHeight = Math.round(pageH - margin * 2);
@@ -146,7 +149,7 @@ export async function placeOverrideStamp(x, y) {
 
   const ann = createAnnotation({
     type: 'stamp',
-    page: state.currentPage,
+    page: getActiveDocument()?.currentPage || 1,
     x: stampX,
     y: stampY,
     width: stampWidth,
@@ -169,15 +172,16 @@ export async function placeOverrideStamp(x, y) {
     if (key.startsWith('tb')) ann[key] = overrides[key];
   }
 
-  state.annotations.push(ann);
+  const _doc2 = getActiveDocument();
+  if (_doc2) _doc2.annotations.push(ann);
   recordAdd(ann);
 
   if (state.preferences.autoSelectAfterCreate) {
-    state.selectedAnnotation = ann;
+    if (_doc2) { _doc2.selectedAnnotation = ann; _doc2.selectedAnnotations = [ann]; }
     showProperties(ann);
   }
 
-  if (state.viewMode === 'continuous') redrawContinuous();
+  if (getActiveDocument()?.viewMode === 'continuous') redrawContinuous();
   else redrawAnnotations();
 
   updateStatusMessage(`${overrides.stampName || 'Stamp'} placed`);
@@ -196,7 +200,7 @@ export async function updateStampImage(ann, svgString) {
   ann.originalWidth = result.img.naturalWidth;
   ann.originalHeight = result.img.naturalHeight;
   ann.modifiedAt = new Date().toISOString();
-  if (state.viewMode === 'continuous') redrawContinuous();
+  if (getActiveDocument()?.viewMode === 'continuous') redrawContinuous();
   else redrawAnnotations();
 }
 
@@ -231,7 +235,7 @@ async function loadCustomStamp(x, y) {
 
     const ann = createAnnotation({
       type: 'stamp',
-      page: state.currentPage,
+      page: getActiveDocument()?.currentPage || 1,
       x: x - width / 2,
       y: y - height / 2,
       width: width,
@@ -247,15 +251,16 @@ async function loadCustomStamp(x, y) {
       rotation: 0
     });
 
-    state.annotations.push(ann);
+    const _doc3 = getActiveDocument();
+    if (_doc3) _doc3.annotations.push(ann);
     recordAdd(ann);
 
     if (state.preferences.autoSelectAfterCreate) {
-      state.selectedAnnotation = ann;
+      if (_doc3) { _doc3.selectedAnnotation = ann; _doc3.selectedAnnotations = [ann]; }
       showProperties(ann);
     }
 
-    if (state.viewMode === 'continuous') {
+    if (getActiveDocument()?.viewMode === 'continuous') {
       redrawContinuous();
     } else {
       redrawAnnotations();

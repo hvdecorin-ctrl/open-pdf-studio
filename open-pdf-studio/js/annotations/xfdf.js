@@ -1,4 +1,4 @@
-import { state } from '../core/state.js';
+import { state, getActiveDocument } from '../core/state.js';
 import { createAnnotation, cloneAnnotation } from './factory.js';
 import { recordBulkAdd } from '../core/undo-manager.js';
 import { redrawAnnotations, redrawContinuous } from './rendering.js';
@@ -9,13 +9,14 @@ import { showMessage } from '../bridge.js';
 
 // Export annotations to XFDF XML format
 export function exportToXFDF() {
-  const annotations = state.annotations;
+  const doc = getActiveDocument();
+  const annotations = doc?.annotations || [];
   if (annotations.length === 0) {
     showMessage(i18next.t('noAnnotationsToExport'));
     return;
   }
 
-  const fileName = state.currentPdfPath ? state.currentPdfPath.split(/[\\/]/).pop() : 'document.pdf';
+  const fileName = doc?.filePath ? doc.filePath.split(/[\\/]/).pop() : 'document.pdf';
 
   let xml = '<?xml version="1.0" encoding="UTF-8"?>\n';
   xml += '<xfdf xmlns="http://ns.adobe.com/xfdf/" xml:space="preserve">\n';
@@ -49,7 +50,8 @@ export async function exportXFDFToFile() {
     return;
   }
 
-  const baseName = state.currentPdfPath ? state.currentPdfPath.replace(/\.pdf$/i, '') : 'annotations';
+  const doc = getActiveDocument();
+  const baseName = doc?.filePath ? doc.filePath.replace(/\.pdf$/i, '') : 'annotations';
   const savePath = await saveFileDialog(baseName + '.xfdf');
   if (savePath) {
     const encoder = new TextEncoder();
@@ -93,19 +95,20 @@ export function importFromXFDF(xml) {
   }
 
   const newAnnotations = [];
+  const activeDoc = getActiveDocument();
 
   // Process each annotation element
   for (const el of annots.children) {
     const ann = xfdfElementToAnnotation(el);
     if (ann) {
-      state.annotations.push(ann);
+      if (activeDoc) activeDoc.annotations.push(ann);
       newAnnotations.push(ann);
     }
   }
 
   if (newAnnotations.length > 0) {
     recordBulkAdd(newAnnotations);
-    if (state.viewMode === 'continuous') {
+    if (getActiveDocument()?.viewMode === 'continuous') {
       redrawContinuous();
     } else {
       redrawAnnotations();

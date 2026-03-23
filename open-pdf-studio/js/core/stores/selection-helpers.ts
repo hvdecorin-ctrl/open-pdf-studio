@@ -1,9 +1,12 @@
 import type { Annotation, AnnotationBounds } from '../../types/annotation.js';
-import { state } from '../state.js';
+import { state, getActiveDocument } from '../state.js';
 
 export function clearSelection(): void {
-  state.selectedAnnotation = null;
-  state.selectedAnnotations = [];
+  const doc = getActiveDocument();
+  if (doc) {
+    doc.selectedAnnotation = null;
+    doc.selectedAnnotations = [];
+  }
 }
 
 export function addToSelection(annotation: Annotation): void {

@@ -13,7 +13,9 @@ import { showMessage } from '../bridge.js';
 
 // Save PDF with annotations
 export async function savePDF(saveAsPath = null) {
-  if (!state.currentPdfPath && !saveAsPath) {
+  const activeDoc = getActiveDocument();
+  const currentPath = activeDoc?.filePath;
+  if (!currentPath && !saveAsPath) {
     // Untitled document — redirect to Save As
     return await savePDFAs();
   }
@@ -22,15 +24,14 @@ export async function savePDF(saveAsPath = null) {
     showLoading('Saving PDF...');
 
     // Get original PDF bytes (from cache or disk, with memory key fallback for untitled docs)
-    let existingPdfBytes = getCachedPdfBytes(state.currentPdfPath);
+    let existingPdfBytes = getCachedPdfBytes(currentPath);
     if (!existingPdfBytes) {
-      const doc = getActiveDocument();
-      if (doc) {
-        existingPdfBytes = getCachedPdfBytes(`__memory__${doc.id}`);
+      if (activeDoc) {
+        existingPdfBytes = getCachedPdfBytes(`__memory__${activeDoc.id}`);
       }
     }
     if (!existingPdfBytes) {
-      existingPdfBytes = await readBinaryFile(state.currentPdfPath);
+      existingPdfBytes = await readBinaryFile(currentPath);
     }
 
     const pdfDocLib = await PDFDocument.load(existingPdfBytes);
@@ -83,7 +84,9 @@ export async function savePDF(saveAsPath = null) {
 
     // Ensure AcroForm DR (Default Resources) has fonts for FreeText annotations.
     // PDF viewers resolve font names in DA strings through these resources.
-    const ftAnnotations = state.annotations.filter(a => a.type === 'textbox' || a.type === 'callout');
+    const doc = getActiveDocument();
+    const docAnnotations = doc?.annotations || [];
+    const ftAnnotations = docAnnotations.filter(a => a.type === 'textbox' || a.type === 'callout');
     if (ftAnnotations.length > 0) {
       // Collect all font names actually used
       const usedFonts = new Set();
@@ -95,7 +98,7 @@ export async function savePDF(saveAsPath = null) {
 
     // Group annotations by page
     const annotationsByPage = {};
-    for (const ann of state.annotations) {
+    for (const ann of docAnnotations) {
       if (!annotationsByPage[ann.page]) {
         annotationsByPage[ann.page] = [];
       }
@@ -117,7 +120,7 @@ export async function savePDF(saveAsPath = null) {
       const pageAnnotations = annotationsByPage[pageNum] || [];
 
       // Build annotations array: keep existing annotations we don't handle (widgets, links, etc.)
-      // and replace the ones we do with our state.annotations (which is the source of truth)
+      // and replace the ones we do with our document annotations (which is the source of truth)
       const handledSubtypes = new Set([
         '/Highlight', '/Underline', '/StrikeOut', '/Squiggly',
         '/Square', '/Circle', '/Line', '/Ink', '/PolyLine', '/Polygon',
@@ -1173,7 +1176,7 @@ export async function savePDF(saveAsPath = null) {
 
     // Save the PDF
     const pdfBytes = await pdfDocLib.save();
-    const outputPath = saveAsPath || state.currentPdfPath;
+    const outputPath = saveAsPath || currentPath;
     const savedBytes = new Uint8Array(pdfBytes);
 
     // Temporarily release lock so we can write, then re-lock
@@ -1310,7 +1313,8 @@ async function saveTextEditsToPages(pdfDocLib, pages) {
 
 // Save watermarks into PDF pages
 async function saveWatermarksToPages(pdfDocLib, pages) {
-  const watermarks = state.watermarks;
+  const doc = getActiveDocument();
+  const watermarks = doc?.watermarks;
   if (!watermarks || watermarks.length === 0) return;
 
   const totalPages = pages.length;
@@ -1652,14 +1656,15 @@ function saveBookmarksToOutline(pdfDocLib) {
 
 // Save As - prompt for new file path
 export async function savePDFAs() {
-  if (!state.pdfDoc) {
+  if (!getActiveDocument()?.pdfDoc) {
     showMessage(i18next.t('noPdfLoaded'));
     return false;
   }
 
   // Use current path as default, or the untitled file name
   const doc = getActiveDocument();
-  const defaultPath = state.currentPdfPath || (doc ? doc.fileName : 'Untitled.pdf');
+  const currentPath = doc?.filePath;
+  const defaultPath = currentPath || (doc ? doc.fileName : 'Untitled.pdf');
 
   const savePath = await saveFileDialog(defaultPath);
 
@@ -1667,15 +1672,18 @@ export async function savePDFAs() {
     const success = await savePDF(savePath);
 
     // If saved to a new path, update the current path and UI
-    if (success && savePath !== state.currentPdfPath) {
+    if (success && savePath !== currentPath) {
       // Clean up memory cache if this was an untitled doc
-      if (doc && !state.currentPdfPath) {
+      if (doc && !currentPath) {
         const memKey = `__memory__${doc.id}`;
         const { clearCachedPdfBytes } = await import('./loader.js');
         clearCachedPdfBytes(memKey);
       }
 
-      state.currentPdfPath = savePath;
+      if (doc) {
+        doc.filePath = savePath;
+        doc.fileName = savePath ? savePath.split(/[\\/]/).pop() : 'Untitled';
+      }
       updateWindowTitle();
     }
     return success || false;

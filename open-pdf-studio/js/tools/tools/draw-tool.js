@@ -12,14 +12,14 @@ export const drawTool = {
   },
 
   onPointerMove(ctx, e) {
-    const { x, y, state, canvasCtx } = ctx;
+    const { x, y, state, canvasCtx, scale } = ctx;
     if (!state.isDrawing) return;
 
     state.currentPath.push({ x, y });
 
     // Incremental draw — only the new segment
     canvasCtx.save();
-    canvasCtx.scale(state.scale, state.scale);
+    canvasCtx.scale(scale, scale);
     const prefs = state.preferences;
     canvasCtx.strokeStyle = prefs.drawStrokeColor || ctx.getColorPickerValue();
     canvasCtx.lineWidth = prefs.drawLineWidth || ctx.getLineWidthValue();
@@ -41,7 +41,8 @@ export const drawTool = {
 
     const ann = ctx.createAnnotationFromTool('draw', state.startX, state.startY, ctx.x, ctx.y, e);
     if (ann) {
-      state.annotations.push(ann);
+      const doc = state.documents[state.activeDocumentIndex];
+      if (doc) doc.annotations.push(ann);
       ctx.recordAdd(ann);
     }
     ctx.redraw();

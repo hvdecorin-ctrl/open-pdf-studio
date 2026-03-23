@@ -14,11 +14,11 @@ export default function GeneralTab(props) {
   }));
 
   const themeOptions = [
-    { value: 'openaec-brown', label: tRibbon('theme.default') },
+    { value: 'default', label: tRibbon('theme.default') },
     { value: 'light', label: tRibbon('theme.light') },
     { value: 'dark', label: tRibbon('theme.dark') },
     { value: 'blue', label: tRibbon('theme.blue') },
-    { value: 'openaec-dark', label: tRibbon('theme.amberNavy') },
+    { value: 'amber-navy', label: tRibbon('theme.amberNavy') },
     { value: 'deep-forge', label: tRibbon('theme.deepForge') },
     { value: 'highContrast', label: tRibbon('theme.highContrast') },
   ];

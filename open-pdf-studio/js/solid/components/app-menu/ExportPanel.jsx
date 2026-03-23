@@ -1,6 +1,6 @@
 import { createSignal, Show } from 'solid-js';
 import { closeAppMenu } from '../../stores/appMenuStore.js';
-import { state } from '../../../core/state.js';
+import { state, getActiveDocument } from '../../../core/state.js';
 import { exportAsImages, exportAsRasterPdf, parsePageRange } from '../../../pdf/exporter.js';
 import { useTranslation } from '../../../i18n/useTranslation.js';
 import { showMessage } from '../../stores/dialogStore.js';
@@ -33,16 +33,17 @@ export default function ExportPanel() {
   };
 
   const handleExport = async () => {
-    if (!state.pdfDoc) {
+    const doc = getActiveDocument();
+    if (!doc?.pdfDoc) {
       showMessage(tCommon('noDocumentOpen'));
       return;
     }
 
-    const totalPages = state.pdfDoc.numPages;
+    const totalPages = doc.pdfDoc.numPages;
     let pages;
 
     if (pageRange() === 'current') {
-      pages = [state.currentPage];
+      pages = [doc?.currentPage || 1];
     } else if (pageRange() === 'custom') {
       pages = parsePageRange(customPages(), totalPages);
       if (pages.length === 0) {

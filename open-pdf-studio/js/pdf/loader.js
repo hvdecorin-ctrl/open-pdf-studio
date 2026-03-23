@@ -30,6 +30,28 @@ export function setCachedPdfBytes(filePath, bytes) {
   originalBytesCache.set(filePath, bytes);
 }
 
+/**
+ * Reload a document's pdfDoc from new bytes (used by Find & Replace).
+ * Updates the pdf.js document object without reloading the entire UI.
+ */
+export async function reloadDocumentFromBytes(doc, bytes) {
+  if (!doc) return;
+
+  doc._sharedPdfLibDoc = null;
+  doc._sharedPdfLibDocPromise = null;
+
+  // Replace the pdf.js document with one loaded from the new bytes
+  doc.pdfDoc = await pdfjsLib.getDocument({
+    data: bytes.slice(), // copy — pdf.js transfers the buffer
+    cMapUrl: '/pdfjs/web/cmaps/',
+    cMapPacked: true,
+    standardFontDataUrl: '/pdfjs/web/standard_fonts/',
+    isEvalSupported: false,
+  }).promise;
+
+  doc.modified = true;
+}
+
 export function clearCachedPdfBytes(filePath) {
   if (filePath) {
     originalBytesCache.delete(filePath);

@@ -1,6 +1,6 @@
 import { createSignal } from 'solid-js';
 import { createStore } from 'solid-js/store';
-import { state } from '../../core/state.js';
+import { state, getActiveDocument } from '../../core/state.js';
 import { recordPropertyChange } from '../../core/undo-manager.js';
 import { redrawAnnotations, redrawContinuous } from '../../annotations/rendering.js';
 import { computeTextboxContentHeight } from '../../annotations/rendering/shapes.js';
@@ -116,7 +116,7 @@ const [customFieldsDef, setCustomFieldsDef] = createSignal([]);
 let currentAnnotation = null;
 
 function redraw() {
-  if (state.viewMode === 'continuous') {
+  if (getActiveDocument()?.viewMode === 'continuous') {
     redrawContinuous();
   } else {
     redrawAnnotations();
@@ -511,7 +511,8 @@ export function storeShowTextEditProperties(info) {
 
 // Populate document info
 export async function populateDocInfo() {
-  const filePath = state.currentPdfPath || '';
+  const doc = getActiveDocument();
+  const filePath = doc?.filePath || '';
   if (filePath) {
     const parts = filePath.replace(/\\/g, '/').split('/');
     setDocInfo('filename', parts[parts.length - 1]);
@@ -521,10 +522,10 @@ export async function populateDocInfo() {
     setDocInfo('filepath', '-');
   }
 
-  if (state.pdfDoc) {
-    setDocInfo('pages', `${state.currentPage} / ${state.pdfDoc.numPages}`);
+  if (doc?.pdfDoc) {
+    setDocInfo('pages', `${doc.currentPage} / ${doc.pdfDoc.numPages}`);
     try {
-      const page = await state.pdfDoc.getPage(state.currentPage);
+      const page = await doc.pdfDoc.getPage(doc.currentPage);
       const vp = page.getViewport({ scale: 1 });
       const wMm = (vp.width / 72 * 25.4).toFixed(1);
       const hMm = (vp.height / 72 * 25.4).toFixed(1);
@@ -534,7 +535,7 @@ export async function populateDocInfo() {
     }
 
     try {
-      const metadata = await state.pdfDoc.getMetadata();
+      const metadata = await doc.pdfDoc.getMetadata();
       const info = metadata.info || {};
       setDocInfo('title', info.Title || '-');
       setDocInfo('author', info.Author || '-');
@@ -548,10 +549,12 @@ export async function populateDocInfo() {
     setDocInfo('pageSize', '-');
   }
 
-  const total = state.annotations.length;
-  const onPage = state.annotations.filter(a => a.page === state.currentPage).length;
+  const docAnnotations = doc?.annotations || [];
+  const total = docAnnotations.length;
+  const docPage = doc ? doc.currentPage : 1;
+  const onPage = docAnnotations.filter(a => a.page === docPage).length;
   setDocInfo('annotCount', String(total));
-  setDocInfo('annotPage', i18next.t('docInfo.onPageCount', { count: onPage, page: state.currentPage, ns: 'properties' }));
+  setDocInfo('annotPage', i18next.t('docInfo.onPageCount', { count: onPage, page: docPage, ns: 'properties' }));
 }
 
 // Apply a property change to a single annotation object
@@ -624,7 +627,8 @@ function recomputeMeasureText(ann) {
 export function updateAnnotProp(key, value) {
   // Multi-selection mode: apply to all selected annotations
   if (annotProps.multiCount > 0) {
-    const selected = state.selectedAnnotations;
+    const _doc = getActiveDocument();
+    const selected = _doc ? _doc.selectedAnnotations : [];
     if (!selected || selected.length === 0) return;
 
     // Block all edits except lock toggle when any annotation is locked

@@ -1,7 +1,7 @@
 import { createSignal, onMount } from 'solid-js';
 import Dialog from '../Dialog.jsx';
 import { closeDialog } from '../../stores/dialogStore.js';
-import { state, getPageRotation } from '../../../core/state.js';
+import { state, getActiveDocument, getPageRotation } from '../../../core/state.js';
 import { useTranslation } from '../../../i18n/useTranslation.js';
 
 function PropRow(props) {
@@ -21,9 +21,10 @@ export default function PagePropertiesDialog(props) {
   const [pageData, setPageData] = createSignal(null);
 
   onMount(async () => {
-    if (!state.pdfDoc) return;
+    const doc = getActiveDocument();
+    if (!doc?.pdfDoc) return;
     try {
-      const page = await state.pdfDoc.getPage(pageNum);
+      const page = await doc.pdfDoc.getPage(pageNum);
       const extraRotation = getPageRotation(pageNum);
       const viewport = page.getViewport({ scale: 1 });
       const widthPt = viewport.width;

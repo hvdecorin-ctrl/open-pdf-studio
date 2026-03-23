@@ -1,7 +1,7 @@
 import { createSignal, onMount, onCleanup, For, Show } from 'solid-js';
 import Dialog from '../Dialog.jsx';
 import { closeDialog, showMessage } from '../../stores/dialogStore.js';
-import { state } from '../../../core/state.js';
+import { state, getActiveDocument } from '../../../core/state.js';
 import { createAnnotation } from '../../../annotations/factory.js';
 import { recordAdd } from '../../../core/undo-manager.js';
 import { showProperties } from '../../../ui/panels/properties-panel.js';
@@ -96,7 +96,7 @@ async function placeSignatureFromDataUrl(dataUrl, x, y, color, t) {
 
   const ann = createAnnotation({
     type: 'signature',
-    page: state.currentPage,
+    page: getActiveDocument()?.currentPage || 1,
     x: x - width / 2,
     y: y - height / 2,
     width: width,
@@ -111,15 +111,17 @@ async function placeSignatureFromDataUrl(dataUrl, x, y, color, t) {
     locked: false
   });
 
-  state.annotations.push(ann);
+  const doc = getActiveDocument();
+  if (doc) doc.annotations.push(ann);
   recordAdd(ann);
 
   if (state.preferences.autoSelectAfterCreate) {
-    state.selectedAnnotation = ann;
+    const _sigDoc = getActiveDocument();
+    if (_sigDoc) { _sigDoc.selectedAnnotation = ann; _sigDoc.selectedAnnotations = [ann]; }
     showProperties(ann);
   }
 
-  if (state.viewMode === 'continuous') {
+  if (doc?.viewMode === 'continuous') {
     redrawContinuous();
   } else {
     redrawAnnotations();

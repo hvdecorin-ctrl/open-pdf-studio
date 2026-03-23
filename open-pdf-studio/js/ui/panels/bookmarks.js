@@ -201,7 +201,7 @@ export function clearBookmarkSelection() {
 }
 
 function navigateToBookmark(bm) {
-  if (!bm || !state.pdfDoc) return;
+  if (!bm || !getActiveDocument()?.pdfDoc) return;
   goToPage(bm.page);
 }
 
@@ -237,7 +237,7 @@ export async function addBookmark() {
   const doc = getActiveDocument();
   if (!doc) return;
 
-  const result = await showBookmarkDialog('Add Bookmark', '', state.currentPage);
+  const result = await showBookmarkDialog('Add Bookmark', '', doc.currentPage);
   if (!result) return;
 
   if (!doc.bookmarks) doc.bookmarks = [];
@@ -275,7 +275,7 @@ export async function addChildBookmark() {
   const doc = getActiveDocument();
   if (!doc || !selectedBookmarkId) return;
 
-  const result = await showBookmarkDialog('Add Child Bookmark', '', state.currentPage);
+  const result = await showBookmarkDialog('Add Child Bookmark', '', doc.currentPage);
   if (!result) return;
 
   if (!doc.bookmarks) doc.bookmarks = [];

@@ -2,7 +2,7 @@ import { For, Show, onMount, onCleanup, createSignal, createEffect } from 'solid
 import { getOpenPopups, closeStickyPopup, updatePopupText, updatePopupPosition } from '../stores/stickyNotePopupStore.js';
 import { showAnnotationMenu } from '../stores/contextMenuStore.js';
 import { storeShowProperties, updateAnnotProp } from '../stores/propertiesStore.js';
-import { state } from '../../core/state.js';
+import { state, getActiveDocument } from '../../core/state.js';
 import { annotationCanvas } from '../../ui/dom-elements.js';
 import { redrawAnnotations, redrawContinuous } from '../../annotations/rendering.js';
 
@@ -53,7 +53,7 @@ function StickyNotePopup(props) {
     const canvas = annotationCanvas || document.getElementById('annotation-canvas');
     if (!canvas) return;
     const canvasRect = canvas.getBoundingClientRect();
-    const scale = state.documents?.[state.activeDocumentIndex]?.scale || state.scale || 1;
+    const scale = state.documents?.[state.activeDocumentIndex]?.scale || 1.5;
 
     const px = a.popupX !== undefined ? a.popupX : a.x + 30;
     const py = a.popupY !== undefined ? a.popupY : a.y;
@@ -70,7 +70,7 @@ function StickyNotePopup(props) {
     const a = ann();
     if (a) {
       a._popupFocused = active;
-      if (state.viewMode === 'continuous') redrawContinuous();
+      if (getActiveDocument()?.viewMode === 'continuous') redrawContinuous();
       else redrawAnnotations(true);
     }
   });
@@ -114,13 +114,13 @@ function StickyNotePopup(props) {
       const canvas = annotationCanvas || document.getElementById('annotation-canvas');
       if (canvas) {
         const canvasRect = canvas.getBoundingClientRect();
-        const scale = state.documents?.[state.activeDocumentIndex]?.scale || state.scale || 1;
+        const scale = state.documents?.[state.activeDocumentIndex]?.scale || 1.5;
         updatePopupPosition(
           ann().id,
           (newPos.x - canvasRect.left) / scale,
           (newPos.y - canvasRect.top) / scale
         );
-        if (state.viewMode === 'continuous') redrawContinuous();
+        if (getActiveDocument()?.viewMode === 'continuous') redrawContinuous();
         else redrawAnnotations(true);
       }
     };
@@ -131,7 +131,7 @@ function StickyNotePopup(props) {
       document.removeEventListener('mouseup', handleMouseUp);
 
       // Final redraw (non-lightweight)
-      if (state.viewMode === 'continuous') redrawContinuous();
+      if (getActiveDocument()?.viewMode === 'continuous') redrawContinuous();
       else redrawAnnotations();
     };
 
@@ -202,7 +202,7 @@ function StickyNotePopup(props) {
 
   const handleClose = () => {
     closeStickyPopup(ann().id);
-    if (state.viewMode === 'continuous') redrawContinuous();
+    if (getActiveDocument()?.viewMode === 'continuous') redrawContinuous();
     else redrawAnnotations();
   };
 
@@ -247,7 +247,8 @@ function StickyNotePopup(props) {
         e.stopPropagation();
         const a = ann();
         if (a) {
-          state.selectedAnnotations = [a];
+          const _d = getActiveDocument();
+          if (_d) { _d.selectedAnnotations = [a]; _d.selectedAnnotation = a; }
           storeShowProperties(a);
         }
       }}
@@ -288,7 +289,8 @@ function StickyNotePopup(props) {
             onClick={(e) => {
               e.stopPropagation();
               const rect = e.currentTarget.getBoundingClientRect();
-              state.selectedAnnotations = [ann()];
+              const _d2 = getActiveDocument();
+              if (_d2) { _d2.selectedAnnotations = [ann()]; _d2.selectedAnnotation = ann(); }
               showAnnotationMenu(rect.left, rect.top - 4, ann());
             }}
           >&#8230;</button>
@@ -301,7 +303,8 @@ function StickyNotePopup(props) {
               if (!a) return;
               const newVal = !a.locked;
               // Update via properties store for undo support + panel sync
-              state.selectedAnnotations = [a];
+              const _d3 = getActiveDocument();
+              if (_d3) { _d3.selectedAnnotations = [a]; _d3.selectedAnnotation = a; }
               storeShowProperties(a);
               updateAnnotProp('locked', newVal);
               setLocked(newVal);

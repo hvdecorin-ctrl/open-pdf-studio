@@ -123,10 +123,11 @@ function renderHeaderFooter(ctx, wm, pageNum, totalPages, pageWidth, pageHeight)
 }
 
 function renderWatermarksForLayer(ctx, layer, pageNum, pageWidth, pageHeight) {
-  const watermarks = state.watermarks;
+  const doc = getActiveDocument();
+  const watermarks = doc?.watermarks;
   if (!watermarks || watermarks.length === 0) return;
 
-  const totalPages = state.pdfDoc ? state.pdfDoc.numPages : 1;
+  const totalPages = doc?.pdfDoc ? doc.pdfDoc.numPages : 1;
 
   for (const wm of watermarks) {
     if (!wm.enabled) continue;

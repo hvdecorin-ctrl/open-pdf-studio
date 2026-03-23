@@ -38,6 +38,7 @@ export interface TextSelection {
 export interface SearchState {
   isOpen: boolean;
   query: string;
+  replaceQuery: string;
   results: any[];
   currentIndex: number;
   totalMatches: number;
@@ -144,6 +145,7 @@ export const state = createMutable<AppState>({
   search: {
     isOpen: false,
     query: '',
+    replaceQuery: '',
     results: [],
     currentIndex: -1,
     totalMatches: 0,
@@ -233,136 +235,11 @@ export const state = createMutable<AppState>({
   get pdfTextEditState() { return editingState.pdfTextEditState; },
   set pdfTextEditState(v) { editingState.pdfTextEditState = v; },
 
-  // Document delegation
-  get pdfDoc() {
-    const doc = this.documents[this.activeDocumentIndex];
-    return doc ? doc.pdfDoc : null;
-  },
-  set pdfDoc(value) {
-    const doc = this.documents[this.activeDocumentIndex];
-    if (doc) doc.pdfDoc = value;
-  },
-  get currentPage() {
-    const doc = this.documents[this.activeDocumentIndex];
-    return doc ? doc.currentPage : 1;
-  },
-  set currentPage(value) {
-    const doc = this.documents[this.activeDocumentIndex];
-    if (doc) doc.currentPage = value;
-  },
-  get scale() {
-    const doc = this.documents[this.activeDocumentIndex];
-    return doc ? doc.scale : 1.5;
-  },
-  set scale(value) {
-    const doc = this.documents[this.activeDocumentIndex];
-    if (doc) doc.scale = value;
-  },
-  get viewMode(): 'single' | 'continuous' {
-    const doc = this.documents[this.activeDocumentIndex];
-    return doc ? doc.viewMode : 'single';
-  },
-  set viewMode(value) {
-    const doc = this.documents[this.activeDocumentIndex];
-    if (doc) doc.viewMode = value;
-  },
-  get currentPdfPath() {
-    const doc = this.documents[this.activeDocumentIndex];
-    return doc ? doc.filePath : null;
-  },
-  set currentPdfPath(value) {
-    const doc = this.documents[this.activeDocumentIndex];
-    if (doc) {
-      doc.filePath = value;
-      doc.fileName = value ? value.split(/[\\/]/).pop()! : 'Untitled';
-    }
-  },
-  get annotations() {
-    const doc = this.documents[this.activeDocumentIndex];
-    return doc ? doc.annotations : [];
-  },
-  set annotations(value) {
-    const doc = this.documents[this.activeDocumentIndex];
-    if (doc) doc.annotations = value;
-  },
-  get textEdits() {
-    const doc = this.documents[this.activeDocumentIndex];
-    return doc ? doc.textEdits : [];
-  },
-  set textEdits(value) {
-    const doc = this.documents[this.activeDocumentIndex];
-    if (doc) doc.textEdits = value;
-  },
-  get watermarks() {
-    const doc = this.documents[this.activeDocumentIndex];
-    return doc ? doc.watermarks : [];
-  },
-  set watermarks(value) {
-    const doc = this.documents[this.activeDocumentIndex];
-    if (doc) doc.watermarks = value;
-  },
-  get bookmarks() {
-    const doc = this.documents[this.activeDocumentIndex];
-    return doc ? doc.bookmarks : [];
-  },
-  set bookmarks(value) {
-    const doc = this.documents[this.activeDocumentIndex];
-    if (doc) doc.bookmarks = value;
-  },
-  get redoStack() {
-    const doc = this.documents[this.activeDocumentIndex];
-    return doc ? doc.redoStack : [];
-  },
-  set redoStack(value) {
-    const doc = this.documents[this.activeDocumentIndex];
-    if (doc) doc.redoStack = value;
-  },
-  get pageRotations() {
-    const doc = this.documents[this.activeDocumentIndex];
-    return doc ? doc.pageRotations : {};
-  },
-  set pageRotations(value) {
-    const doc = this.documents[this.activeDocumentIndex];
-    if (doc) doc.pageRotations = value;
-  },
-  get selectedAnnotation() {
-    const doc = this.documents[this.activeDocumentIndex];
-    return doc ? doc.selectedAnnotation : null;
-  },
-  set selectedAnnotation(value) {
-    const doc = this.documents[this.activeDocumentIndex];
-    if (doc) {
-      doc.selectedAnnotation = value;
-      if (value) {
-        doc.selectedAnnotations = [value];
-      } else {
-        doc.selectedAnnotations = [];
-      }
-    }
-  },
-  get measureScale() {
-    const doc = this.documents[this.activeDocumentIndex];
-    return doc ? doc.measureScale : null;
-  },
-  set measureScale(value) {
-    const doc = this.documents[this.activeDocumentIndex];
-    if (doc) doc.measureScale = value;
-  },
-  get selectedAnnotations() {
-    const doc = this.documents[this.activeDocumentIndex];
-    return doc ? doc.selectedAnnotations : [];
-  },
-  set selectedAnnotations(value) {
-    const doc = this.documents[this.activeDocumentIndex];
-    if (doc) {
-      doc.selectedAnnotations = value;
-      doc.selectedAnnotation = value.length > 0 ? value[0] : null;
-    }
-  }
-} as any); // cast needed: createMutable doesn't support getter/setter syntax in type param
+} as any);
 
 export function noPdf(): boolean {
-  return !state.pdfDoc;
+  const d = state.documents[state.activeDocumentIndex];
+  return !d?.pdfDoc;
 }
 
 export function getActiveDocument(): DocumentState | null {

@@ -83,10 +83,12 @@ export async function undo() {
   // For modify operations, keep selection intact and refresh properties
   if (cmd.type === 'modifyAnnotation' || cmd.type === 'bulkModify') {
     const { showProperties, showMultiSelectionProperties } = await import('../ui/panels/properties-panel.js');
-    if (state.selectedAnnotations.length > 1) {
+    const _uDoc = getActiveDocument();
+    const _uSel = _uDoc ? _uDoc.selectedAnnotations : [];
+    if (_uSel.length > 1) {
       showMultiSelectionProperties();
-    } else if (state.selectedAnnotation) {
-      showProperties(state.selectedAnnotation);
+    } else if (_uDoc?.selectedAnnotation) {
+      showProperties(_uDoc.selectedAnnotation);
     }
   } else {
     // Clear selection of annotations that no longer exist
@@ -94,7 +96,8 @@ export async function undo() {
     if (doc) {
       const remaining = doc.selectedAnnotations.filter(a => doc.annotations.includes(a));
       if (remaining.length !== doc.selectedAnnotations.length) {
-        state.selectedAnnotations = remaining;
+        doc.selectedAnnotations = remaining;
+        doc.selectedAnnotation = remaining.length > 0 ? remaining[0] : null;
       }
     }
     const { hideProperties } = await import('../ui/panels/properties-panel.js');
@@ -126,10 +129,12 @@ export async function redo() {
   // For modify operations, keep selection intact and refresh properties
   if (cmd.type === 'modifyAnnotation' || cmd.type === 'bulkModify') {
     const { showProperties, showMultiSelectionProperties } = await import('../ui/panels/properties-panel.js');
-    if (state.selectedAnnotations.length > 1) {
+    const _uDoc = getActiveDocument();
+    const _uSel = _uDoc ? _uDoc.selectedAnnotations : [];
+    if (_uSel.length > 1) {
       showMultiSelectionProperties();
-    } else if (state.selectedAnnotation) {
-      showProperties(state.selectedAnnotation);
+    } else if (_uDoc?.selectedAnnotation) {
+      showProperties(_uDoc.selectedAnnotation);
     }
   } else {
     // Clear selection of annotations that no longer exist
@@ -137,7 +142,8 @@ export async function redo() {
     if (doc) {
       const remaining = doc.selectedAnnotations.filter(a => doc.annotations.includes(a));
       if (remaining.length !== doc.selectedAnnotations.length) {
-        state.selectedAnnotations = remaining;
+        doc.selectedAnnotations = remaining;
+        doc.selectedAnnotation = remaining.length > 0 ? remaining[0] : null;
       }
     }
     const { hideProperties } = await import('../ui/panels/properties-panel.js');
@@ -426,7 +432,7 @@ function applyRedo(cmd) {
 
 async function refresh() {
   const { redrawAnnotations, redrawContinuous, updateQuickAccessButtons } = await import('../annotations/rendering.js');
-  if (state.viewMode === 'continuous') {
+  if (getActiveDocument()?.viewMode === 'continuous') {
     redrawContinuous();
   } else {
     redrawAnnotations();

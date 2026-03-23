@@ -1,4 +1,4 @@
-import { state } from '../core/state.js';
+import { state, getActiveDocument } from '../core/state.js';
 import { showTextSelectionContextMenu } from '../ui/chrome/context-menus.js';
 
 /**
@@ -51,7 +51,7 @@ function handleSelectionChange() {
   // Update selection state
   state.textSelection.hasSelection = true;
   state.textSelection.selectedText = selection.toString();
-  state.textSelection.pageNum = parseInt(textLayer.dataset.page) || state.currentPage;
+  state.textSelection.pageNum = parseInt(textLayer.dataset.page) || (getActiveDocument()?.currentPage || 1);
 }
 
 /**
@@ -180,15 +180,17 @@ export function getSelectionRectsForAnnotation() {
   const textLayer = findParentTextLayer(selection.anchorNode);
   if (!textLayer) return [];
 
-  const pageNum = parseInt(textLayer.dataset.page) || state.currentPage;
+  const pageNum = parseInt(textLayer.dataset.page) || (getActiveDocument()?.currentPage || 1);
   const textLayerRect = textLayer.getBoundingClientRect();
 
+  const doc = getActiveDocument();
+  const scale = doc?.scale || 1.5;
   for (const rect of rects) {
     // Convert DOM coordinates to PDF coordinates (relative to text layer, unscaled)
-    const x = (rect.left - textLayerRect.left) / state.scale;
-    const y = (rect.top - textLayerRect.top) / state.scale;
-    const width = rect.width / state.scale;
-    const height = rect.height / state.scale;
+    const x = (rect.left - textLayerRect.left) / scale;
+    const y = (rect.top - textLayerRect.top) / scale;
+    const width = rect.width / scale;
+    const height = rect.height / scale;
 
     result.push({ x, y, width, height, page: pageNum });
   }

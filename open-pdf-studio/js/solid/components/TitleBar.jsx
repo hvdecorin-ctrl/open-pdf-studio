@@ -40,7 +40,7 @@ export default function TitleBar() {
     if (!d || !d.fileName) return '';
     return (d.modified ? '* ' : '') + d.fileName;
   };
-  const hasPdf = () => !!state.pdfDoc;
+  const hasPdf = () => !!state.documents[state.activeDocumentIndex]?.pdfDoc;
   const undoEnabled = () => {
     const d = doc();
     return !!d && !!d.undoStack && d.undoStack.length > 0;
@@ -52,7 +52,7 @@ export default function TitleBar() {
   const hasDialogs = () => getDialogs().length > 0;
 
   return (
-    <div class={`title-bar${hasDialogs() ? ' dialogs-open' : ''}`} attr:data-tauri-drag-region={hasDialogs() ? undefined : ''}>
+    <div class={`title-bar${hasDialogs() ? ' dialogs-open' : ''}`} data-tauri-drag-region>
       <div class="title-bar-left">
         <div class="quick-access-toolbar">
           <img src="icon.png" class="app-icon" alt={tCommon('appName')} />
@@ -134,7 +134,7 @@ export default function TitleBar() {
         </div>
       </div>
 
-      <div class="title-bar-center" attr:data-tauri-drag-region={hasDialogs() ? undefined : ''}>
+      <div class="title-bar-center">
         <span class="app-title">{tCommon('appName')} v{__APP_VERSION__}</span>
         <span class="file-name">{fileName()}</span>
       </div>

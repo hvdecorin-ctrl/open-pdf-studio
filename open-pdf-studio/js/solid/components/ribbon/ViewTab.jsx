@@ -22,10 +22,10 @@ export default function ViewTab() {
       <div class="ribbon-groups">
         <RibbonGroup label={t('view.pageDisplay')}>
           <RibbonButton id="single-page" title={t('view.singlePage')} icon={singlePageIcon} label={t('view.single')}
-            disabled={noPdf()} active={state.viewMode === 'single'}
+            disabled={noPdf()} active={(state.documents[state.activeDocumentIndex]?.viewMode || 'single') === 'single'}
             onClick={() => setViewMode('single')} />
           <RibbonButton id="continuous" title={t('view.continuousTitle')} icon={continuousIcon} label={t('view.continuous')}
-            active={state.viewMode === 'continuous'}
+            active={(state.documents[state.activeDocumentIndex]?.viewMode || 'single') === 'continuous'}
             disabled={true} style={{ opacity: '0.4', cursor: 'default' }} />
         </RibbonGroup>
 

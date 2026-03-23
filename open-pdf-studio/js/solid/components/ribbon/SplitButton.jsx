@@ -31,7 +31,7 @@ export default function SplitButton(props) {
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M6 9l6 6 6-6"/>
         </svg>
       </button>
-      <div class={`ribbon-split-btn-menu${menuOpen() ? ' show' : ''}`}>
+      <div class={`ribbon-split-btn-menu${menuOpen() ? ' show' : ''}`} onClick={() => setMenuOpen(false)}>
         {props.children}
       </div>
     </div>

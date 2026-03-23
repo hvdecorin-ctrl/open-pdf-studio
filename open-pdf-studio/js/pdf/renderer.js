@@ -1,4 +1,4 @@
-import { state, getPageRotation, setPageRotation } from '../core/state.js';
+import { state, getActiveDocument, getPageRotation, setPageRotation } from '../core/state.js';
 // Always-fresh DOM refs (never stale regardless of init timing or bundler behavior)
 function getPdfCanvas() { return document.getElementById('pdf-canvas'); }
 function getAnnotationCanvas() { return document.getElementById('annotation-canvas'); }
@@ -24,8 +24,6 @@ export async function renderPage(pageNum) {
   // from appearing at wrong positions during canvas resize
   clearHighlights();
 
-  // Read directly from document object — state.scale getter is unreliable
-  // because Solid's createMutable caches values written via the setter
   const doc = state.documents[state.activeDocumentIndex];
   if (!doc || !doc.pdfDoc) return;
   const pdfDoc = doc.pdfDoc;
@@ -353,16 +351,17 @@ function setupContinuousPageEvents(canvas, pageNum) {
 
 // Switch view mode
 export async function setViewMode(mode) {
-  if (!state.pdfDoc) return;
+  const doc = getActiveDocument();
+  if (!doc?.pdfDoc) return;
 
-  state.viewMode = mode;
+  if (doc) doc.viewMode = mode;
   const singleContainer = document.getElementById('canvas-container');
   const continuousContainer = document.getElementById('continuous-container');
 
   if (mode === 'single') {
     singleContainer.style.display = 'inline-block';
     continuousContainer.style.display = 'none';
-    await renderPage(state.currentPage);
+    await renderPage(doc.currentPage);
   } else if (mode === 'continuous') {
     singleContainer.style.display = 'none';
     continuousContainer.style.display = 'flex';
@@ -372,15 +371,16 @@ export async function setViewMode(mode) {
 
 // Go to specific page
 export async function goToPage(pageNum) {
-  if (!state.pdfDoc) return;
+  const doc = getActiveDocument();
+  if (!doc?.pdfDoc) return;
 
   if (pageNum < 1) pageNum = 1;
-  if (pageNum > state.pdfDoc.numPages) pageNum = state.pdfDoc.numPages;
+  if (pageNum > doc.pdfDoc.numPages) pageNum = doc.pdfDoc.numPages;
 
-  state.currentPage = pageNum;
+  if (doc) doc.currentPage = pageNum;
   hideProperties();
 
-  if (state.viewMode === 'single') {
+  if (doc?.viewMode === 'single') {
     await renderPage(pageNum);
     const pdfContainer = document.getElementById('pdf-container');
     if (pdfContainer) {
@@ -496,17 +496,17 @@ export async function actualSize() {
 
 // Rotate the current page by a delta (±90)
 export async function rotatePage(delta, targetPage) {
-  if (!state.pdfDoc) return;
-  const pageNum = targetPage || state.currentPage;
+  const doc = getActiveDocument();
+  if (!doc?.pdfDoc) return;
+  const pageNum = targetPage || doc.currentPage;
   const current = getPageRotation(pageNum);
   setPageRotation(pageNum, current + delta);
 
   // Mark document as modified
-  const doc = state.documents[state.activeDocumentIndex];
   if (doc) doc.modified = true;
 
   // Re-render
-  if (state.viewMode === 'continuous') {
+  if (doc?.viewMode === 'continuous') {
     await renderContinuous();
   } else {
     await renderPage(pageNum);

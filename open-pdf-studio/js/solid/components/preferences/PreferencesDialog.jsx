@@ -2,7 +2,7 @@ import { createSignal, Switch, Match, For } from 'solid-js';
 import Dialog from '../Dialog.jsx';
 import { closeDialog } from '../../stores/dialogStore.js';
 import { DEFAULT_PREFERENCES } from '../../../core/constants.js';
-import { state } from '../../../core/state.js';
+import { state, getActiveDocument } from '../../../core/state.js';
 import { savePreferences, applyTheme } from '../../../core/preferences.js';
 import { useTranslation } from '../../../i18n/useTranslation.js';
 import { isMobile, isTauri, getUsername } from '../../../core/platform.js';
@@ -91,11 +91,11 @@ export default function PreferencesDialog(props) {
     // Apply tool palette visibility change
     import('../ToolPalette.jsx').then(m => m.initToolPalette());
     // Re-render pages when thin lines setting changed
-    if (state.preferences.thinLines !== prevThinLines && state.pdfDoc) {
-      if (state.viewMode === 'continuous') {
+    if (state.preferences.thinLines !== prevThinLines && getActiveDocument()?.pdfDoc) {
+      if (getActiveDocument()?.viewMode === 'continuous') {
         import('../../../pdf/renderer.js').then(m => m.renderContinuous());
       } else {
-        import('../../../pdf/renderer.js').then(m => m.renderPage(state.currentPage));
+        import('../../../pdf/renderer.js').then(m => m.renderPage(getActiveDocument()?.currentPage || 1));
       }
     }
     close();

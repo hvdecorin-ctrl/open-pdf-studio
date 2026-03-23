@@ -1,4 +1,4 @@
-import { state } from '../core/state.js';
+import { state, getActiveDocument } from '../core/state.js';
 import { goToPage } from './renderer.js';
 import { openExternal } from '../core/platform.js';
 import i18next from '../i18n/config.js';
@@ -136,23 +136,24 @@ function openExternalLink(url) {
  * @param {string|Array} dest - Destination (named or explicit)
  */
 async function handleInternalLink(dest) {
-  if (!state.pdfDoc) return;
+  const doc = getActiveDocument();
+  if (!doc?.pdfDoc) return;
 
   try {
     let pageIndex;
 
     if (typeof dest === 'string') {
       // Named destination - resolve it
-      const destination = await state.pdfDoc.getDestination(dest);
+      const destination = await doc.pdfDoc.getDestination(dest);
       if (destination) {
         const ref = destination[0];
-        pageIndex = await state.pdfDoc.getPageIndex(ref);
+        pageIndex = await doc.pdfDoc.getPageIndex(ref);
       }
     } else if (Array.isArray(dest)) {
       // Explicit destination array [pageRef, type, ...params]
       const ref = dest[0];
       if (ref && typeof ref === 'object') {
-        pageIndex = await state.pdfDoc.getPageIndex(ref);
+        pageIndex = await doc.pdfDoc.getPageIndex(ref);
       } else if (typeof ref === 'number') {
         pageIndex = ref;
       }
@@ -243,7 +244,8 @@ export async function createSinglePageLinkLayer(page, viewport) {
   // Remove existing link layer
   clearSinglePageLinkLayer();
 
-  await createLinkLayer(page, viewport, container, state.currentPage);
+  const doc = getActiveDocument();
+  await createLinkLayer(page, viewport, container, doc ? doc.currentPage : 1);
 }
 
 /**
@@ -259,7 +261,8 @@ export function clearSinglePageLinkLayer() {
   }
 
   // Clear from tracking map
-  linkLayers.delete(state.currentPage);
+  const clDoc = getActiveDocument();
+  linkLayers.delete(clDoc ? clDoc.currentPage : 1);
 }
 
 /**

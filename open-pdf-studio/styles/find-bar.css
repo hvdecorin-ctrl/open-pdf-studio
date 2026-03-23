@@ -1,19 +1,19 @@
 /* ========================================
-   Find Bar Styles
+   Find Bar — VS Code-inspired compact design
    ======================================== */
 
 .find-bar {
   display: none;
   position: absolute;
-  top: 8px;
-  right: 8px;
+  top: 4px;
+  right: 12px;
   z-index: 1000;
-  background: #ffffff;
-  border: 1px solid #d4d4d4;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
-  padding: 8px 12px;
-  align-items: center;
-  gap: 8px;
+  background: var(--theme-surface, #ffffff);
+  border: 1px solid var(--theme-border, #d4d4d4);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  padding: 4px;
+  align-items: flex-start;
+  gap: 2px;
   font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
   font-size: 12px;
 }
@@ -22,118 +22,227 @@
   display: flex;
 }
 
-.find-close-btn {
-  width: 20px;
-  height: 20px;
+/* --- Expand/collapse button --- */
+
+.find-expand-btn {
+  width: 18px;
+  height: 18px;
   border: none;
   background: transparent;
-  font-size: 16px;
-  color: #666;
+  color: var(--theme-text-secondary, #888);
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 0;
   flex-shrink: 0;
+  cursor: default;
+  align-self: flex-start;
+  margin-top: 3px;
 }
 
-.find-close-btn:hover {
-  color: #e81123;
+.find-expand-btn:hover {
+  color: var(--theme-text, #333);
+  background: var(--theme-hover, #e5e5e5);
 }
 
-.find-input-container {
+/* --- Row layout --- */
+
+.find-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+}
+
+.find-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+/* --- Input with inline count --- */
+
+.find-input-wrapper {
+  display: flex;
+  align-items: center;
+  border: 1px solid var(--theme-border, #d4d4d4);
+  background: var(--theme-bg, #ffffff);
   flex-shrink: 0;
+  height: 24px;
+}
+
+.find-input-wrapper:focus-within {
+  border-color: var(--theme-accent, #0078d4);
+}
+
+.find-input-wrapper.not-found {
+  border-color: #e81123;
+  background: rgba(232, 17, 35, 0.06);
 }
 
 .find-input {
-  width: 200px;
-  padding: 4px 8px;
-  border: 1px solid #d4d4d4;
+  width: 180px;
+  padding: 0 6px;
+  border: none;
+  background: transparent;
   font-size: 12px;
   font-family: inherit;
-}
-
-.find-input:focus {
+  color: var(--theme-text, #333);
+  height: 100%;
   outline: none;
-  border-color: #0078d4;
 }
 
-.find-input.not-found {
-  border-color: #e81123;
-  background-color: #fff5f5;
+.find-input::placeholder {
+  color: var(--theme-text-secondary, #999);
 }
 
-.find-nav-buttons {
-  display: flex;
-  gap: 2px;
+.find-count-inline {
+  font-size: 10px;
+  color: var(--theme-text-secondary, #888);
+  white-space: nowrap;
+  padding: 0 6px;
   flex-shrink: 0;
+  user-select: none;
+  min-width: 50px;
+  text-align: right;
 }
 
-.find-nav-btn {
-  width: 24px;
+.find-count-inline.is-searching {
+  color: var(--theme-accent, #0078d4);
+}
+
+/* --- Replace input --- */
+
+.replace-input-wrapper {
   height: 24px;
-  border: 1px solid #d4d4d4;
-  background: #f5f5f5;
+}
+
+.replace-input-wrapper .find-input {
+  width: 180px;
+}
+
+/* --- Buttons (nav + toggles) --- */
+
+.find-btn {
+  width: 22px;
+  height: 22px;
+  border: none;
+  background: transparent;
+  color: var(--theme-text-secondary, #888);
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 0;
+  flex-shrink: 0;
+  cursor: default;
 }
 
-.find-nav-btn:hover:not(:disabled) {
-  background: #e5e5e5;
+.find-btn:hover:not(:disabled) {
+  background: var(--theme-hover, #e5e5e5);
+  color: var(--theme-text, #333);
 }
 
-.find-nav-btn:active:not(:disabled) {
-  background: #d5d5d5;
+.find-btn:active:not(:disabled) {
+  background: var(--theme-active, #d5d5d5);
 }
 
-.find-nav-btn:disabled {
-  opacity: 0.5;
+.find-btn:disabled {
+  opacity: 0.35;
 }
 
-.find-nav-btn svg {
-  width: 14px;
-  height: 14px;
+/* --- Replace buttons --- */
+
+.replace-btn,
+.replace-all-btn {
+  width: 22px;
+  height: 22px;
 }
 
-.find-results-count {
-  font-size: 11px;
-  color: #666;
-  white-space: nowrap;
-  min-width: 60px;
+/* --- Separator --- */
+
+.find-separator {
+  width: 1px;
+  height: 16px;
+  background: var(--theme-border, #d4d4d4);
+  margin: 0 2px;
+  flex-shrink: 0;
 }
 
-.find-message {
-  font-size: 11px;
-  color: #666;
-  white-space: nowrap;
-}
+/* --- Toggle buttons (Match Case, Whole Word, Highlight All) --- */
 
-.find-message.not-found {
-  color: #e81123;
-}
-
-.find-options {
-  display: flex;
-  gap: 12px;
-  margin-left: 8px;
-  padding-left: 8px;
-  border-left: 1px solid #d4d4d4;
-}
-
-.find-option {
+.find-toggle-btn {
+  width: 24px;
+  height: 22px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--theme-text-secondary, #888);
   display: flex;
   align-items: center;
-  gap: 4px;
+  justify-content: center;
+  padding: 0;
+  flex-shrink: 0;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: default;
+  font-family: inherit;
+}
+
+.find-toggle-btn:hover {
+  background: var(--theme-hover, #e5e5e5);
+  color: var(--theme-text, #333);
+}
+
+.find-toggle-btn.active {
+  background: var(--theme-accent, #0078d4);
+  color: #ffffff;
+  border-color: var(--theme-accent, #0078d4);
+}
+
+.find-toggle-btn.active:hover {
+  opacity: 0.9;
+}
+
+/* --- Close button --- */
+
+.find-close-btn {
+  width: 22px;
+  height: 22px;
+  border: none;
+  background: transparent;
+  color: var(--theme-text-secondary, #888);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  flex-shrink: 0;
+  margin-left: 2px;
+  cursor: default;
+}
+
+.find-close-btn:hover {
+  background: #e81123;
+  color: #ffffff;
+}
+
+/* --- Not found message (shown below the bar) --- */
+
+.find-message {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 2px;
   font-size: 11px;
+  color: #e81123;
+  background: var(--theme-surface, #ffffff);
+  border: 1px solid #e81123;
+  padding: 2px 8px;
   white-space: nowrap;
 }
 
-.find-option input[type="checkbox"] {
-  margin: 0;
-}
+/* ========================================
+   Search Highlight Styles
+   ======================================== */
 
-/* Search Highlight Styles */
 .search-highlight {
   position: absolute;
   background-color: rgba(255, 255, 0, 0.4);

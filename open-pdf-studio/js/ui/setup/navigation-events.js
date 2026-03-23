@@ -1,4 +1,4 @@
-import { state } from '../../core/state.js';
+import { state, getActiveDocument } from '../../core/state.js';
 import { annotationCanvas } from '../dom-elements.js';
 import { renderPage, renderContinuous, goToPage } from '../../pdf/renderer.js';
 import { showLoading, hideLoading } from '../chrome/dialogs.js';
@@ -11,7 +11,8 @@ let _pageNavCooldown = false; // prevent rapid page flipping from wheel events
 
 export function setupWheelZoom() {
   document.querySelector('.main-view')?.addEventListener('wheel', async (e) => {
-    if (!state.pdfDoc) return;
+    const activeDoc = getActiveDocument();
+    if (!activeDoc?.pdfDoc) return;
 
     // Check if Ctrl key is pressed for zoom functionality
     if (e.ctrlKey || e.metaKey) {
@@ -112,7 +113,7 @@ export function setupWheelZoom() {
     }
 
     // Page navigation in single page mode (without Ctrl)
-    if (state.viewMode !== 'single') return;
+    if (getActiveDocument()?.viewMode !== 'single') return;
     if (_pageNavCooldown) return;
 
     const pdfContainer = document.getElementById('pdf-container');
@@ -129,20 +130,20 @@ export function setupWheelZoom() {
 
     // Scrolling down at the bottom (or page fits in viewport)
     if (e.deltaY > 0 && atBottom) {
-      if (state.currentPage < state.pdfDoc.numPages) {
+      if (activeDoc.currentPage < activeDoc.pdfDoc.numPages) {
         e.preventDefault();
         _pageNavCooldown = true;
-        await goToPage(state.currentPage + 1);
+        await goToPage(activeDoc.currentPage + 1);
         pdfContainer.scrollTop = 0;
         setTimeout(() => { _pageNavCooldown = false; }, 300);
       }
     }
     // Scrolling up at the top (or page fits in viewport)
     else if (e.deltaY < 0 && atTop) {
-      if (state.currentPage > 1) {
+      if (activeDoc.currentPage > 1) {
         e.preventDefault();
         _pageNavCooldown = true;
-        await goToPage(state.currentPage - 1);
+        await goToPage(activeDoc.currentPage - 1);
         // Scroll to bottom of previous page only if it needs scrolling
         if (pdfContainer.scrollHeight > pdfContainer.clientHeight + 1) {
           pdfContainer.scrollTop = pdfContainer.scrollHeight - pdfContainer.clientHeight;

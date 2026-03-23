@@ -1,4 +1,4 @@
-import { state } from '../core/state.js';
+import { state, getActiveDocument } from '../core/state.js';
 import { createAnnotation } from './factory.js';
 import { redrawAnnotations } from './rendering.js';
 import { recordAdd } from '../core/undo-manager.js';
@@ -7,14 +7,17 @@ import { showMessage } from '../bridge.js';
 
 // Apply all redaction annotations permanently (flatten them)
 export async function applyRedactions() {
-  const redactions = state.annotations.filter(a => a.page === state.currentPage && a.type === 'redaction');
+  const doc = getActiveDocument();
+  if (!doc) return;
+  const curPage = doc.currentPage;
+  const redactions = doc.annotations.filter(a => a.page === curPage && a.type === 'redaction');
   if (redactions.length === 0) {
     showMessage(i18next.t('noRedactionsOnPage'));
     return;
   }
 
   const count = redactions.length;
-  const msg = `Apply ${count} redaction${count > 1 ? 's' : ''} on page ${state.currentPage}?\n\nThis will permanently black out the marked areas. This action cannot be undone.`;
+  const msg = `Apply ${count} redaction${count > 1 ? 's' : ''} on page ${curPage}?\n\nThis will permanently black out the marked areas. This action cannot be undone.`;
   let confirmed = false;
   if (window.__TAURI__?.dialog?.ask) {
     confirmed = await window.__TAURI__.dialog.ask(msg, { title: 'Apply Redactions', kind: 'warning' });
@@ -26,12 +29,12 @@ export async function applyRedactions() {
 
   // Convert redaction marks to permanent black rectangles (type 'box' with black fill)
   for (const r of redactions) {
-    const idx = state.annotations.indexOf(r);
+    const idx = doc.annotations.indexOf(r);
     if (idx !== -1) {
-      state.annotations.splice(idx, 1);
+      doc.annotations.splice(idx, 1);
     }
     // Add a permanent black filled box in its place
-    state.annotations.push(createAnnotation({
+    doc.annotations.push(createAnnotation({
       type: 'box',
       page: r.page,
       x: r.x,
@@ -53,7 +56,9 @@ export async function applyRedactions() {
 
 // Apply all redactions across all pages
 export async function applyAllRedactions() {
-  const allRedactions = state.annotations.filter(a => a.type === 'redaction');
+  const doc = getActiveDocument();
+  if (!doc) return;
+  const allRedactions = doc.annotations.filter(a => a.type === 'redaction');
   if (allRedactions.length === 0) {
     showMessage(i18next.t('noRedactionsInDocument'));
     return;
@@ -72,11 +77,11 @@ export async function applyAllRedactions() {
   if (!confirmed) return;
 
   for (const r of allRedactions) {
-    const idx = state.annotations.indexOf(r);
+    const idx = doc.annotations.indexOf(r);
     if (idx !== -1) {
-      state.annotations.splice(idx, 1);
+      doc.annotations.splice(idx, 1);
     }
-    state.annotations.push(createAnnotation({
+    doc.annotations.push(createAnnotation({
       type: 'box',
       page: r.page,
       x: r.x,

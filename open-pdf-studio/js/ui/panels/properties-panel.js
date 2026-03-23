@@ -1,4 +1,4 @@
-import { state } from '../../core/state.js';
+import { state, getActiveDocument } from '../../core/state.js';
 import { redrawAnnotations, redrawContinuous } from '../../annotations/rendering.js';
 import { savePreferences } from '../../core/preferences.js';
 import {
@@ -14,7 +14,7 @@ import {
 } from '../../bridge.js';
 
 function redraw() {
-  if (state.viewMode === 'continuous') {
+  if (getActiveDocument()?.viewMode === 'continuous') {
     redrawContinuous();
   } else {
     redrawAnnotations();
@@ -33,7 +33,8 @@ export function showProperties(annotation) {
 
 // Hide properties (deselect annotation, show doc info)
 export function hideProperties() {
-  state.selectedAnnotation = null;
+  const doc = getActiveDocument();
+  if (doc) { doc.selectedAnnotation = null; doc.selectedAnnotations = []; }
   storeHideProperties();
   redraw();
 }
@@ -50,8 +51,9 @@ export function togglePropertiesPanel() {
     setPanelCollapsed(false);
     state.preferences.propertiesPanelVisible = true;
     savePreferences();
-    if (state.selectedAnnotation) {
-      showProperties(state.selectedAnnotation);
+    const _togDoc = getActiveDocument();
+    if (_togDoc?.selectedAnnotation) {
+      showProperties(_togDoc.selectedAnnotation);
     } else {
       hideProperties();
     }
@@ -70,7 +72,8 @@ export function initPropertiesPanel() {
 
 // Show properties panel for multi-selection
 export function showMultiSelectionProperties() {
-  const selected = state.selectedAnnotations;
+  const _multiDoc = getActiveDocument();
+  const selected = _multiDoc ? _multiDoc.selectedAnnotations : [];
   if (!selected || selected.length < 2) return;
   storeShowMultiSelection(selected);
 }

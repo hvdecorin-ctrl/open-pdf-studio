@@ -1,4 +1,4 @@
-import { state } from '../core/state.js';
+import { state, getActiveDocument } from '../core/state.js';
 import { updateStatusMessage } from '../ui/chrome/status-bar.js';
 import { isTauri, saveFileDialog, writeBinaryFile } from '../core/platform.js';
 import { render } from 'solid-js/web';
@@ -25,8 +25,9 @@ function canvasToBlob(canvas, mimeType = 'image/png') {
 }
 
 function getCurrentCanvases() {
-  if (state.viewMode === 'continuous') {
-    const wrapper = document.querySelector(`.page-wrapper[data-page="${state.currentPage}"]`);
+  if (getActiveDocument()?.viewMode === 'continuous') {
+    const doc = getActiveDocument();
+    const wrapper = document.querySelector(`.page-wrapper[data-page="${doc ? doc.currentPage : 1}"]`);
     if (!wrapper) return null;
     const pdfEl = wrapper.querySelector('.pdf-canvas');
     const annEl = wrapper.querySelector('.annotation-canvas');
@@ -56,7 +57,7 @@ async function copyAndSave(canvas) {
   if (isTauri()) {
     try {
       const savePath = await saveFileDialog(
-        `screenshot-page${state.currentPage}.png`,
+        `screenshot-page${getActiveDocument()?.currentPage || 1}.png`,
         [
           { name: 'PNG Image', extensions: ['png'] },
           { name: 'JPEG Image', extensions: ['jpg', 'jpeg'] }
@@ -134,7 +135,8 @@ export function startRegionScreenshot() {
   cleanupOverlayMount();
   endScreenshot();
 
-  ensureOverlayMounted(container);
+  const mountEl = ensureOverlayMounted(container);
+  mountEl.style.pointerEvents = 'auto';
 
   startScreenshot(
     container,

@@ -1,11 +1,12 @@
 import { HANDLE_SIZE, HANDLE_TYPES } from '../../core/constants.js';
-import { state, getSelectionBounds, getAnnotationBounds } from '../../core/state.js';
+import { state, getActiveDocument, getSelectionBounds, getAnnotationBounds } from '../../core/state.js';
 import { annotationCtx } from '../../ui/dom-elements.js';
 import { getAnnotationHandles } from '../handles.js';
 
 // Draw selection highlight and handles
 export function drawSelectionHandles(ctx, annotation) {
-  const sc = state.scale || 1;
+  const doc = getActiveDocument();
+  const sc = doc?.scale || 1;
 
   // Draw rotation indicator lines (no dashed outlines)
   ctx.strokeStyle = '#22c55e';
@@ -109,8 +110,27 @@ export function drawSelectionHandles(ctx, annotation) {
       break;
   }
 
+  // Draw selection border (dashed outline around the annotation)
+  const bounds = getAnnotationBounds(annotation);
+  if (bounds) {
+    ctx.save();
+    if (annotation.rotation) {
+      const bcx = bounds.x + bounds.width / 2;
+      const bcy = bounds.y + bounds.height / 2;
+      ctx.translate(bcx, bcy);
+      ctx.rotate(annotation.rotation * Math.PI / 180);
+      ctx.translate(-bcx, -bcy);
+    }
+    ctx.strokeStyle = '#0066cc';
+    ctx.lineWidth = 1 / sc;
+    ctx.setLineDash([3 / sc, 3 / sc]);
+    ctx.strokeRect(bounds.x, bounds.y, bounds.width, bounds.height);
+    ctx.setLineDash([]);
+    ctx.restore();
+  }
+
   // Draw resize/move handles (scale-independent size)
-  const scale = state.scale || 1;
+  const scale = doc?.scale || 1;
   const handles = getAnnotationHandles(annotation, scale);
   const hs = HANDLE_SIZE / scale;
   const lw = 1 / scale;
@@ -205,7 +225,8 @@ export function drawMultiSelectionBounds(ctx) {
   const bounds = getSelectionBounds();
   if (!bounds) return;
 
-  const sc = state.scale || 1;
+  const msDoc = getActiveDocument();
+  const sc = msDoc?.scale || 1;
   ctx.strokeStyle = '#0066cc';
   ctx.lineWidth = 1.5 / sc;
   ctx.setLineDash([6 / sc, 3 / sc]);

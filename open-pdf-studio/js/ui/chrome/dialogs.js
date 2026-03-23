@@ -1,4 +1,4 @@
-import { state } from '../../core/state.js';
+import { state, getActiveDocument } from '../../core/state.js';
 import { isTauri } from '../../core/platform.js';
 import {
   openDialog, closeDialog, showMessage,
@@ -32,7 +32,7 @@ export function showAboutPanel() {
 // ============================================
 
 export async function showDocPropertiesDialog() {
-  if (!state.pdfDoc) {
+  if (!getActiveDocument()?.pdfDoc) {
     showMessage(i18next.t('noDocumentOpen'));
     return;
   }
@@ -46,7 +46,8 @@ export function hideDocPropertiesDialog() {
 }
 
 async function gatherDocProperties() {
-  const filePath = state.currentPdfPath || '-';
+  const doc = getActiveDocument();
+  const filePath = doc?.filePath || '-';
   const fileName = filePath !== '-' ? filePath.split(/[\\/]/).pop() : '-';
 
   let fileSize = '-';
@@ -64,7 +65,7 @@ async function gatherDocProperties() {
   let created = '-', modified = '-';
 
   try {
-    const metadata = await state.pdfDoc.getMetadata();
+    const metadata = await doc.pdfDoc.getMetadata();
     const info = metadata.info || {};
     title = info.Title || '-';
     author = info.Author || '-';
@@ -79,11 +80,11 @@ async function gatherDocProperties() {
     console.error('Error getting PDF metadata:', e);
   }
 
-  const pageCount = state.pdfDoc.numPages || '-';
+  const pageCount = doc.pdfDoc.numPages || '-';
 
   let pageSize = '-';
   try {
-    const page = await state.pdfDoc.getPage(1);
+    const page = await doc.pdfDoc.getPage(1);
     const viewport = page.getViewport({ scale: 1 });
     const widthMm = (viewport.width / 72 * 25.4).toFixed(1);
     const heightMm = (viewport.height / 72 * 25.4).toFixed(1);
@@ -144,7 +145,7 @@ export function hideNewDocDialog() {
 // ============================================
 
 export function showInsertPageDialog() {
-  if (!state.pdfDoc) {
+  if (!getActiveDocument()?.pdfDoc) {
     showMessage(i18next.t('noDocumentOpen'));
     return;
   }
@@ -160,13 +161,14 @@ export function hideInsertPageDialog() {
 // ============================================
 
 export function showExtractPagesDialog() {
-  if (!state.pdfDoc) {
+  const activeDoc = getActiveDocument();
+  if (!activeDoc?.pdfDoc) {
     showMessage(i18next.t('noDocumentOpen'));
     return;
   }
   openDialog('extract-pages', {
-    currentPage: state.currentPage,
-    totalPages: state.pdfDoc.numPages,
+    currentPage: activeDoc.currentPage,
+    totalPages: activeDoc.pdfDoc.numPages,
   });
 }
 
@@ -179,7 +181,7 @@ export function hideExtractPagesDialog() {
 // ============================================
 
 export function showMergePdfsDialog() {
-  if (!state.pdfDoc) {
+  if (!getActiveDocument()?.pdfDoc) {
     showMessage(i18next.t('noDocumentOpen'));
     return;
   }
@@ -195,11 +197,11 @@ export function hideMergePdfsDialog() {
 // ============================================
 
 export function showPrintDialog() {
-  if (!state.pdfDoc) {
+  if (!getActiveDocument()?.pdfDoc) {
     showMessage(i18next.t('noDocumentOpen'));
     return;
   }
-  openDialog('print', { currentPage: state.currentPage });
+  openDialog('print', { currentPage: getActiveDocument()?.currentPage || 1 });
 }
 
 export function hidePrintDialog() {

@@ -1,4 +1,4 @@
-import { state, selectAllOnPage, clearSelection } from '../core/state.js';
+import { state, getActiveDocument, selectAllOnPage, clearSelection } from '../core/state.js';
 import { undo, redo, recordAdd, recordBulkDelete, recordDelete, recordModify, recordBulkModify, recordClearPage } from '../core/undo-manager.js';
 import { setTool } from './manager.js';
 import { showPreferencesDialog } from '../core/preferences.js';
@@ -20,7 +20,7 @@ import { openDialog } from '../bridge.js';
 import { getTool } from './tool-registry.js';
 
 function redraw() {
-  if (state.viewMode === 'continuous') redrawContinuous();
+  if (getActiveDocument()?.viewMode === 'continuous') redrawContinuous();
   else redrawAnnotations();
 }
 
@@ -39,6 +39,8 @@ export async function handleKeydown(e) {
     openFindBar();
     return;
   }
+
+
 
   if (e.key === 'F3' && !isFindInput) {
     e.preventDefault();
@@ -71,7 +73,8 @@ export async function handleKeydown(e) {
       ann = createMeasurePerimeterAnnotation(points);
     }
     if (ann) {
-      state.annotations.push(ann);
+      const doc = getActiveDocument();
+      if (doc) doc.annotations.push(ann);
       recordAdd(ann);
     }
     state.measurePoints = null;
@@ -113,11 +116,13 @@ export async function handleKeydown(e) {
   } else if (ctrl && !shift && e.key === 'a') {
     // Ctrl+A: Select all annotations on current page
     e.preventDefault();
-    if (state.pdfDoc) {
+    const _selDoc = getActiveDocument();
+    if (_selDoc?.pdfDoc) {
       selectAllOnPage();
-      if (state.selectedAnnotations.length === 1) {
-        showProperties(state.selectedAnnotations[0]);
-      } else if (state.selectedAnnotations.length > 1) {
+      const _selAnns = _selDoc.selectedAnnotations;
+      if (_selAnns.length === 1) {
+        showProperties(_selAnns[0]);
+      } else if (_selAnns.length > 1) {
         showMultiSelectionProperties();
       }
       redraw();
@@ -125,8 +130,8 @@ export async function handleKeydown(e) {
   } else if (e.key === 'Delete') {
     e.preventDefault();
     if (isPdfAReadOnly()) { /* block */ }
-    else if (state.selectedAnnotations.length > 0) {
-      const selected = [...state.selectedAnnotations];
+    else if ((getActiveDocument()?.selectedAnnotations || []).length > 0) {
+      const selected = [...getActiveDocument().selectedAnnotations];
       // Single locked check
       if (selected.length === 1 && selected[0].locked) return;
 
@@ -141,13 +146,14 @@ export async function handleKeydown(e) {
         if (!confirmed) return;
       }
 
+      const doc = getActiveDocument();
       if (selected.length > 1) {
         recordBulkDelete(selected);
       } else {
-        recordDelete(selected[0], state.annotations.indexOf(selected[0]));
+        recordDelete(selected[0], (doc?.annotations || []).indexOf(selected[0]));
       }
       const toDelete = new Set(selected);
-      state.annotations = state.annotations.filter(a => !toDelete.has(a));
+      if (doc) doc.annotations = doc.annotations.filter(a => !toDelete.has(a));
       clearSelection();
       hideProperties();
       redraw();
@@ -156,14 +162,15 @@ export async function handleKeydown(e) {
   // Arrow keys: nudge selected annotations (skip when Ctrl held)
   else if (!ctrl && ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
     if (isPdfAReadOnly()) { /* block nudge */ }
-    else if (state.selectedAnnotations.length > 0 && state.pdfDoc) {
+    else if ((getActiveDocument()?.selectedAnnotations || []).length > 0 && getActiveDocument()?.pdfDoc) {
       // Text markup annotations are anchored to text — skip nudge
-      const movable = state.selectedAnnotations.filter(a =>
+      const movable = getActiveDocument().selectedAnnotations.filter(a =>
         !['textHighlight', 'textStrikethrough', 'textUnderline'].includes(a.type));
       if (movable.length === 0) return;
 
       e.preventDefault();
-      const step = (shift ? 10 : 1) / (state.scale || 1);
+      const nudgeDoc = getActiveDocument();
+      const step = (shift ? 10 : 1) / (nudgeDoc?.scale || 1);
       let dx = 0, dy = 0;
       if (e.key === 'ArrowLeft') dx = -step;
       else if (e.key === 'ArrowRight') dx = step;
@@ -192,14 +199,17 @@ export async function handleKeydown(e) {
       confirmed = confirm('Clear all annotations on current page?');
     }
     if (confirmed) {
-      recordClearPage(state.currentPage, state.annotations);
-      state.annotations = state.annotations.filter(a => a.page !== state.currentPage);
+      const cpDoc = getActiveDocument();
+      const cpPage = cpDoc ? cpDoc.currentPage : 1;
+      recordClearPage(cpPage, cpDoc?.annotations || []);
+      if (cpDoc) cpDoc.annotations = cpDoc.annotations.filter(a => a.page !== cpPage);
       hideProperties();
       redraw();
     }
   } else if (ctrl && !shift && e.key === 'c') {
     // Copy selected annotations (if none selected, let native copy handle text selection)
-    const selected = state.selectedAnnotations;
+    const _copyDoc = getActiveDocument();
+    const selected = _copyDoc ? _copyDoc.selectedAnnotations : [];
     if (selected.length > 0) {
       e.preventDefault();
       if (selected.length > 1) copyAnnotations(selected);
@@ -239,7 +249,7 @@ export async function handleKeydown(e) {
       return;
     }
     // If annotations are selected, deselect them first
-    if (state.selectedAnnotations.length > 0) {
+    if ((getActiveDocument()?.selectedAnnotations || []).length > 0) {
       clearSelection();
       hideProperties();
       redraw();
@@ -270,17 +280,17 @@ export async function handleKeydown(e) {
   } else if (ctrl && e.key === '5') {
     e.preventDefault();
     state.preferences.thinLines = !state.preferences.thinLines;
-    if (state.pdfDoc) {
-      if (state.viewMode === 'continuous') {
+    if (getActiveDocument()?.pdfDoc) {
+      if (getActiveDocument()?.viewMode === 'continuous') {
         import('../pdf/renderer.js').then(m => m.renderContinuous());
       } else {
-        import('../pdf/renderer.js').then(m => m.renderPage(state.currentPage));
+        import('../pdf/renderer.js').then(m => m.renderPage(getActiveDocument()?.currentPage || 1));
       }
     }
   }
 
   // Tool shortcuts (only if PDF is loaded)
-  else if (state.pdfDoc) {
+  else if (getActiveDocument()?.pdfDoc) {
     const pdfaLocked = isPdfAReadOnly();
     if (e.key === 'v' || e.key === 'V') {
       e.preventDefault();
@@ -330,7 +340,7 @@ export async function handleKeydown(e) {
 
 // Handle native paste event — works reliably on all platforms including Linux/WebKitGTK
 function handlePaste(e) {
-  if (!state.pdfDoc) return;
+  if (!getActiveDocument()?.pdfDoc) return;
   if (isPdfAReadOnly()) return;
   const isInInput = e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA';
   if (isInInput) return;

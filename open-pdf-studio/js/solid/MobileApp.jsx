@@ -1,6 +1,6 @@
 import { createSignal, onMount, onCleanup, Show, For } from 'solid-js';
 import { useTranslation } from '../i18n/useTranslation.js';
-import { state } from '../core/state.js';
+import { state, getActiveDocument } from '../core/state.js';
 import { isTauri, extractFileName } from '../core/platform.js';
 import { loadPDF } from '../pdf/loader.js';
 import { fitWidth, fitPage, goToPage, rotatePage, setZoom } from '../pdf/renderer.js';
@@ -33,7 +33,7 @@ export default function MobileApp() {
 
   const hasDocument = () => state.documents && state.documents.length > 0;
   const currentDoc = () => hasDocument() ? state.documents[state.activeDocumentIndex] : null;
-  const totalPages = () => state.pdfDoc?.numPages || 0;
+  const totalPages = () => state.documents[state.activeDocumentIndex]?.pdfDoc?.numPages || 0;
   const fileName = () => {
     const doc = currentDoc();
     if (!doc || !doc.filePath) return 'Open PDF Studio';
@@ -145,27 +145,33 @@ export default function MobileApp() {
 
   function handlePrevPage() {
     if (!hasDocument()) return;
-    if (state.currentPage > 1) {
-      goToPage(state.currentPage - 1);
+    const doc = getActiveDocument();
+    if (doc && doc.currentPage > 1) {
+      goToPage(doc.currentPage - 1);
     }
   }
 
   function handleNextPage() {
     if (!hasDocument()) return;
-    if (state.currentPage < totalPages()) {
-      goToPage(state.currentPage + 1);
+    const doc = getActiveDocument();
+    if (doc && doc.currentPage < totalPages()) {
+      goToPage(doc.currentPage + 1);
     }
   }
 
   function handleZoomIn() {
     if (!hasDocument()) return;
-    const newScale = Math.min(5.0, state.scale * 1.25);
+    const doc = getActiveDocument();
+    const currentScale = doc?.scale || 1.5;
+    const newScale = Math.min(5.0, currentScale * 1.25);
     setZoom(newScale);
   }
 
   function handleZoomOut() {
     if (!hasDocument()) return;
-    const newScale = Math.max(0.25, state.scale / 1.25);
+    const doc = getActiveDocument();
+    const currentScale = doc?.scale || 1.5;
+    const newScale = Math.max(0.25, currentScale / 1.25);
     setZoom(newScale);
   }
 
@@ -195,7 +201,8 @@ export default function MobileApp() {
   // --- Go-to-page ---
 
   function handleOpenGoto() {
-    setGotoValue(String(state.currentPage));
+    const doc = getActiveDocument();
+    setGotoValue(String(doc ? doc.currentPage : 1));
     setGotoOpen(true);
   }
 
@@ -366,17 +373,17 @@ export default function MobileApp() {
           </button>
 
           <div class="mobile-toolbar-content">
-            <button class="mobile-toolbar-btn" onClick={isRTL() ? handleNextPage : handlePrevPage} disabled={isRTL() ? state.currentPage >= totalPages() : state.currentPage <= 1} aria-label="Previous page">
+            <button class="mobile-toolbar-btn" onClick={isRTL() ? handleNextPage : handlePrevPage} disabled={isRTL() ? (state.documents[state.activeDocumentIndex]?.currentPage || 1) >= totalPages() : (state.documents[state.activeDocumentIndex]?.currentPage || 1) <= 1} aria-label="Previous page">
               <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <polyline points="15 18 9 12 15 6" />
               </svg>
             </button>
 
             <button class="mobile-page-info" onClick={handleOpenGoto} aria-label="Go to page">
-              {state.currentPage} / {totalPages()}
+              {state.documents[state.activeDocumentIndex]?.currentPage || 1} / {totalPages()}
             </button>
 
-            <button class="mobile-toolbar-btn" onClick={isRTL() ? handlePrevPage : handleNextPage} disabled={isRTL() ? state.currentPage <= 1 : state.currentPage >= totalPages()} aria-label="Next page">
+            <button class="mobile-toolbar-btn" onClick={isRTL() ? handlePrevPage : handleNextPage} disabled={isRTL() ? (state.documents[state.activeDocumentIndex]?.currentPage || 1) <= 1 : (state.documents[state.activeDocumentIndex]?.currentPage || 1) >= totalPages()} aria-label="Next page">
               <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <polyline points="9 6 15 12 9 18" />
               </svg>

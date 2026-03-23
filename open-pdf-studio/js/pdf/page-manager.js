@@ -26,7 +26,7 @@ export function getPageClipboard() {
  * Extracts the page as a standalone single-page PDF.
  */
 export async function copyPage(pageNum) {
-  if (!state.pdfDoc) return;
+  if (!getActiveDocument()?.pdfDoc) return;
 
   const cacheKey = getCacheKey();
   const currentBytes = getCachedPdfBytes(cacheKey);
@@ -48,7 +48,7 @@ export async function copyPage(pageNum) {
  * Copy multiple pages to the page clipboard.
  */
 export async function copyPages(pageNumbers) {
-  if (!state.pdfDoc || !pageNumbers || pageNumbers.length === 0) return;
+  if (!getActiveDocument()?.pdfDoc || !pageNumbers || pageNumbers.length === 0) return;
 
   const cacheKey = getCacheKey();
   const currentBytes = getCachedPdfBytes(cacheKey);
@@ -71,8 +71,9 @@ export async function copyPages(pageNumbers) {
  * Cut a page (copy + delete).
  */
 export async function cutPage(pageNum) {
-  if (!state.pdfDoc) return;
-  if (state.pdfDoc.numPages <= 1) return;
+  const activeDoc = getActiveDocument();
+  if (!activeDoc?.pdfDoc) return;
+  if (activeDoc.pdfDoc.numPages <= 1) return;
 
   await copyPage(pageNum);
   if (pageClipboard) {
@@ -85,8 +86,9 @@ export async function cutPage(pageNum) {
  * Cut multiple pages (copy + delete).
  */
 export async function cutPages(pageNumbers) {
-  if (!state.pdfDoc || !pageNumbers || pageNumbers.length === 0) return;
-  if (state.pdfDoc.numPages <= pageNumbers.length) return;
+  const activeDoc = getActiveDocument();
+  if (!activeDoc?.pdfDoc || !pageNumbers || pageNumbers.length === 0) return;
+  if (activeDoc.pdfDoc.numPages <= pageNumbers.length) return;
 
   await copyPages(pageNumbers);
   if (pageClipboard) {
@@ -99,16 +101,16 @@ export async function cutPages(pageNumbers) {
  * Paste the page clipboard after the given page number.
  */
 export async function pastePage(afterPageNum) {
-  if (!state.pdfDoc || !pageClipboard) return;
+  if (!getActiveDocument()?.pdfDoc || !pageClipboard) return;
 
   const cacheKey = getCacheKey();
   const currentBytes = getCachedPdfBytes(cacheKey);
   if (!currentBytes) return;
 
   const doc = getActiveDocument();
-  const oldAnnotations = state.annotations.map(a => ({ ...a }));
+  const oldAnnotations = doc.annotations.map(a => ({ ...a }));
   const oldRotations = { ...doc.pageRotations };
-  const oldPage = state.currentPage;
+  const oldPage = doc.currentPage;
 
   showLoading('Pasting page...');
   try {
@@ -136,7 +138,7 @@ export async function pastePage(afterPageNum) {
       }
     }
 
-    const newAnnotations = remapAnnotations(state.annotations, pageMapping);
+    const newAnnotations = remapAnnotations(doc.annotations, pageMapping);
     const newRotations = remapRotations(doc.pageRotations, pageMapping);
     const newBytes = new Uint8Array(await destDoc.save());
     const targetPage = insertIdx + 1;
@@ -168,8 +170,8 @@ export async function reloadFromBytes(newBytes, annotations, rotations, targetPa
   cancelAnnotationLoading();
 
   // Destroy old pdf.js document to free memory
-  if (state.pdfDoc) {
-    state.pdfDoc.destroy();
+  if (doc.pdfDoc) {
+    doc.pdfDoc.destroy();
   }
 
   // Update cache with new bytes
@@ -179,7 +181,7 @@ export async function reloadFromBytes(newBytes, annotations, rotations, targetPa
   resetAnnotationStorage();
 
   // Load new bytes into pdf.js (slice to prevent buffer detachment of the original)
-  state.pdfDoc = await pdfjsLib.getDocument({
+  doc.pdfDoc = await pdfjsLib.getDocument({
     data: newBytes.slice(),
     cMapUrl: '/pdfjs/web/cmaps/',
     cMapPacked: true,
@@ -188,23 +190,25 @@ export async function reloadFromBytes(newBytes, annotations, rotations, targetPa
   }).promise;
 
   // Restore annotations and rotations
-  state.annotations = annotations;
+  doc.annotations = annotations;
   doc.pageRotations = rotations;
 
   // Clamp current page
-  const numPages = state.pdfDoc.numPages;
-  state.currentPage = Math.max(1, Math.min(targetPage, numPages));
+  const numPages = doc.pdfDoc.numPages;
+  doc.currentPage = Math.max(1, Math.min(targetPage, numPages));
 
   // Mark all pages as loaded so background loader won't overwrite
   markAllAnnotationPagesLoaded(numPages);
 
   // Clear selection
-  state.selectedAnnotation = null;
-  state.selectedAnnotations = [];
+  if (doc) {
+    doc.selectedAnnotation = null;
+    doc.selectedAnnotations = [];
+  }
   hideProperties();
 
   // Re-render
-  await setViewMode(state.viewMode);
+  await setViewMode(doc?.viewMode || 'single');
   clearThumbnailCache(doc.id);
   generateThumbnails();
   updateAllStatus();
@@ -245,16 +249,16 @@ function remapRotations(rotations, pageMapping) {
  * @param {number} heightPt - Page height in points
  */
 export async function insertBlankPages(position, refPage, count, widthPt, heightPt) {
-  if (!state.pdfDoc) return;
+  if (!getActiveDocument()?.pdfDoc) return;
 
   const cacheKey = getCacheKey();
   const currentBytes = getCachedPdfBytes(cacheKey);
   if (!currentBytes) return;
 
   const doc = getActiveDocument();
-  const oldAnnotations = state.annotations.map(a => ({ ...a }));
+  const oldAnnotations = doc.annotations.map(a => ({ ...a }));
   const oldRotations = { ...doc.pageRotations };
-  const oldPage = state.currentPage;
+  const oldPage = doc.currentPage;
 
   showLoading('Inserting pages...');
   try {
@@ -286,7 +290,7 @@ export async function insertBlankPages(position, refPage, count, widthPt, height
       }
     }
 
-    const newAnnotations = remapAnnotations(state.annotations, pageMapping);
+    const newAnnotations = remapAnnotations(doc.annotations, pageMapping);
     const newRotations = remapRotations(doc.pageRotations, pageMapping);
 
     const newBytes = new Uint8Array(await pdfDoc.save());
@@ -308,9 +312,10 @@ export async function insertBlankPages(position, refPage, count, widthPt, height
  * @param {number[]} pageNumbers - Page numbers to delete (1-based)
  */
 export async function deletePages(pageNumbers) {
-  if (!state.pdfDoc) return;
+  const activeDoc = getActiveDocument();
+  if (!activeDoc?.pdfDoc) return;
 
-  const numPages = state.pdfDoc.numPages;
+  const numPages = activeDoc.pdfDoc.numPages;
 
   // Guard: can't delete all pages
   if (pageNumbers.length >= numPages) {
@@ -323,9 +328,9 @@ export async function deletePages(pageNumbers) {
   if (!currentBytes) return;
 
   const doc = getActiveDocument();
-  const oldAnnotations = state.annotations.map(a => ({ ...a }));
+  const oldAnnotations = doc.annotations.map(a => ({ ...a }));
   const oldRotations = { ...doc.pageRotations };
-  const oldPage = state.currentPage;
+  const oldPage = doc.currentPage;
 
   showLoading('Deleting pages...');
   try {
@@ -350,14 +355,14 @@ export async function deletePages(pageNumbers) {
       }
     }
 
-    const newAnnotations = remapAnnotations(state.annotations, pageMapping);
+    const newAnnotations = remapAnnotations(doc.annotations, pageMapping);
     const newRotations = remapRotations(doc.pageRotations, pageMapping);
 
     const newBytes = new Uint8Array(await pdfDoc.save());
     const newNumPages = pdfDoc.getPageCount();
 
     // Clamp current page
-    let targetPage = Math.min(state.currentPage, newNumPages);
+    let targetPage = Math.min(doc.currentPage, newNumPages);
 
     await reloadFromBytes(newBytes, newAnnotations, newRotations, targetPage);
 
@@ -374,7 +379,8 @@ export async function deletePages(pageNumbers) {
  * @param {boolean} deleteFromOriginal - Whether to delete extracted pages from the source
  */
 export async function extractPages(pageNumbers, deleteFromOriginal) {
-  if (!state.pdfDoc) return;
+  const activeDoc = getActiveDocument();
+  if (!activeDoc?.pdfDoc) return;
 
   if (pageNumbers.length === 0) {
     showMessage(i18next.t('noPagesSelected'));
@@ -410,7 +416,7 @@ export async function extractPages(pageNumbers, deleteFromOriginal) {
 
     // Optionally delete from original
     if (deleteFromOriginal) {
-      const numPages = state.pdfDoc.numPages;
+      const numPages = activeDoc.pdfDoc.numPages;
       if (pageNumbers.length >= numPages) {
         showMessage(i18next.t('cannotDeleteAllPagesSource'));
       } else {
@@ -428,9 +434,10 @@ export async function extractPages(pageNumbers, deleteFromOriginal) {
  *   e.g. [3,1,2,4] means old page 3 becomes new page 1, old page 1 becomes new page 2, etc.
  */
 export async function reorderPages(newPageOrder) {
-  if (!state.pdfDoc) return;
+  const activeDoc = getActiveDocument();
+  if (!activeDoc?.pdfDoc) return;
 
-  const numPages = state.pdfDoc.numPages;
+  const numPages = activeDoc.pdfDoc.numPages;
   if (newPageOrder.length !== numPages) return;
 
   // Check if order actually changed
@@ -442,9 +449,9 @@ export async function reorderPages(newPageOrder) {
   if (!currentBytes) return;
 
   const doc = getActiveDocument();
-  const oldAnnotations = state.annotations.map(a => ({ ...a }));
+  const oldAnnotations = doc.annotations.map(a => ({ ...a }));
   const oldRotations = { ...doc.pageRotations };
-  const oldPage = state.currentPage;
+  const oldPage = doc.currentPage;
 
   showLoading('Reordering pages...');
   try {
@@ -465,13 +472,13 @@ export async function reorderPages(newPageOrder) {
       pageMapping[oldP] = newP + 1;
     }
 
-    const newAnnotations = remapAnnotations(state.annotations, pageMapping);
+    const newAnnotations = remapAnnotations(doc.annotations, pageMapping);
     const newRotations = remapRotations(doc.pageRotations, pageMapping);
 
     const newBytes = new Uint8Array(await newDoc.save());
 
     // Navigate to the page that the current page moved to
-    const targetPage = pageMapping[state.currentPage] || 1;
+    const targetPage = pageMapping[doc.currentPage] || 1;
 
     await reloadFromBytes(newBytes, newAnnotations, newRotations, targetPage);
 
@@ -503,10 +510,11 @@ export async function restorePageState(bytes, annotations, rotations, currentPag
  * @param {number} pageNumber - The page number to replace (1-based)
  */
 export async function replacePages(pageNumber) {
-  if (!state.pdfDoc) return;
+  const activeDoc = getActiveDocument();
+  if (!activeDoc?.pdfDoc) return;
   if (!isTauri()) return;
 
-  const numPages = state.pdfDoc.numPages;
+  const numPages = activeDoc.pdfDoc.numPages;
   if (pageNumber < 1 || pageNumber > numPages) return;
 
   // Open file dialog to pick replacement PDF
@@ -526,9 +534,9 @@ export async function replacePages(pageNumber) {
   if (!currentBytes) return;
 
   const doc = getActiveDocument();
-  const oldAnnotations = state.annotations.map(a => ({ ...a }));
+  const oldAnnotations = doc.annotations.map(a => ({ ...a }));
   const oldRotations = { ...doc.pageRotations };
-  const oldPage = state.currentPage;
+  const oldPage = doc.currentPage;
 
   showLoading('Replacing page...');
   try {
@@ -574,7 +582,7 @@ export async function replacePages(pageNumber) {
       }
     }
 
-    const newAnnotations = remapAnnotations(state.annotations, pageMapping);
+    const newAnnotations = remapAnnotations(doc.annotations, pageMapping);
     const newRotations = remapRotations(doc.pageRotations, pageMapping);
 
     const newBytes = new Uint8Array(await destDoc.save());
@@ -602,16 +610,16 @@ export async function mergeFiles(filePaths, position) {
   if (!isTauri()) return;
 
   // Must have a document open
-  if (!state.pdfDoc) return;
+  if (!getActiveDocument()?.pdfDoc) return;
 
   const cacheKey = getCacheKey();
   const currentBytes = getCachedPdfBytes(cacheKey);
   if (!currentBytes) return;
 
   const doc = getActiveDocument();
-  const oldAnnotations = state.annotations.map(a => ({ ...a }));
+  const oldAnnotations = doc.annotations.map(a => ({ ...a }));
   const oldRotations = { ...doc.pageRotations };
-  const oldPage = state.currentPage;
+  const oldPage = doc.currentPage;
 
   showLoading('Merging PDFs...');
   try {
@@ -622,7 +630,7 @@ export async function mergeFiles(filePaths, position) {
     let insertIdx;
     switch (position) {
       case 'start': insertIdx = 0; break;
-      case 'after': insertIdx = state.currentPage; break;
+      case 'after': insertIdx = doc.currentPage; break;
       case 'end':
       default: insertIdx = oldNumPages; break;
     }
@@ -667,7 +675,7 @@ export async function mergeFiles(filePaths, position) {
       }
     }
 
-    const newAnnotations = remapAnnotations(state.annotations, pageMapping);
+    const newAnnotations = remapAnnotations(doc.annotations, pageMapping);
     const newRotations = remapRotations(doc.pageRotations, pageMapping);
 
     const newBytes = new Uint8Array(await destDoc.save());

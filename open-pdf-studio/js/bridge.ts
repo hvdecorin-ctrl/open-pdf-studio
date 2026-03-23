@@ -92,6 +92,12 @@ export {
   setNotFound as setFindBarNotFound,
   navDisabled as findBarNavDisabled,
   setNavDisabled as setFindBarNavDisabled,
+  searching as findBarSearching,
+  setSearching as setFindBarSearching,
+  replaceMode as findBarReplaceMode,
+  setReplaceMode as setFindBarReplaceMode,
+  replaceText as findBarReplaceText,
+  setReplaceText as setFindBarReplaceText,
 } from './solid/stores/findBarStore.js';
 
 // ============= LOADING OVERLAY =============

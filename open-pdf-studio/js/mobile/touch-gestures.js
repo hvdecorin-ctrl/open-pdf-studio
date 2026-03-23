@@ -1,5 +1,5 @@
 import { setZoom, fitWidth, fitPage, goToPage } from '../pdf/renderer.js';
-import { state } from '../core/state.js';
+import { state, getActiveDocument } from '../core/state.js';
 
 /**
  * Initialize pinch-to-zoom on a container element.
@@ -25,7 +25,8 @@ export function initPinchZoom(container) {
     if (e.touches.length === 2) {
       isPinching = true;
       initialDistance = getDistance(e.touches);
-      initialScale = state.scale;
+      const doc = getActiveDocument();
+      initialScale = doc?.scale || 1.5;
     }
   }, { passive: true });
 
@@ -42,7 +43,8 @@ export function initPinchZoom(container) {
     // Apply CSS transform for instant visual feedback
     const canvasWrapper = container.querySelector('#canvas-wrapper');
     if (canvasWrapper) {
-      const visualRatio = newScale / state.scale;
+      const moveDoc = getActiveDocument();
+      const visualRatio = newScale / (moveDoc?.scale || 1.5);
       canvasWrapper.style.transform = `scale(${visualRatio})`;
       canvasWrapper.style.transformOrigin = 'center center';
     }
@@ -60,7 +62,8 @@ export function initPinchZoom(container) {
         const currentTransform = canvasWrapper.style.transform;
         const match = currentTransform.match(/scale\(([\d.]+)\)/);
         if (match) {
-          const oldScale = state.scale;
+          const endDoc = getActiveDocument();
+          const oldScale = endDoc?.scale || 1.5;
           let newScale = oldScale * parseFloat(match[1]);
           newScale = Math.max(0.25, Math.min(5.0, newScale));
           const zoomRatio = newScale / oldScale;
@@ -134,7 +137,7 @@ export function initSwipeNavigation(container) {
     if (Math.abs(dx) < 80) return;
     if (Math.abs(dy) > Math.abs(dx) * 0.6) return;
 
-    const numPages = state.pdfDoc?.numPages || 0;
+    const numPages = getActiveDocument()?.pdfDoc?.numPages || 0;
     if (!numPages) return;
 
     // In RTL layout, swipe directions are reversed
@@ -142,10 +145,12 @@ export function initSwipeNavigation(container) {
     const nextSwipe = rtl ? dx > 0 : dx < 0;
     const prevSwipe = rtl ? dx < 0 : dx > 0;
 
-    if (nextSwipe && state.currentPage < numPages) {
-      goToPage(state.currentPage + 1);
-    } else if (prevSwipe && state.currentPage > 1) {
-      goToPage(state.currentPage - 1);
+    const doc = getActiveDocument();
+    const curPage = doc ? doc.currentPage : 1;
+    if (nextSwipe && curPage < numPages) {
+      goToPage(curPage + 1);
+    } else if (prevSwipe && curPage > 1) {
+      goToPage(curPage - 1);
     }
   }, { passive: true });
 }

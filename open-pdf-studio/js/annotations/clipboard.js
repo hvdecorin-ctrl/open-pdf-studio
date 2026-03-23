@@ -1,4 +1,4 @@
-import { state } from '../core/state.js';
+import { state, getActiveDocument } from '../core/state.js';
 import { cloneAnnotation } from './factory.js';
 import { generateImageId } from '../utils/helpers.js';
 import { updateStatusMessage } from '../ui/chrome/status-bar.js';
@@ -17,7 +17,7 @@ export function copyAnnotation(annotation) {
 // Triggers a native paste so the 'paste' event handler in keyboard-handlers.js
 // can read clipboardData without requiring the async Clipboard API permission.
 export function pasteFromClipboard() {
-  if (!state.pdfDoc) return;
+  if (!getActiveDocument()?.pdfDoc) return;
 
   // Try triggering a native paste event which the handlePaste listener will pick up.
   // This avoids navigator.clipboard.read() which requires explicit browser permission.
@@ -73,7 +73,7 @@ export async function pasteImageFromBlob(blob) {
   const annotation = {
     id: Date.now().toString(36) + Math.random().toString(36).substr(2, 9),
     type: 'image',
-    page: state.currentPage,
+    page: getActiveDocument()?.currentPage || 1,
     x: Math.max(10, x),
     y: Math.max(10, y),
     width: width,
@@ -92,12 +92,13 @@ export async function pasteImageFromBlob(blob) {
     modifiedAt: new Date().toISOString()
   };
 
-  state.annotations.push(annotation);
+  const _pasteDoc1 = getActiveDocument();
+  if (_pasteDoc1) _pasteDoc1.annotations.push(annotation);
   recordAdd(annotation);
-  state.selectedAnnotation = annotation;
+  if (_pasteDoc1) { _pasteDoc1.selectedAnnotation = annotation; _pasteDoc1.selectedAnnotations = [annotation]; }
   showProperties(annotation);
 
-  if (state.viewMode === 'continuous') {
+  if (getActiveDocument()?.viewMode === 'continuous') {
     redrawContinuous();
   } else {
     redrawAnnotations();
@@ -108,7 +109,7 @@ export async function pasteImageFromBlob(blob) {
 
 // Paste annotation from internal clipboard
 export function pasteAnnotation() {
-  if (!state.clipboardAnnotation || !state.pdfDoc) return;
+  if (!state.clipboardAnnotation || !getActiveDocument()?.pdfDoc) return;
 
   const newAnnotation = cloneAnnotation(state.clipboardAnnotation);
 
@@ -127,7 +128,7 @@ export function pasteAnnotation() {
 
   // Update page, id, and timestamps
   newAnnotation.id = Date.now().toString(36) + Math.random().toString(36).substr(2, 9);
-  newAnnotation.page = state.currentPage;
+  newAnnotation.page = getActiveDocument()?.currentPage || 1;
   newAnnotation.createdAt = new Date().toISOString();
   newAnnotation.modifiedAt = new Date().toISOString();
 
@@ -141,12 +142,13 @@ export function pasteAnnotation() {
     newAnnotation.imageId = newImageId;
   }
 
-  state.annotations.push(newAnnotation);
+  const _pasteDoc2 = getActiveDocument();
+  if (_pasteDoc2) _pasteDoc2.annotations.push(newAnnotation);
   recordAdd(newAnnotation);
-  state.selectedAnnotation = newAnnotation;
+  if (_pasteDoc2) { _pasteDoc2.selectedAnnotation = newAnnotation; _pasteDoc2.selectedAnnotations = [newAnnotation]; }
   showProperties(newAnnotation);
 
-  if (state.viewMode === 'continuous') {
+  if (getActiveDocument()?.viewMode === 'continuous') {
     redrawContinuous();
   } else {
     redrawAnnotations();
@@ -157,9 +159,10 @@ export function pasteAnnotation() {
 
 // Duplicate selected annotation
 export function duplicateAnnotation() {
-  if (!state.selectedAnnotation) return;
+  const _dupDoc = getActiveDocument();
+  if (!_dupDoc?.selectedAnnotation) return;
 
-  copyAnnotation(state.selectedAnnotation);
+  copyAnnotation(_dupDoc.selectedAnnotation);
   pasteAnnotation();
 }
 
@@ -199,7 +202,7 @@ export function pasteAnnotations() {
     }
 
     newAnn.id = Date.now().toString(36) + Math.random().toString(36).substr(2, 9);
-    newAnn.page = state.currentPage;
+    newAnn.page = getActiveDocument()?.currentPage || 1;
     newAnn.createdAt = new Date().toISOString();
     newAnn.modifiedAt = new Date().toISOString();
 
@@ -210,12 +213,17 @@ export function pasteAnnotations() {
       newAnn.imageId = newImageId;
     }
 
-    state.annotations.push(newAnn);
+    const _pasteDoc3 = getActiveDocument();
+    if (_pasteDoc3) _pasteDoc3.annotations.push(newAnn);
     newAnnotations.push(newAnn);
   }
 
   recordBulkAdd(newAnnotations);
-  state.selectedAnnotations = newAnnotations;
+  const _pasteDoc3 = getActiveDocument();
+  if (_pasteDoc3) {
+    _pasteDoc3.selectedAnnotations = newAnnotations;
+    _pasteDoc3.selectedAnnotation = newAnnotations.length > 0 ? newAnnotations[0] : null;
+  }
 
   if (newAnnotations.length === 1) {
     showProperties(newAnnotations[0]);
@@ -223,7 +231,7 @@ export function pasteAnnotations() {
     showMultiSelectionProperties();
   }
 
-  if (state.viewMode === 'continuous') {
+  if (getActiveDocument()?.viewMode === 'continuous') {
     redrawContinuous();
   } else {
     redrawAnnotations();

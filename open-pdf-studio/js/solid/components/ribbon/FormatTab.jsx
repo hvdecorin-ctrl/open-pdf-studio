@@ -6,7 +6,7 @@ import {
   arrowStart, arrowEnd, isLocked,
   STYLE_DEFS, applyToSelected, syncFormatStore
 } from '../../stores/formatStore.js';
-import { state } from '../../../core/state.js';
+import { state, getActiveDocument } from '../../../core/state.js';
 import { showProperties, showMultiSelectionProperties, closePropertiesPanel } from '../../../ui/panels/properties-panel.js';
 import { setPanelVisible } from '../../stores/propertiesStore.js';
 import {
@@ -35,7 +35,7 @@ function applyStyle(styleName) {
     ann.fillColor = style.fillColor || null;
     if (style.borderStyle) ann.borderStyle = style.borderStyle;
   });
-  syncFormatStore(state.selectedAnnotations);
+  syncFormatStore(getActiveDocument()?.selectedAnnotations || []);
 }
 
 function fillIconSvg() {
@@ -99,15 +99,15 @@ export default function FormatTab() {
               currentColor={fillColor()}
               onColorSelect={(color) => {
                 applyToSelected(ann => { ann.fillColor = color; });
-                syncFormatStore(state.selectedAnnotations);
+                syncFormatStore(getActiveDocument()?.selectedAnnotations || []);
               }}
               onNone={() => {
                 applyToSelected(ann => { ann.fillColor = null; });
-                syncFormatStore(state.selectedAnnotations);
+                syncFormatStore(getActiveDocument()?.selectedAnnotations || []);
               }}
               onCustom={(color) => {
                 applyToSelected(ann => { ann.fillColor = color; });
-                syncFormatStore(state.selectedAnnotations);
+                syncFormatStore(getActiveDocument()?.selectedAnnotations || []);
               }}
             />
             <ColorPickerButton
@@ -121,11 +121,11 @@ export default function FormatTab() {
               currentColor={strokeColor()}
               onColorSelect={(color) => {
                 applyToSelected(ann => { ann.strokeColor = color; ann.color = color; });
-                syncFormatStore(state.selectedAnnotations);
+                syncFormatStore(getActiveDocument()?.selectedAnnotations || []);
               }}
               onCustom={(color) => {
                 applyToSelected(ann => { ann.strokeColor = color; ann.color = color; });
-                syncFormatStore(state.selectedAnnotations);
+                syncFormatStore(getActiveDocument()?.selectedAnnotations || []);
               }}
             />
           </div>
@@ -139,7 +139,7 @@ export default function FormatTab() {
                 value={fmtLineWidth()}
                 onChange={(e) => {
                   applyToSelected(ann => { ann.lineWidth = parseFloat(e.target.value); });
-                  syncFormatStore(state.selectedAnnotations);
+                  syncFormatStore(getActiveDocument()?.selectedAnnotations || []);
                 }}>
                 <option value="0.5">0.5 pt</option>
                 <option value="1">1 pt</option>
@@ -154,7 +154,7 @@ export default function FormatTab() {
                 value={opacity()}
                 onChange={(e) => {
                   applyToSelected(ann => { ann.opacity = parseInt(e.target.value) / 100; });
-                  syncFormatStore(state.selectedAnnotations);
+                  syncFormatStore(getActiveDocument()?.selectedAnnotations || []);
                 }}>
                 <option value="100">100%</option>
                 <option value="90">90%</option>
@@ -170,7 +170,7 @@ export default function FormatTab() {
                 value={borderStyle()}
                 onChange={(e) => {
                   applyToSelected(ann => { ann.borderStyle = e.target.value; });
-                  syncFormatStore(state.selectedAnnotations);
+                  syncFormatStore(getActiveDocument()?.selectedAnnotations || []);
                 }}>
                 <option value="solid">{tc('solid')}</option>
                 <option value="dashed">{tc('dashed')}</option>
@@ -181,7 +181,7 @@ export default function FormatTab() {
                 value={blendMode()}
                 onChange={(e) => {
                   applyToSelected(ann => { ann.blendMode = e.target.value; });
-                  syncFormatStore(state.selectedAnnotations);
+                  syncFormatStore(getActiveDocument()?.selectedAnnotations || []);
                 }}>
                 <option value="normal">{t('format.normal')}</option>
                 <option value="multiply">{t('format.multiply')}</option>
@@ -198,7 +198,7 @@ export default function FormatTab() {
                 value={arrowStart()}
                 onChange={(e) => {
                   applyToSelected(ann => { if (ann.type === 'arrow') ann.startHead = e.target.value; });
-                  syncFormatStore(state.selectedAnnotations);
+                  syncFormatStore(getActiveDocument()?.selectedAnnotations || []);
                 }}>
                 <option value="none">{tc('none')}</option>
                 <option value="open">{t('format.open')}</option>
@@ -216,7 +216,7 @@ export default function FormatTab() {
                 value={arrowEnd()}
                 onChange={(e) => {
                   applyToSelected(ann => { if (ann.type === 'arrow') ann.endHead = e.target.value; });
-                  syncFormatStore(state.selectedAnnotations);
+                  syncFormatStore(getActiveDocument()?.selectedAnnotations || []);
                 }}>
                 <option value="none">{tc('none')}</option>
                 <option value="open">{t('format.open')}</option>
@@ -245,8 +245,10 @@ export default function FormatTab() {
                   if (ann.x !== undefined) {
                     const canvas = document.getElementById('annotation-canvas');
                     if (canvas) {
-                      const cx = (canvas.width / state.scale) / 2;
-                      const cy = (canvas.height / state.scale) / 2;
+                      const resetDoc = getActiveDocument();
+                      const resetScale = resetDoc?.scale || 1.5;
+                      const cx = (canvas.width / resetScale) / 2;
+                      const cy = (canvas.height / resetScale) / 2;
                       const w = ann.width || 100;
                       const h = ann.height || 50;
                       ann.x = cx - w / 2;
@@ -266,9 +268,10 @@ export default function FormatTab() {
             <button class="ribbon-row-btn" id="fmt-open" title={t('format.openProperties')}
               onClick={() => {
                 setPanelVisible(true);
-                if (state.selectedAnnotations.length === 1) {
-                  showProperties(state.selectedAnnotations[0]);
-                } else if (state.selectedAnnotations.length > 1) {
+                const _fmtSel = getActiveDocument()?.selectedAnnotations || [];
+                if (_fmtSel.length === 1) {
+                  showProperties(_fmtSel[0]);
+                } else if (_fmtSel.length > 1) {
                   showMultiSelectionProperties();
                 }
               }}>

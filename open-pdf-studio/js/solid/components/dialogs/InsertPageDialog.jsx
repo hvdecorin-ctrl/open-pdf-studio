@@ -2,7 +2,7 @@ import { createSignal } from 'solid-js';
 import Dialog from '../Dialog.jsx';
 import { closeDialog } from '../../stores/dialogStore.js';
 import { PAPER_SIZES } from './NewDocDialog.jsx';
-import { state } from '../../../core/state.js';
+import { state, getActiveDocument } from '../../../core/state.js';
 import { insertBlankPages } from '../../../pdf/page-manager.js';
 import { useTranslation } from '../../../i18n/useTranslation.js';
 
@@ -18,7 +18,8 @@ export default function InsertPageDialog() {
     const size = paperSize();
 
     if (size === 'current') {
-      const page = await state.pdfDoc.getPage(state.currentPage);
+      const doc = getActiveDocument();
+      const page = await doc.pdfDoc.getPage(doc.currentPage);
       const viewport = page.getViewport({ scale: 1 });
       return { widthPt: viewport.width, heightPt: viewport.height };
     }
@@ -31,7 +32,7 @@ export default function InsertPageDialog() {
 
   const handleOk = async () => {
     const { widthPt, heightPt } = await getDimensions();
-    await insertBlankPages(position(), state.currentPage, count(), widthPt, heightPt);
+    await insertBlankPages(position(), getActiveDocument()?.currentPage || 1, count(), widthPt, heightPt);
     close();
   };
 

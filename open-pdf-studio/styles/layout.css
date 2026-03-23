@@ -30,6 +30,7 @@
 .panel-resize-handle {
   width: 4px;
   background: var(--theme-panel-resize);
+  cursor: col-resize;
   flex-shrink: 0;
   position: relative;
 }

@@ -1,4 +1,4 @@
-import { state } from '../core/state.js';
+import { state, getActiveDocument } from '../core/state.js';
 import { OPS } from 'pdfjs-dist';
 import { getPageRotation } from '../core/state.js';
 
@@ -61,7 +61,7 @@ export function prefetchPdfVectorGeometry(pageNum) {
  * Called on-demand when user activates snap-to-drawing.
  */
 export async function loadAllPdfSnapData() {
-  const pdfDoc = state.pdfDoc;
+  const pdfDoc = getActiveDocument()?.pdfDoc;
   if (!pdfDoc) return;
 
   const total = pdfDoc.numPages;
@@ -115,7 +115,7 @@ export function clearPdfVectorCache() {
  * Transforms all coordinates to annotation-space (CSS pixels at scale=1).
  */
 async function extractPageGeometry(pageNum) {
-  const pdfDoc = state.pdfDoc;
+  const pdfDoc = getActiveDocument()?.pdfDoc;
   if (!pdfDoc) return { points: [], edges: [] };
 
   const page = await pdfDoc.getPage(pageNum);

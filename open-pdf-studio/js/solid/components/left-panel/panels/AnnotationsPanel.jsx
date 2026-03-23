@@ -2,7 +2,7 @@ import { For, Show, createSignal, onCleanup } from 'solid-js';
 import { activeTab } from '../../../stores/leftPanelStore.js';
 import { items, countText, emptyMessage, sortMode, setSortMode, filterMode, setFilterMode, collapsedGroups, toggleGroup, expandAllGroups, collapseAllGroups } from '../../../stores/panels/annotationsStore.js';
 import { useTranslation } from '../../../../i18n/useTranslation.js';
-import { state, clearSelection } from '../../../../core/state.js';
+import { state, clearSelection, getActiveDocument } from '../../../../core/state.js';
 import {
   cutIcon, copyIcon, deleteIcon, flattenIcon, exportIcon, deselectIcon, propertiesIcon
 } from '../../../data/contextMenuIcons.js';
@@ -71,18 +71,19 @@ export default function AnnotationsPanel() {
     collapseAllGroups(allKeys);
   };
 
-  const hasSelection = () => !!state.selectedAnnotation;
+  const hasSelection = () => !!state.documents[state.activeDocumentIndex]?.selectedAnnotation;
 
   const cutSelected = () => {
-    const ann = state.selectedAnnotation;
+    const doc = getActiveDocument();
+    const ann = doc?.selectedAnnotation;
     if (!ann) return;
     import('../../../../annotations/clipboard.js').then(({ copyAnnotation }) => {
       import('../../../../core/undo-manager.js').then(({ recordDelete }) => {
         copyAnnotation(ann);
-        const idx = state.annotations.indexOf(ann);
+        const idx = doc.annotations.indexOf(ann);
         recordDelete(ann, idx);
-        state.annotations = state.annotations.filter(x => x !== ann);
-        state.selectedAnnotation = null;
+        doc.annotations = doc.annotations.filter(x => x !== ann);
+        if (doc) { doc.selectedAnnotation = null; doc.selectedAnnotations = []; }
         import('../../../../annotations/rendering.js').then(({ redrawAnnotations }) => redrawAnnotations());
         import('../../../../ui/panels/annotations-list.js').then(m => m.updateAnnotationsList());
       });
@@ -90,13 +91,15 @@ export default function AnnotationsPanel() {
   };
 
   const copySelected = () => {
-    const ann = state.selectedAnnotation;
+    const doc = getActiveDocument();
+    const ann = doc?.selectedAnnotation;
     if (!ann) return;
     import('../../../../annotations/clipboard.js').then(({ copyAnnotation }) => copyAnnotation(ann));
   };
 
   const deleteSelected = async () => {
-    const ann = state.selectedAnnotation;
+    const doc = getActiveDocument();
+    const ann = doc?.selectedAnnotation;
     if (!ann) return;
     const { showConfirm } = await import('../../../../ui/chrome/confirm-dialog.js');
     const confirmed = await showConfirm({
@@ -106,10 +109,10 @@ export default function AnnotationsPanel() {
     });
     if (confirmed) {
       import('../../../../core/undo-manager.js').then(({ recordDelete }) => {
-        const idx = state.annotations.indexOf(ann);
+        const idx = doc.annotations.indexOf(ann);
         recordDelete(ann, idx);
-        state.annotations = state.annotations.filter(x => x !== ann);
-        state.selectedAnnotation = null;
+        doc.annotations = doc.annotations.filter(x => x !== ann);
+        if (doc) { doc.selectedAnnotation = null; doc.selectedAnnotations = []; }
         import('../../../../annotations/rendering.js').then(({ redrawAnnotations }) => redrawAnnotations());
         import('../../../../ui/panels/annotations-list.js').then(m => m.updateAnnotationsList());
       });
@@ -117,7 +120,8 @@ export default function AnnotationsPanel() {
   };
 
   const flattenSelected = () => {
-    const ann = state.selectedAnnotation;
+    const doc = getActiveDocument();
+    const ann = doc?.selectedAnnotation;
     if (ann) {
       ann.flattened = true;
       import('../../../../annotations/rendering.js').then(({ redrawAnnotations }) => redrawAnnotations());
@@ -125,14 +129,14 @@ export default function AnnotationsPanel() {
   };
 
   const deselectAll = () => {
-    state.selectedAnnotation = null;
     clearSelection();
     import('../../../../ui/panels/annotations-list.js').then(m => m.updateAnnotationsList());
     import('../../../../annotations/rendering.js').then(({ redrawAnnotations }) => redrawAnnotations());
   };
 
   const showProperties = () => {
-    const ann = state.selectedAnnotation;
+    const doc = getActiveDocument();
+    const ann = doc?.selectedAnnotation;
     if (ann) {
       import('../../../../ui/panels/properties-panel.js').then(m => m.showProperties(ann));
     }

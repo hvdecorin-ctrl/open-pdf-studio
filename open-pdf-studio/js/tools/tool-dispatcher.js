@@ -1,4 +1,4 @@
-import { state } from '../core/state.js';
+import { state, getActiveDocument } from '../core/state.js';
 import { resolvePointerCoords, buildToolContext, isModalOpen } from './tool-context.js';
 import { getTool } from './tool-registry.js';
 import { cloneAnnotation } from '../annotations/factory.js';
@@ -16,7 +16,7 @@ import { isPdfAReadOnly } from '../pdf/loader.js';
 import { getAnnotationType } from '../plugins/annotation-type-registry.js';
 
 function redraw() {
-  if (state.viewMode === 'continuous') redrawContinuous();
+  if (getActiveDocument()?.viewMode === 'continuous') redrawContinuous();
   else redrawAnnotations();
 }
 
@@ -24,7 +24,7 @@ function redraw() {
  * Main pointer-down handler (replaces handleMouseDown + handleContinuousMouseDown)
  */
 export function handlePointerDown(e) {
-  if (!state.pdfDoc) return;
+  if (!getActiveDocument()?.pdfDoc) return;
   if (isModalOpen()) return;
 
   // Safety: reset stuck drag/resize state
@@ -48,7 +48,9 @@ export function handlePointerDown(e) {
   const ctx = buildToolContext(e, coords);
 
   // Object snap start point, fall back to grid
-  const startSnap = performSnap(coords.x, coords.y, state.annotations, coords.pageNum, state.scale);
+  const doc = getActiveDocument();
+  const scale = doc?.scale || 1.5;
+  const startSnap = performSnap(coords.x, coords.y, doc?.annotations || [], coords.pageNum, scale);
   state.startX = startSnap.snapped ? startSnap.x : snapToGrid(coords.x);
   state.startY = startSnap.snapped ? startSnap.y : snapToGrid(coords.y);
   state.lastSnapResult = startSnap.snapped ? startSnap : null;
@@ -56,15 +58,16 @@ export function handlePointerDown(e) {
   state.dragStartY = coords.y;
 
   // Set continuous mode context
-  if (state.viewMode === 'continuous') {
+  if (getActiveDocument()?.viewMode === 'continuous') {
     state.activeContinuousCanvas = coords.canvas;
     state.activeContinuousPage = coords.pageNum;
-    state.currentPage = coords.pageNum;
+    const __doc = getActiveDocument();
+    if (__doc) __doc.currentPage = coords.pageNum;
   }
 
   // Middle mouse button: panning (works regardless of tool)
   if (e.button === 1) {
-    if (state.viewMode === 'continuous') startContinuousPan(e, true);
+    if (getActiveDocument()?.viewMode === 'continuous') startContinuousPan(e, true);
     else startPan(e, true);
     return;
   }
@@ -109,7 +112,7 @@ export function handlePointerDown(e) {
  * Main pointer-move handler (replaces handleMouseMove + handleContinuousMouseMove)
  */
 export function handlePointerMove(e) {
-  if (!state.pdfDoc) return;
+  if (!getActiveDocument()?.pdfDoc) return;
   if (isModalOpen()) return;
   if (state.isPanning) return;
 
@@ -123,7 +126,8 @@ export function handlePointerMove(e) {
   }
 
   // Handle dragging/moving (shared across hand/select tools)
-  if (state.isDragging && state.selectedAnnotations.length > 0) {
+  const _dragDoc = getActiveDocument();
+  if (state.isDragging && _dragDoc && _dragDoc.selectedAnnotations.length > 0) {
     _handleDrag(ctx, e, coords);
     return;
   }
@@ -146,7 +150,7 @@ export function handlePointerMove(e) {
  * Main pointer-up handler (replaces handleMouseUp + handleContinuousMouseUp)
  */
 export function handlePointerUp(e) {
-  if (!state.pdfDoc) return;
+  if (!getActiveDocument()?.pdfDoc) return;
   if (isModalOpen()) return;
   if (state.isPanning) {
     // End the pan — pointer capture may prevent document-level listeners from firing
@@ -192,7 +196,7 @@ export function handlePointerUp(e) {
  * Double-click handler (replaces handleDblClick + handleContinuousDblClick)
  */
 export function handleDblClick(e) {
-  if (!state.pdfDoc) return;
+  if (!getActiveDocument()?.pdfDoc) return;
   if (isModalOpen()) return;
   if (isPdfAReadOnly()) return;
 
@@ -200,25 +204,27 @@ export function handleDblClick(e) {
   if (!coords.canvas) return;
 
   // Set correct page for continuous mode
-  if (state.viewMode === 'continuous') {
-    state.currentPage = coords.pageNum;
+  if (getActiveDocument()?.viewMode === 'continuous') {
+    const dblClickDoc = getActiveDocument();
+    if (dblClickDoc) dblClickDoc.currentPage = coords.pageNum;
   }
 
   const clicked = findAnnotationAt(coords.x, coords.y);
   if (clicked) {
+    const dblDoc = getActiveDocument();
     if (['textbox', 'callout'].includes(clicked.type)) {
       state.isDrawing = false;
-      state.selectedAnnotations = [clicked];
+      if (dblDoc) { dblDoc.selectedAnnotations = [clicked]; dblDoc.selectedAnnotation = clicked; }
       showProperties(clicked);
       startTextEditing(clicked);
     } else if (clicked.type === 'comment') {
       state.isDrawing = false;
-      state.selectedAnnotations = [clicked];
+      if (dblDoc) { dblDoc.selectedAnnotations = [clicked]; dblDoc.selectedAnnotation = clicked; }
       showProperties(clicked);
       openStickyPopup(clicked);
     } else if (clicked.type === 'stamp' && clicked.stampSvgBuilder) {
       state.isDrawing = false;
-      state.selectedAnnotations = [clicked];
+      if (dblDoc) { dblDoc.selectedAnnotations = [clicked]; dblDoc.selectedAnnotation = clicked; }
       import('../bridge.js').then(m => {
         m.openDialog('title-block-edit', {
           annotation: clicked,
@@ -241,7 +247,9 @@ export function handleDblClick(e) {
 // --- Shared drag/resize/drawing logic ---
 
 function _handleResize(ctx, e, coords) {
-  const ann = state.selectedAnnotations.length === 1 ? state.selectedAnnotations[0] : null;
+  const _resDoc = getActiveDocument();
+  const _selAnns = _resDoc ? _resDoc.selectedAnnotations : [];
+  const ann = _selAnns.length === 1 ? _selAnns[0] : null;
   if (!ann || !state.originalAnnotation) return;
   const canvasCtx = coords.canvasCtx;
 
@@ -254,7 +262,9 @@ function _handleResize(ctx, e, coords) {
   }
 
   // Snap cursor position during resize
-  const snap = performSnap(coords.x, coords.y, state.annotations, coords.pageNum, state.scale, ann.id);
+  const resizeDoc = getActiveDocument();
+  const resizeScale = resizeDoc?.scale || 1.5;
+  const snap = performSnap(coords.x, coords.y, resizeDoc?.annotations || [], coords.pageNum, resizeScale, ann.id);
   const snappedX = snap.snapped ? snap.x : coords.x;
   const snappedY = snap.snapped ? snap.y : coords.y;
   state.lastSnapResult = snap.snapped ? snap : null;
@@ -304,8 +314,8 @@ function _handleResize(ctx, e, coords) {
 
   if (state.lastSnapResult) {
     canvasCtx.save();
-    canvasCtx.scale(state.scale, state.scale);
-    drawSnapIndicator(canvasCtx, state.lastSnapResult, state.scale);
+    canvasCtx.scale(resizeScale, resizeScale);
+    drawSnapIndicator(canvasCtx, state.lastSnapResult, resizeScale);
     canvasCtx.restore();
   }
 }
@@ -313,11 +323,13 @@ function _handleResize(ctx, e, coords) {
 function _handleDrag(ctx, e, coords) {
   const deltaX = coords.x - state.dragStartX;
   const deltaY = coords.y - state.dragStartY;
+  const _dDoc = getActiveDocument();
+  const _dSel = _dDoc ? _dDoc.selectedAnnotations : [];
 
   // Ctrl+drag copy: create clones on first meaningful move
   if (state._ctrlDragCopy && !state._ctrlCopiesCreated && (Math.abs(deltaX) > 2 || Math.abs(deltaY) > 2)) {
     const newId = () => Date.now().toString(36) + Math.random().toString(36).substring(2, 11);
-    const selected = state.selectedAnnotations;
+    const selected = _dSel;
     const originals = state.originalAnnotations;
 
     try {
@@ -328,10 +340,10 @@ function _handleDrag(ctx, e, coords) {
         const copies = originals.map(orig => {
           const copy = cloneAnnotation(orig);
           copy.id = newId();
-          state.annotations.push(copy);
+          if (_dDoc) _dDoc.annotations.push(copy);
           return copy;
         });
-        state.selectedAnnotations = copies;
+        if (_dDoc) { _dDoc.selectedAnnotations = copies; _dDoc.selectedAnnotation = copies[0] || null; }
         state.originalAnnotations = copies.map(c => cloneAnnotation(c));
         state._ctrlCopiesCreated = true;
       } else if (selected.length === 1) {
@@ -341,8 +353,8 @@ function _handleDrag(ctx, e, coords) {
           Object.assign(ann, cloneAnnotation(orig));
           const copy = cloneAnnotation(orig);
           copy.id = newId();
-          state.annotations.push(copy);
-          state.selectedAnnotations = [copy];
+          if (_dDoc) _dDoc.annotations.push(copy);
+          if (_dDoc) { _dDoc.selectedAnnotations = [copy]; _dDoc.selectedAnnotation = copy; }
           state.originalAnnotation = cloneAnnotation(copy);
           state.originalAnnotations = [cloneAnnotation(copy)];
           state._ctrlCopiesCreated = true;
@@ -354,16 +366,19 @@ function _handleDrag(ctx, e, coords) {
     }
   }
 
+  // Re-read after potential copy (selectedAnnotations may have changed)
+  const _dSel2 = _dDoc ? _dDoc.selectedAnnotations : [];
+
   // Apply move to all selected annotations
-  if (state.selectedAnnotations.length > 1 && state.originalAnnotations.length > 0) {
-    for (let i = 0; i < state.selectedAnnotations.length; i++) {
+  if (_dSel2.length > 1 && state.originalAnnotations.length > 0) {
+    for (let i = 0; i < _dSel2.length; i++) {
       if (state.originalAnnotations[i]) {
-        Object.assign(state.selectedAnnotations[i], cloneAnnotation(state.originalAnnotations[i]));
-        applyMove(state.selectedAnnotations[i], deltaX, deltaY);
+        Object.assign(_dSel2[i], cloneAnnotation(state.originalAnnotations[i]));
+        applyMove(_dSel2[i], deltaX, deltaY);
       }
     }
-  } else if (state.selectedAnnotations.length === 1) {
-    const ann = state.selectedAnnotations[0];
+  } else if (_dSel2.length === 1) {
+    const ann = _dSel2[0];
     const orig = state.originalAnnotation || state.originalAnnotations[0];
     if (ann && orig) {
       Object.assign(ann, cloneAnnotation(orig));
@@ -374,15 +389,31 @@ function _handleDrag(ctx, e, coords) {
   redraw();
 }
 
+function _annotationChanged(oldState, newState) {
+  const keys = new Set([...Object.keys(oldState), ...Object.keys(newState)]);
+  for (const k of keys) {
+    if (k === 'id') continue;
+    const a = oldState[k], b = newState[k];
+    if (a !== b && JSON.stringify(a) !== JSON.stringify(b)) return true;
+  }
+  return false;
+}
+
 function _finishDragResize(ctx, e, coords) {
+  const _fDoc = getActiveDocument();
+  const _fSel = _fDoc ? _fDoc.selectedAnnotations : [];
   if (state._ctrlDragCopy && state._ctrlCopiesCreated) {
-    for (const ann of state.selectedAnnotations) recordAdd(ann);
+    for (const ann of _fSel) recordAdd(ann);
     markDocumentModified();
   } else {
-    const upAnn = state.selectedAnnotations.length === 1 ? state.selectedAnnotations[0] : null;
-    if (state.selectedAnnotations.length > 1 && state.originalAnnotations.length > 0) {
-      recordBulkModify(state.selectedAnnotations, state.originalAnnotations);
-    } else if (state.originalAnnotation && upAnn) {
+    const upAnn = _fSel.length === 1 ? _fSel[0] : null;
+    if (_fSel.length > 1 && state.originalAnnotations.length > 0) {
+      // Only record if at least one annotation actually changed
+      const anyChanged = _fSel.some((ann, i) =>
+        state.originalAnnotations[i] && _annotationChanged(state.originalAnnotations[i], ann)
+      );
+      if (anyChanged) recordBulkModify(_fSel, state.originalAnnotations);
+    } else if (state.originalAnnotation && upAnn && _annotationChanged(state.originalAnnotation, upAnn)) {
       recordModify(upAnn.id, state.originalAnnotation, upAnn);
     }
   }
@@ -400,14 +431,16 @@ function _finishDragResize(ctx, e, coords) {
   const canvas = coords.canvas;
   if (canvas) canvas.style.cursor = state.currentTool === 'hand' ? 'grab' : 'default';
 
-  if (state.selectedAnnotations.length === 1) showProperties(state.selectedAnnotations[0]);
-  else if (state.selectedAnnotations.length > 1) showMultiSelectionProperties();
+  if (_fSel.length === 1) showProperties(_fSel[0]);
+  else if (_fSel.length > 1) showMultiSelectionProperties();
 }
 
 function _finishDrawing(ctx, e, coords) {
   // Generic drag-to-create finalization — used when tool doesn't handle onPointerUp
   const rawEndX = coords.x, rawEndY = coords.y;
-  const endSnap = performSnap(rawEndX, rawEndY, state.annotations, coords.pageNum, state.scale);
+  const drawDoc = getActiveDocument();
+  const drawScale = drawDoc?.scale || 1.5;
+  const endSnap = performSnap(rawEndX, rawEndY, drawDoc?.annotations || [], coords.pageNum, drawScale);
   const endX = endSnap.snapped ? endSnap.x : snapToGrid(rawEndX);
   const endY = endSnap.snapped ? endSnap.y : snapToGrid(rawEndY);
   state.lastSnapResult = null;
@@ -416,19 +449,19 @@ function _finishDrawing(ctx, e, coords) {
   const { createAnnotationFromTool } = ctx;
   const ann = createAnnotationFromTool(state.currentTool, state.startX, state.startY, endX, endY, e);
   if (ann) {
-    state.annotations.push(ann);
+    if (drawDoc) drawDoc.annotations.push(ann);
     recordAdd(ann);
   }
   redraw();
 
   if (ann && ['textbox', 'callout'].includes(ann.type)) {
-    state.selectedAnnotations = [ann];
+    if (drawDoc) { drawDoc.selectedAnnotations = [ann]; drawDoc.selectedAnnotation = ann; }
     showProperties(ann);
     startTextEditing(ann);
   }
 
   // Clear continuous mode state
-  if (state.viewMode === 'continuous') {
+  if (getActiveDocument()?.viewMode === 'continuous') {
     state.activeContinuousCanvas = null;
     state.activeContinuousPage = null;
   }

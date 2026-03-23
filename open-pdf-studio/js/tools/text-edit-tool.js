@@ -275,7 +275,7 @@ function enableTextLayerHover() {
     // Force block computation so spanToBlock is populated
     getBlockGroups(layer);
 
-    const pageNum = parseInt(layer.dataset.page) || state.currentPage;
+    const pageNum = parseInt(layer.dataset.page) || (getActiveDocument()?.currentPage || 1);
     const spans = layer.querySelectorAll('span');
     spans.forEach(span => {
       if (alreadyAttached.has(span)) return;
@@ -561,7 +561,7 @@ function finishPdfTextEditing() {
       execute({ type: 'addTextEdit', textEdit: { ...editRecord, originalSpanTexts } });
       markDocumentModified();
 
-      if (state.viewMode === 'continuous') {
+      if (getActiveDocument()?.viewMode === 'continuous') {
         redrawContinuous();
       } else {
         redrawAnnotations();
@@ -586,6 +586,109 @@ function cancelPdfTextEditing() {
   hideProperties();
 }
 
+/**
+ * Programmatically replace text within a single span on the current page.
+ * Used by Find & Replace. Uses the span's own PDF coordinates and font data
+ * so the cover rectangle matches only that span, not the entire text block.
+ *
+ * @param {number} pageNum - Page number
+ * @param {string} originalText - The original span text
+ * @param {string} newText - The replacement span text
+ * @param {HTMLElement} matchSpan - The span element containing the text to replace
+ * @returns {{ editRecord: Object } | null}
+ */
+export function createReplaceTextEdit(pageNum, originalText, newText, matchSpan) {
+  // Read PDF coordinates directly from the span's data attributes
+  let transform;
+  try {
+    transform = JSON.parse(matchSpan.dataset.pdfTransform);
+  } catch (_) {
+    return null;
+  }
+  if (!transform) return null;
+
+  const fontSize = Math.sqrt(transform[2] ** 2 + transform[3] ** 2) || 12;
+  const pdfX = transform[4];
+  const pdfY = transform[5]; // baseline Y in PDF space
+  const pdfWidth = parseFloat(matchSpan.dataset.pdfWidth) || fontSize * originalText.length * 0.5;
+
+  // Detect font from span data attributes (set by text-layer.js)
+  const pdfFontFamily = matchSpan.dataset.pdfFontFamily || 'sans-serif';
+  const actualFontName = matchSpan.dataset.pdfActualFontName || '';
+  const loadedFontName = matchSpan.dataset.pdfLoadedFontName || '';
+  const pdfFontName = matchSpan.dataset.pdfFontName || '';
+  const isBold = matchSpan.dataset.pdfBold === 'true';
+  const isItalic = matchSpan.dataset.pdfItalic === 'true';
+
+  const an = actualFontName.toLowerCase();
+  const fl = pdfFontFamily.toLowerCase();
+  let fontFamily;
+  if (an.includes('courier') || an.includes('consolas') || an.includes('mono') || fl === 'monospace') {
+    fontFamily = isBold && isItalic ? 'Courier-BoldOblique'
+      : isBold ? 'Courier-Bold'
+      : isItalic ? 'Courier-Oblique'
+      : 'Courier';
+  } else if (an.includes('times') || an.includes('garamond') || an.includes('georgia')
+      || an.includes('palatino') || an.includes('cambria') || an.includes('bookman')
+      || fl === 'serif') {
+    fontFamily = isBold && isItalic ? 'TimesRoman-BoldItalic'
+      : isBold ? 'TimesRoman-Bold'
+      : isItalic ? 'TimesRoman-Italic'
+      : 'TimesRoman';
+  } else {
+    fontFamily = isBold && isItalic ? 'Helvetica-BoldOblique'
+      : isBold ? 'Helvetica-Bold'
+      : isItalic ? 'Helvetica-Oblique'
+      : 'Helvetica';
+  }
+
+  // Sample text color from the canvas at the span's position
+  let color = '#000000';
+  const textLayer = matchSpan.closest('.textLayer');
+  if (textLayer) {
+    const canvasEl = textLayer.parentElement?.querySelector('canvas.pdf-canvas')
+      || document.getElementById('pdf-canvas');
+    if (canvasEl) {
+      try {
+        const ctx = canvasEl.getContext('2d');
+        const spanRect = matchSpan.getBoundingClientRect();
+        const canvasRect = canvasEl.getBoundingClientRect();
+        const sampleX = Math.round(spanRect.left - canvasRect.left + 2);
+        const sampleY = Math.round((spanRect.top + spanRect.bottom) / 2 - canvasRect.top);
+        if (sampleX >= 0 && sampleY >= 0 && sampleX < canvasEl.width && sampleY < canvasEl.height) {
+          const pixel = ctx.getImageData(sampleX, sampleY, 1, 1).data;
+          if (pixel[0] < 240 || pixel[1] < 240 || pixel[2] < 240) {
+            color = '#' + ((1 << 24) | (pixel[0] << 16) | (pixel[1] << 8) | pixel[2]).toString(16).slice(1);
+          }
+        }
+      } catch (_) {}
+    }
+  }
+
+  const editRecord = {
+    id: Date.now() + Math.random().toString(36).substr(2, 9),
+    page: pageNum,
+    originalText,
+    newText,
+    pdfX,
+    pdfY,
+    pdfWidth,
+    fontSize: Math.round(fontSize),
+    lineSpacing: fontSize * 1.2,
+    numOriginalLines: 1,
+    fontFamily,
+    loadedFontName,
+    pdfFontName,
+    color,
+    originalSpanTexts: [[originalText]]
+  };
+
+  // Update span text visually
+  matchSpan.textContent = newText;
+
+  return { editRecord };
+}
+
 export function findTextEditAtPosition(x, y, pageNum, canvasEl) {
   const doc = getActiveDocument();
   if (!doc || !doc.textEdits || doc.textEdits.length === 0) return null;
@@ -593,7 +696,7 @@ export function findTextEditAtPosition(x, y, pageNum, canvasEl) {
   const pageEdits = doc.textEdits.filter(e => e.page === pageNum);
   if (pageEdits.length === 0) return null;
 
-  const pageHeight = canvasEl.height / state.scale;
+  const pageHeight = canvasEl.height / (doc.scale || 1.5);
 
   for (const edit of pageEdits) {
     const fontSize = edit.fontSize;
@@ -619,7 +722,9 @@ export function findTextEditAtPosition(x, y, pageNum, canvasEl) {
 export function startTextEditEditing(textEdit, pageNum, canvasEl) {
   finishPdfTextEditing();
 
-  const pageHeight = canvasEl.height / state.scale;
+  const editDoc = getActiveDocument();
+  const editScale = editDoc?.scale || 1.5;
+  const pageHeight = canvasEl.height / editScale;
   const fontSize = textEdit.fontSize;
   const ls = textEdit.lineSpacing || fontSize * 1.2;
   const newLines = textEdit.newText.split('\n');
@@ -641,11 +746,11 @@ export function startTextEditEditing(textEdit, pageNum, canvasEl) {
 
   const padX = 4;
   const padY = 4;
-  const scaledLeft = textEdit.pdfX * state.scale;
-  const scaledTop = editTop * state.scale;
-  const scaledWidth = editWidth * state.scale;
-  const scaledHeight = editHeight * state.scale;
-  const editorFontSize = Math.round(fontSize * state.scale * 0.82);
+  const scaledLeft = textEdit.pdfX * editScale;
+  const scaledTop = editTop * editScale;
+  const scaledWidth = editWidth * editScale;
+  const scaledHeight = editHeight * editScale;
+  const editorFontSize = Math.round(fontSize * editScale * 0.82);
   const visualLineHeight = (scaledHeight / numLines);
 
   // Map font family to CSS
@@ -686,7 +791,7 @@ export function startTextEditEditing(textEdit, pageNum, canvasEl) {
       execute({ type: 'modifyTextEdit', oldTextEdit, newTextEdit: { ...textEdit } });
       markDocumentModified();
 
-      if (state.viewMode === 'continuous') {
+      if (getActiveDocument()?.viewMode === 'continuous') {
         redrawContinuous();
       } else {
         redrawAnnotations();

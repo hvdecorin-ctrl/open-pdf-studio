@@ -17,7 +17,7 @@ export const textTool = {
 
   onPointerDown(ctx) {
     const { state, pageNum, canvas } = ctx;
-    if (state.viewMode === 'continuous') {
+    if (ctx.viewMode === 'continuous') {
       ctx.addTextAnnotation(ctx.x, ctx.y, pageNum, canvas);
     } else {
       ctx.addTextAnnotation(ctx.x, ctx.y);

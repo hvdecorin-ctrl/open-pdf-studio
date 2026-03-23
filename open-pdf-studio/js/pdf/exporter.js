@@ -1,4 +1,4 @@
-import { state, getAnnotationBounds } from '../core/state.js';
+import { state, getActiveDocument, getAnnotationBounds } from '../core/state.js';
 import { showLoading, hideLoading } from '../ui/chrome/dialogs.js';
 import { isTauri, writeBinaryFile, saveFileDialog, openFolderDialog } from '../core/platform.js';
 import { renderAnnotationsForPage, drawAnnotation } from '../annotations/rendering.js';
@@ -47,7 +47,7 @@ export function parsePageRange(rangeStr, totalPages) {
  * @returns {Promise<HTMLCanvasElement>} The rendered canvas
  */
 export async function renderPageOffscreen(pageNum, exportScale) {
-  const page = await state.pdfDoc.getPage(pageNum);
+  const page = await getActiveDocument().pdfDoc.getPage(pageNum);
   const extraRotation = getPageRotation(pageNum);
   const viewportOpts = { scale: exportScale };
   if (extraRotation) {
@@ -138,7 +138,7 @@ function getPdfBaseName() {
  * @param {number[]} options.pages - Array of 1-based page numbers
  */
 export async function exportAsImages({ format = 'png', quality = 0.92, dpi = 150, pages }) {
-  if (!state.pdfDoc || !isTauri()) return;
+  if (!getActiveDocument()?.pdfDoc || !isTauri()) return;
 
   const ext = format === 'jpeg' ? 'jpg' : 'png';
   const exportScale = dpi / 72;
@@ -193,7 +193,7 @@ export async function exportAsImages({ format = 'png', quality = 0.92, dpi = 150
  * @param {number[]} options.pages - Array of 1-based page numbers
  */
 export async function exportAsRasterPdf({ dpi = 300, pages }) {
-  if (!state.pdfDoc || !isTauri()) return;
+  if (!getActiveDocument()?.pdfDoc || !isTauri()) return;
 
   const baseName = getPdfBaseName();
   const defaultName = `${baseName}_raster.pdf`;
@@ -219,7 +219,7 @@ export async function exportAsRasterPdf({ dpi = 300, pages }) {
       const jpegImage = await newPdf.embedJpg(jpegBytes);
 
       // Get original page dimensions (in PDF points)
-      const origPage = await state.pdfDoc.getPage(pageNum);
+      const origPage = await getActiveDocument().pdfDoc.getPage(pageNum);
       const extraRotation = getPageRotation(pageNum);
       const origViewportOpts = { scale: 1 };
       if (extraRotation) {

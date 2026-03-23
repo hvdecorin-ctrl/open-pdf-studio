@@ -1,7 +1,7 @@
 import RibbonGroup from './RibbonGroup.jsx';
 import RibbonButton from './RibbonButton.jsx';
 import RibbonButtonStack from './RibbonButtonStack.jsx';
-import { state } from '../../../core/state.js';
+import { state, getActiveDocument } from '../../../core/state.js';
 import { isPdfAReadOnly } from '../../../pdf/loader.js';
 import { bringToFront, sendToBack, bringForward, sendBackward, flipHorizontal, flipVertical, rotateAnnotation } from '../../../annotations/z-order.js';
 import { cloneAnnotation } from '../../../annotations/factory.js';
@@ -104,7 +104,7 @@ export default function ArrangeTab() {
           <div class="ribbon-grid-col">
             <button class="ribbon-row-btn" id="arr-rotate-ccw" title={t('arrange.rotate90CCW')} disabled={isPdfAReadOnly()}
               onClick={() => {
-                const anns = [...state.selectedAnnotations];
+                const anns = [...(getActiveDocument()?.selectedAnnotations || [])];
                 const originals = anns.map(a => cloneAnnotation(a));
                 for (const ann of anns) rotateAnnotation(ann, -90);
                 recordBulkModify(anns, originals);
@@ -114,7 +114,7 @@ export default function ArrangeTab() {
             </button>
             <button class="ribbon-row-btn" id="arr-rotate-cw" title={t('arrange.rotate90CW')} disabled={isPdfAReadOnly()}
               onClick={() => {
-                const anns = [...state.selectedAnnotations];
+                const anns = [...(getActiveDocument()?.selectedAnnotations || [])];
                 const originals = anns.map(a => cloneAnnotation(a));
                 for (const ann of anns) rotateAnnotation(ann, 90);
                 recordBulkModify(anns, originals);
@@ -124,7 +124,7 @@ export default function ArrangeTab() {
             </button>
             <button class="ribbon-row-btn" id="arr-rotate-180" title={t('arrange.rotate180')} disabled={isPdfAReadOnly()}
               onClick={() => {
-                const anns = [...state.selectedAnnotations];
+                const anns = [...(getActiveDocument()?.selectedAnnotations || [])];
                 const originals = anns.map(a => cloneAnnotation(a));
                 for (const ann of anns) rotateAnnotation(ann, 180);
                 recordBulkModify(anns, originals);
@@ -139,7 +139,7 @@ export default function ArrangeTab() {
           <div class="ribbon-grid-col">
             <button class="ribbon-row-btn" id="arr-flip-h" title={t('arrange.flipHorizontally')} disabled={isPdfAReadOnly()}
               onClick={() => {
-                const anns = [...state.selectedAnnotations];
+                const anns = [...(getActiveDocument()?.selectedAnnotations || [])];
                 const originals = anns.map(a => cloneAnnotation(a));
                 for (const ann of anns) flipHorizontal(ann);
                 recordBulkModify(anns, originals);
@@ -149,7 +149,7 @@ export default function ArrangeTab() {
             </button>
             <button class="ribbon-row-btn" id="arr-flip-v" title={t('arrange.flipVertically')} disabled={isPdfAReadOnly()}
               onClick={() => {
-                const anns = [...state.selectedAnnotations];
+                const anns = [...(getActiveDocument()?.selectedAnnotations || [])];
                 const originals = anns.map(a => cloneAnnotation(a));
                 for (const ann of anns) flipVertical(ann);
                 recordBulkModify(anns, originals);
@@ -163,24 +163,24 @@ export default function ArrangeTab() {
         <RibbonGroup label={t('arrange.zOrder')}>
           <div class="ribbon-grid-col">
             <button class="ribbon-row-btn" id="arr-bring-forward" title={t('arrange.bringForward')}
-              disabled={isPdfAReadOnly()} onClick={() => { for (const ann of state.selectedAnnotations) bringForward(ann); }}>
+              disabled={isPdfAReadOnly()} onClick={() => { for (const ann of (getActiveDocument()?.selectedAnnotations || [])) bringForward(ann); }}>
               <span ref={el => { el.innerHTML = bringForwardIcon; }} />
               <span>{t('arrange.bringForward')}</span>
             </button>
             <button class="ribbon-row-btn" id="arr-bring-front" title={t('arrange.bringToFront')}
-              disabled={isPdfAReadOnly()} onClick={() => { for (const ann of state.selectedAnnotations) bringToFront(ann); }}>
+              disabled={isPdfAReadOnly()} onClick={() => { for (const ann of (getActiveDocument()?.selectedAnnotations || [])) bringToFront(ann); }}>
               <span ref={el => { el.innerHTML = bringToFrontIcon; }} />
               <span>{t('arrange.bringToFront')}</span>
             </button>
           </div>
           <div class="ribbon-grid-col">
             <button class="ribbon-row-btn" id="arr-send-backward" title={t('arrange.sendBackward')}
-              disabled={isPdfAReadOnly()} onClick={() => { for (const ann of [...state.selectedAnnotations].reverse()) sendBackward(ann); }}>
+              disabled={isPdfAReadOnly()} onClick={() => { for (const ann of [...(getActiveDocument()?.selectedAnnotations || [])].reverse()) sendBackward(ann); }}>
               <span ref={el => { el.innerHTML = sendBackwardIcon; }} />
               <span>{t('arrange.sendBackward')}</span>
             </button>
             <button class="ribbon-row-btn" id="arr-send-back" title={t('arrange.sendToBack')}
-              disabled={isPdfAReadOnly()} onClick={() => { for (const ann of [...state.selectedAnnotations].reverse()) sendToBack(ann); }}>
+              disabled={isPdfAReadOnly()} onClick={() => { for (const ann of [...(getActiveDocument()?.selectedAnnotations || [])].reverse()) sendToBack(ann); }}>
               <span ref={el => { el.innerHTML = sendToBackIcon; }} />
               <span>{t('arrange.sendToBack')}</span>
             </button>

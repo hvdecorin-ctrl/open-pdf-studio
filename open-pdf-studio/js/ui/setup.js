@@ -99,6 +99,7 @@ function setupPanelResize() {
       leftHandle.classList.add('dragging');
       leftPanel.style.transition = 'none';
       document.body.style.userSelect = 'none';
+      document.body.style.cursor = 'col-resize';
 
       const onMouseMove = (e) => {
         // Don't resize if collapsed
@@ -113,6 +114,7 @@ function setupPanelResize() {
         leftHandle.classList.remove('dragging');
         leftPanel.style.transition = '';
         document.body.style.userSelect = '';
+        document.body.style.cursor = '';
         document.removeEventListener('mousemove', onMouseMove);
         document.removeEventListener('mouseup', onMouseUp);
       };

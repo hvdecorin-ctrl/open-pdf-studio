@@ -32,14 +32,16 @@ export function startTextEditing(annotation) {
   const canvasRect = canvas.getBoundingClientRect();
 
   // Calculate position based on annotation
+  const doc = getActiveDocument();
+  const scale = doc?.scale || 1.5;
   const width = annotation.width || 150;
   const height = annotation.height || 50;
-  const scaledWidth = width * state.scale;
-  const scaledHeight = height * state.scale;
+  const scaledWidth = width * scale;
+  const scaledHeight = height * scale;
 
   // Calculate center position of the annotation
-  const centerX = canvasRect.left + (annotation.x + width / 2) * state.scale;
-  const centerY = canvasRect.top + (annotation.y + height / 2) * state.scale;
+  const centerX = canvasRect.left + (annotation.x + width / 2) * scale;
+  const centerY = canvasRect.top + (annotation.y + height / 2) * scale;
 
   // Build style object for the textarea overlay
   const styleObj = {
@@ -48,17 +50,17 @@ export function startTextEditing(annotation) {
     top: `${centerY}px`,
     width: `${scaledWidth}px`,
     height: `${scaledHeight}px`,
-    'font-size': `${(annotation.fontSize || 14) * state.scale}px`,
+    'font-size': `${(annotation.fontSize || 14) * scale}px`,
     'font-family': annotation.fontFamily || 'Arial',
     color: annotation.textColor || annotation.color || '#000000',
     'background-color': annotation.fillColor && annotation.fillColor !== 'transparent'
       ? annotation.fillColor : '#ffffff',
-    border: `${(annotation.lineWidth ?? 1) * state.scale}px solid ${annotation.strokeColor || '#000000'}`,
-    padding: `${2 * state.scale}px`,
+    border: `${(annotation.lineWidth ?? 1) * scale}px solid ${annotation.strokeColor || '#000000'}`,
+    padding: `${2 * scale}px`,
     'box-sizing': 'border-box',
     resize: 'none',
     outline: 'none',
-    'z-index': '10000',
+    'z-index': '1200',
     overflow: 'hidden',
     transform: annotation.rotation
       ? `translate(-50%, -50%) rotate(${annotation.rotation}deg)`
@@ -73,7 +75,7 @@ export function startTextEditing(annotation) {
   // To show spacing only below text, we shift the textarea up inside a clipping wrapper.
   const ls = annotation.lineSpacing || 1.5;
   styleObj['line-height'] = ls;
-  const halfLeading = ((ls - 1) * (annotation.fontSize || 14) * state.scale) / 2;
+  const halfLeading = ((ls - 1) * (annotation.fontSize || 14) * scale) / 2;
   // Pass halfLeading offset to the overlay component via a custom property
   styleObj['--text-offset'] = `${halfLeading}px`;
 
@@ -90,7 +92,9 @@ export function startTextEditing(annotation) {
     // Apply auto-grown height back to annotation
     const growth = getHeightGrowth();
     if (growth > 0) {
-      ann.height = (ann.height || 50) + growth / state.scale;
+      const commitDoc = getActiveDocument();
+      const commitScale = commitDoc?.scale || 1.5;
+      ann.height = (ann.height || 50) + growth / commitScale;
     }
 
     if (state._textEditSnapshot && ann.id) {
@@ -102,13 +106,14 @@ export function startTextEditing(annotation) {
     state.textEditElement = null;
     state._textEditSnapshot = null;
 
-    if (state.viewMode === 'continuous') {
+    if (getActiveDocument()?.viewMode === 'continuous') {
       redrawContinuous();
     } else {
       redrawAnnotations();
     }
 
-    if (state.selectedAnnotation === ann) {
+    const _doc = getActiveDocument();
+    if (_doc && _doc.selectedAnnotation === ann) {
       showProperties(ann);
     }
   };
@@ -124,13 +129,14 @@ export function startTextEditing(annotation) {
     state.textEditElement = null;
     state._textEditSnapshot = null;
 
-    if (state.viewMode === 'continuous') {
+    if (getActiveDocument()?.viewMode === 'continuous') {
       redrawContinuous();
     } else {
       redrawAnnotations();
     }
 
-    if (state.selectedAnnotation === ann) {
+    const _doc = getActiveDocument();
+    if (_doc && _doc.selectedAnnotation === ann) {
       showProperties(ann);
     }
   };
@@ -153,7 +159,9 @@ export function finishTextEditing() {
   // Apply auto-grown height back to annotation
   const growth = getHeightGrowth();
   if (growth > 0) {
-    annotation.height = (annotation.height || 50) + growth / state.scale;
+    const doc = getActiveDocument();
+    const finishScale = doc?.scale || 1.5;
+    annotation.height = (annotation.height || 50) + growth / finishScale;
   }
 
   if (state._textEditSnapshot && annotation.id) {
@@ -169,14 +177,15 @@ export function finishTextEditing() {
   state._textEditSnapshot = null;
 
   // Refresh display
-  if (state.viewMode === 'continuous') {
+  if (getActiveDocument()?.viewMode === 'continuous') {
     redrawContinuous();
   } else {
     redrawAnnotations();
   }
 
   // Update properties panel
-  if (state.selectedAnnotation === annotation) {
+  const _doc2 = getActiveDocument();
+  if (_doc2 && _doc2.selectedAnnotation === annotation) {
     showProperties(annotation);
   }
 }
@@ -195,16 +204,18 @@ export async function addTextAnnotation(x, y, pageNum, canvasEl) {
   const result = await showTextAnnotationDialog();
   if (!result) return;
 
-  const page = pageNum || state.currentPage;
+  const doc = getActiveDocument();
+  const page = pageNum || (doc ? doc.currentPage : 1);
 
   // Determine page height for coordinate conversion
+  const addTextScale = doc?.scale || 1.5;
   let pageHeight;
   if (canvasEl) {
-    pageHeight = canvasEl.height / state.scale;
+    pageHeight = canvasEl.height / addTextScale;
   } else {
     const canvas = annotationCanvas || document.getElementById('annotation-canvas');
     if (canvas) {
-      pageHeight = canvas.height / state.scale;
+      pageHeight = canvas.height / addTextScale;
     } else {
       return;
     }
@@ -257,7 +268,6 @@ export async function addTextAnnotation(x, y, pageNum, canvasEl) {
     originalSpanTexts: []
   };
 
-  const doc = getActiveDocument();
   if (doc) {
     if (!doc.textEdits) doc.textEdits = [];
     doc.textEdits.push(editRecord);
@@ -271,13 +281,13 @@ export async function addTextAnnotation(x, y, pageNum, canvasEl) {
   if (textLayer) {
     const activeCanvas = canvasEl || annotationCanvas || document.getElementById('annotation-canvas');
     if (activeCanvas) {
-      const pw = activeCanvas.width / state.scale;
-      const ph = activeCanvas.height / state.scale;
+      const pw = activeCanvas.width / addTextScale;
+      const ph = activeCanvas.height / addTextScale;
       injectSyntheticTextSpans(textLayer, page, pw, ph);
     }
   }
 
-  if (state.viewMode === 'continuous') {
+  if (getActiveDocument()?.viewMode === 'continuous') {
     redrawContinuous();
   } else {
     redrawAnnotations();
@@ -289,7 +299,7 @@ export function addComment(x, y) {
   const annotation = {
     id: Date.now().toString(36) + Math.random().toString(36).substr(2, 9),
     type: 'comment',
-    page: state.currentPage,
+    page: getActiveDocument()?.currentPage || 1,
     x: x,
     y: y,
     width: 24,
@@ -306,10 +316,11 @@ export function addComment(x, y) {
     popupOpen: true
   };
 
-  state.annotations.push(annotation);
+  const doc = getActiveDocument();
+  if (doc) doc.annotations.push(annotation);
   recordAdd(annotation);
 
-  if (state.viewMode === 'continuous') {
+  if (doc?.viewMode === 'continuous') {
     redrawContinuous();
   } else {
     redrawAnnotations();

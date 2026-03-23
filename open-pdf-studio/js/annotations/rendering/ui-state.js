@@ -1,4 +1,4 @@
-import { state } from '../../core/state.js';
+import { state, getActiveDocument } from '../../core/state.js';
 import { setContextualTabsVisible, syncFormatStore } from '../../bridge.js';
 
 // No-op: TitleBar.jsx now derives button states from reactive state
@@ -6,10 +6,12 @@ export function updateQuickAccessButtons() {}
 
 // Show/hide Format and Arrange contextual ribbon tabs
 export function updateContextualTabs() {
-  const hasSelection = state.selectedAnnotations.length > 0;
+  const _uiDoc = getActiveDocument();
+  const _uiSel = _uiDoc ? _uiDoc.selectedAnnotations : [];
+  const hasSelection = _uiSel.length > 0;
   setContextualTabsVisible(hasSelection);
   if (hasSelection) {
-    syncFormatStore(state.selectedAnnotations);
+    syncFormatStore(_uiSel);
   }
 }
 

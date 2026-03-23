@@ -1,4 +1,4 @@
-import { state } from '../core/state.js';
+import { state, getActiveDocument } from '../core/state.js';
 import { annotationCtx } from '../ui/dom-elements.js';
 import { redrawAnnotations, drawAnnotation } from '../annotations/rendering.js';
 import { drawSnapIndicator } from './snap-engine.js';
@@ -15,8 +15,10 @@ import { getAnnotationType } from '../plugins/annotation-type-registry.js';
  */
 export function drawShapePreview(currentX, currentY, e) {
   redrawAnnotations();
+  const doc = getActiveDocument();
+  const scale = doc?.scale || 1.5;
   annotationCtx.save();
-  annotationCtx.scale(state.scale, state.scale);
+  annotationCtx.scale(scale, scale);
 
   const tool = state.currentTool;
 
@@ -35,7 +37,7 @@ export function drawShapePreview(currentX, currentY, e) {
 
   // Draw snap indicator overlay
   if (state.lastSnapResult && state.lastSnapResult.snapped) {
-    drawSnapIndicator(annotationCtx, state.lastSnapResult, state.scale);
+    drawSnapIndicator(annotationCtx, state.lastSnapResult, scale);
   }
 
   annotationCtx.restore();

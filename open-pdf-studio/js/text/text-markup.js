@@ -1,4 +1,4 @@
-import { state } from '../core/state.js';
+import { state, getActiveDocument } from '../core/state.js';
 import { createAnnotation } from '../annotations/factory.js';
 import { redrawAnnotations, redrawContinuous } from '../annotations/rendering.js';
 import { getSelectionRectsForAnnotation, getSelectionQuadPoints } from './text-selection.js';
@@ -49,16 +49,15 @@ export function createTextMarkupAnnotation(type, color, opacity) {
     opacity: opacity
   });
 
-  state.annotations.push(annotation);
+  const doc = getActiveDocument();
+  if (doc) doc.annotations.push(annotation);
   recordAdd(annotation);
 
   // Select the newly created annotation so Delete key works immediately
-  state.selectedAnnotations = [annotation];
-  const doc = state.documents[state.activeDocumentIndex];
-  if (doc) doc.selectedAnnotation = annotation;
+  if (doc) { doc.selectedAnnotations = [annotation]; doc.selectedAnnotation = annotation; }
 
   // Redraw
-  if (state.viewMode === 'continuous') {
+  if (getActiveDocument()?.viewMode === 'continuous') {
     redrawContinuous();
   } else {
     redrawAnnotations();

@@ -2,8 +2,312 @@
    THEME SYSTEM - CSS Custom Properties
    ============================================================ */
 
-/* Dark theme (default) - based on open-2D-studio palette */
+/* Default theme - Warm Dark Brown with Construction Amber accent */
 :root,
+[data-theme="default"] {
+  --theme-bg: #3E3636;
+  --theme-surface: #4a4242;
+  --theme-border: rgba(217, 119, 6, 0.25);
+  --theme-text: #F5F0EB;
+  --theme-text-secondary: rgba(245, 240, 235, 0.6);
+  --theme-accent: #D97706;
+  --theme-accent-hover: #B45309;
+  --theme-hover: rgba(217, 119, 6, 0.1);
+  --theme-active: #D97706;
+
+  --theme-titlebar-bg-start: #4a4242;
+  --theme-titlebar-bg-end: #3E3636;
+  --theme-titlebar-border: rgba(217, 119, 6, 0.25);
+  --theme-titlebar-text: #F5F0EB;
+  --theme-titlebar-text-secondary: rgba(245, 240, 235, 0.6);
+  --theme-titlebar-btn-color: #F5F0EB;
+  --theme-titlebar-btn-hover: rgba(217, 119, 6, 0.15);
+  --theme-titlebar-btn-active: rgba(217, 119, 6, 0.25);
+  --theme-titlebar-btn-disabled: rgba(245, 240, 235, 0.4);
+  --theme-window-btn-color: #F5F0EB;
+  --theme-window-btn-hover: rgba(217, 119, 6, 0.15);
+
+  --theme-file-tab-bg: #D97706;
+  --theme-file-tab-hover: #B45309;
+  --theme-file-tab-text: #3E3636;
+
+  --theme-ribbon-bg-start: #4a4242;
+  --theme-ribbon-bg-end: #3E3636;
+  --theme-ribbon-border: rgba(217, 119, 6, 0.25);
+  --theme-ribbon-tabs-bg-start: #4a4242;
+  --theme-ribbon-tabs-bg-end: #443c3c;
+  --theme-ribbon-content-bg: #3E3636;
+  --theme-ribbon-text: rgba(245, 240, 235, 0.6);
+  --theme-ribbon-text-hover: #F5F0EB;
+  --theme-ribbon-tab-hover: rgba(217, 119, 6, 0.1);
+  --theme-ribbon-tab-active-bg: #3E3636;
+  --theme-ribbon-tab-active-border: rgba(217, 119, 6, 0.25);
+  --theme-ribbon-btn-hover: rgba(217, 119, 6, 0.15);
+  --theme-ribbon-btn-hover-border: rgba(217, 119, 6, 0.30);
+  --theme-ribbon-btn-active-bg: rgba(217, 119, 6, 0.20);
+  --theme-ribbon-btn-active-border: rgba(217, 119, 6, 0.40);
+  --theme-ribbon-btn-active-text: #D97706;
+  --theme-ribbon-icon-stroke: rgba(245, 240, 235, 0.6);
+  --theme-ribbon-group-label: rgba(217, 119, 6, 0.8);
+  --theme-ribbon-group-border: rgba(217, 119, 6, 0.15);
+  --theme-ribbon-input-bg: rgba(217, 119, 6, 0.05);
+  --theme-ribbon-input-border: rgba(217, 119, 6, 0.2);
+  --theme-ribbon-input-text: #F5F0EB;
+  --theme-ribbon-input-focus-border: #D97706;
+  --theme-ribbon-input-focus-bg: rgba(217, 119, 6, 0.08);
+  --theme-ribbon-input-label: rgba(245, 240, 235, 0.5);
+  --theme-ribbon-dropdown-arrow: rgba(245, 240, 235, 0.5);
+
+  --theme-ctx-tab-border: #D97706;
+  --theme-ctx-tab-text: #D97706;
+  --theme-ctx-tab-hover-bg: rgba(217, 119, 6, 0.15);
+  --theme-ctx-tab-active-text: #D97706;
+
+  --theme-app-menu-bg: #4a4242;
+  --theme-app-menu-sidebar: #3E3636;
+  --theme-app-menu-sidebar-border: rgba(217, 119, 6, 0.2);
+  --theme-app-menu-text: #F5F0EB;
+  --theme-app-menu-item-hover: rgba(217, 119, 6, 0.1);
+  --theme-app-menu-item-hover-text: #F5F0EB;
+  --theme-app-menu-icon: rgba(245, 240, 235, 0.6);
+  --theme-app-menu-shortcut: rgba(245, 240, 235, 0.5);
+  --theme-app-menu-shortcut-hover: rgba(217, 119, 6, 0.7);
+  --theme-app-menu-divider: rgba(217, 119, 6, 0.15);
+
+  --theme-tab-bg: #332d2d;
+  --theme-tab-border: rgba(217, 119, 6, 0.2);
+  --theme-tab-hover: rgba(217, 119, 6, 0.1);
+  --theme-tab-active-bg: #3E3636;
+  --theme-tab-active-accent: #D97706;
+  --theme-tab-text: rgba(245, 240, 235, 0.6);
+  --theme-tab-active-text: #F5F0EB;
+  --theme-tab-close-color: rgba(245, 240, 235, 0.5);
+  --theme-tab-modified: #D97706;
+  --theme-tab-empty-text: rgba(245, 240, 235, 0.4);
+  --theme-tab-add-color: rgba(245, 240, 235, 0.5);
+  --theme-tab-add-border: rgba(217, 119, 6, 0.2);
+  --theme-tab-add-hover: rgba(217, 119, 6, 0.1);
+
+  --theme-content-bg: #2e2828;
+
+  --theme-panel-bg: #4a4242;
+  --theme-panel-border: rgba(217, 119, 6, 0.2);
+  --theme-panel-tab-bg: #3E3636;
+  --theme-panel-tab-text: rgba(245, 240, 235, 0.6);
+  --theme-panel-tab-hover: rgba(217, 119, 6, 0.1);
+  --theme-panel-tab-hover-text: #F5F0EB;
+  --theme-panel-tab-active-bg: #4a4242;
+  --theme-panel-tab-active-text: #F5F0EB;
+  --theme-panel-accent: #D97706;
+  --theme-panel-header-text: #F5F0EB;
+  --theme-panel-toggle-bg: rgba(217, 119, 6, 0.1);
+  --theme-panel-toggle-hover: rgba(217, 119, 6, 0.18);
+  --theme-panel-toggle-text: #F5F0EB;
+  --theme-panel-resize: rgba(217, 119, 6, 0.2);
+  --theme-panel-resize-hover: #D97706;
+
+  --theme-thumbnail-bg: #3E3636;
+  --theme-thumbnail-hover: rgba(217, 119, 6, 0.1);
+  --theme-thumbnail-active-bg: #4a4242;
+  --theme-thumbnail-active-border: #D97706;
+  --theme-thumbnail-selected-bg: rgba(217, 119, 6, 0.12);
+  --theme-thumbnail-selected-border: #B45309;
+  --theme-thumbnail-selected-label: #D97706;
+  --theme-thumbnail-label: rgba(245, 240, 235, 0.6);
+  --theme-thumbnail-active-label: #F5F0EB;
+
+  --theme-status-bg: #D97706;
+  --theme-status-border: #D97706;
+  --theme-status-text: #3E3636;
+  --theme-status-text-label: rgba(62, 54, 54, 0.7);
+  --theme-status-text-value: #3E3636;
+  --theme-status-hover: rgba(62, 54, 54, 0.15);
+  --theme-status-separator: rgba(62, 54, 54, 0.25);
+  --theme-status-nav-text: #3E3636;
+  --theme-status-nav-hover: rgba(62, 54, 54, 0.15);
+
+  --theme-placeholder-text: rgba(245, 240, 235, 0.5);
+  --theme-placeholder-heading: #F5F0EB;
+
+  --theme-bookmarks-empty: rgba(245, 240, 235, 0.5);
+
+  --theme-notifbar-bg: rgba(217, 119, 6, 0.15);
+  --theme-notifbar-border: rgba(217, 119, 6, 0.3);
+  --theme-notifbar-text: #F5F0EB;
+  --theme-notifbar-icon: #D97706;
+  --theme-notifbar-btn-bg: #3E3636;
+  --theme-notifbar-btn-border: rgba(217, 119, 6, 0.3);
+  --theme-notifbar-btn-text: #D97706;
+  --theme-notifbar-btn-hover-bg: rgba(217, 119, 6, 0.2);
+  --theme-notifbar-btn-hover-border: #D97706;
+  --theme-notifbar-close: rgba(245, 240, 235, 0.5);
+
+  --theme-pdfabar-bg: #3b1c1c;
+  --theme-pdfabar-border: #5c2d2d;
+  --theme-pdfabar-text: #f0a0a0;
+  --theme-pdfabar-icon: #e06060;
+  --theme-pdfabar-btn-bg: #3E3636;
+  --theme-pdfabar-btn-border: #5c2d2d;
+  --theme-pdfabar-btn-text: #f0a0a0;
+  --theme-pdfabar-btn-hover-bg: #5c2d2d;
+  --theme-pdfabar-btn-hover-border: #e06060;
+  --theme-pdfabar-close: rgba(245, 240, 235, 0.5);
+}
+
+/* Light theme */
+[data-theme="light"] {
+  --theme-bg: #f5f5f5;
+  --theme-surface: #ffffff;
+  --theme-border: #d1d5db;
+  --theme-text: #1f2937;
+  --theme-text-secondary: #6b7280;
+  --theme-accent: #a82d6e;
+  --theme-accent-hover: #922560;
+  --theme-hover: #e5e7eb;
+  --theme-active: #3b82f6;
+
+  --theme-titlebar-bg-start: #ffffff;
+  --theme-titlebar-bg-end: #f5f5f5;
+  --theme-titlebar-border: #d1d5db;
+  --theme-titlebar-text: #1f2937;
+  --theme-titlebar-text-secondary: #6b7280;
+  --theme-titlebar-btn-color: #1f2937;
+  --theme-titlebar-btn-hover: #e5e7eb;
+  --theme-titlebar-btn-active: #d1d5db;
+  --theme-titlebar-btn-disabled: #9ca3af;
+  --theme-window-btn-color: #1f2937;
+  --theme-window-btn-hover: rgba(0, 0, 0, 0.08);
+
+  --theme-file-tab-bg: #a82d6e;
+  --theme-file-tab-hover: #922560;
+  --theme-file-tab-text: #ffffff;
+
+  --theme-ribbon-bg-start: #ffffff;
+  --theme-ribbon-bg-end: #f5f5f5;
+  --theme-ribbon-border: #d1d5db;
+  --theme-ribbon-tabs-bg-start: #f5f5f5;
+  --theme-ribbon-tabs-bg-end: #eeeeee;
+  --theme-ribbon-content-bg: #ffffff;
+  --theme-ribbon-text: #6b7280;
+  --theme-ribbon-text-hover: #1f2937;
+  --theme-ribbon-tab-hover: #e5e7eb;
+  --theme-ribbon-tab-active-bg: #ffffff;
+  --theme-ribbon-tab-active-border: #d1d5db;
+  --theme-ribbon-btn-hover: #e5e7eb;
+  --theme-ribbon-btn-hover-border: #d1d5db;
+  --theme-ribbon-btn-active-bg: #dbeafe;
+  --theme-ribbon-btn-active-border: #93c5fd;
+  --theme-ribbon-btn-active-text: #1d4ed8;
+  --theme-ribbon-icon-stroke: #6b7280;
+  --theme-ribbon-group-label: #9ca3af;
+  --theme-ribbon-group-border: #d1d5db;
+  --theme-ribbon-input-bg: #ffffff;
+  --theme-ribbon-input-border: #d1d5db;
+  --theme-ribbon-input-text: #1f2937;
+  --theme-ribbon-input-focus-border: #a82d6e;
+  --theme-ribbon-input-focus-bg: #ffffff;
+  --theme-ribbon-input-label: #9ca3af;
+  --theme-ribbon-dropdown-arrow: #9ca3af;
+
+  --theme-ctx-tab-border: #a82d6e;
+  --theme-ctx-tab-text: #8a2258;
+  --theme-ctx-tab-hover-bg: rgba(168, 45, 110, 0.1);
+  --theme-ctx-tab-active-text: #8a2258;
+
+  --theme-app-menu-bg: #fafafa;
+  --theme-app-menu-sidebar: #f5f5f5;
+  --theme-app-menu-sidebar-border: #d1d5db;
+  --theme-app-menu-text: #1f2937;
+  --theme-app-menu-item-hover: #e5e7eb;
+  --theme-app-menu-item-hover-text: #1f2937;
+  --theme-app-menu-icon: #6b7280;
+  --theme-app-menu-shortcut: #9ca3af;
+  --theme-app-menu-shortcut-hover: #6b7280;
+  --theme-app-menu-divider: #e5e7eb;
+
+  --theme-tab-bg: #f5f5f5;
+  --theme-tab-border: #d1d5db;
+  --theme-tab-hover: #e5e7eb;
+  --theme-tab-active-bg: #ffffff;
+  --theme-tab-active-accent: #a82d6e;
+  --theme-tab-text: #6b7280;
+  --theme-tab-active-text: #1f2937;
+  --theme-tab-close-color: #6b7280;
+  --theme-tab-modified: #a82d6e;
+  --theme-tab-empty-text: #9ca3af;
+  --theme-tab-add-color: #6b7280;
+  --theme-tab-add-border: #d1d5db;
+  --theme-tab-add-hover: #e5e7eb;
+
+  --theme-content-bg: #e0e0e0;
+
+  --theme-panel-bg: #ffffff;
+  --theme-panel-border: #d1d5db;
+  --theme-panel-tab-bg: #f5f5f5;
+  --theme-panel-tab-text: #6b7280;
+  --theme-panel-tab-hover: #e5e7eb;
+  --theme-panel-tab-hover-text: #1f2937;
+  --theme-panel-tab-active-bg: #ffffff;
+  --theme-panel-tab-active-text: #1f2937;
+  --theme-panel-accent: #a82d6e;
+  --theme-panel-header-text: #1f2937;
+  --theme-panel-toggle-bg: #e5e7eb;
+  --theme-panel-toggle-hover: #d1d5db;
+  --theme-panel-toggle-text: #1f2937;
+  --theme-panel-resize: #d1d5db;
+  --theme-panel-resize-hover: #a82d6e;
+
+  --theme-thumbnail-bg: #f5f5f5;
+  --theme-thumbnail-hover: #e5e7eb;
+  --theme-thumbnail-active-bg: #e5e7eb;
+  --theme-thumbnail-active-border: #a82d6e;
+  --theme-thumbnail-selected-bg: #e8e0f0;
+  --theme-thumbnail-selected-border: #b07cc8;
+  --theme-thumbnail-selected-label: #4a3560;
+  --theme-thumbnail-label: #6b7280;
+  --theme-thumbnail-active-label: #1f2937;
+
+  --theme-status-bg: #f5f5f5;
+  --theme-status-border: #d1d5db;
+  --theme-status-text: #6b7280;
+  --theme-status-text-label: #4b5563;
+  --theme-status-text-value: #1f2937;
+  --theme-status-hover: rgba(0, 0, 0, 0.06);
+  --theme-status-separator: rgba(0, 0, 0, 0.12);
+  --theme-status-nav-text: #1f2937;
+  --theme-status-nav-hover: rgba(0, 0, 0, 0.08);
+
+  --theme-placeholder-text: #9ca3af;
+  --theme-placeholder-heading: #6b7280;
+
+  --theme-bookmarks-empty: #9ca3af;
+
+  /* Notification bar */
+  --theme-notifbar-bg: #dbeafe;
+  --theme-notifbar-border: #93c5fd;
+  --theme-notifbar-text: #1f2937;
+  --theme-notifbar-icon: #2563eb;
+  --theme-notifbar-btn-bg: #ffffff;
+  --theme-notifbar-btn-border: #93c5fd;
+  --theme-notifbar-btn-text: #1d4ed8;
+  --theme-notifbar-btn-hover-bg: #bfdbfe;
+  --theme-notifbar-btn-hover-border: #60a5fa;
+  --theme-notifbar-close: #6b7280;
+
+  /* PDF/A bar */
+  --theme-pdfabar-bg: #f8d7da;
+  --theme-pdfabar-border: #e8a0a8;
+  --theme-pdfabar-text: #1f2937;
+  --theme-pdfabar-icon: #b02a37;
+  --theme-pdfabar-btn-bg: #ffffff;
+  --theme-pdfabar-btn-border: #e8a0a8;
+  --theme-pdfabar-btn-text: #b02a37;
+  --theme-pdfabar-btn-hover-bg: #f1b0b7;
+  --theme-pdfabar-btn-hover-border: #b02a37;
+  --theme-pdfabar-close: #6b7280;
+}
+
+/* Dark theme */
 [data-theme="dark"] {
   /* General */
   --theme-bg: #1a1a2e;
@@ -169,160 +473,7 @@
   --theme-pdfabar-close: #8b8b8b;
 }
 
-/* Light theme - based on open-2D-studio palette */
-[data-theme="light"] {
-  --theme-bg: #f5f5f5;
-  --theme-surface: #ffffff;
-  --theme-border: #d1d5db;
-  --theme-text: #1f2937;
-  --theme-text-secondary: #6b7280;
-  --theme-accent: #a82d6e;
-  --theme-accent-hover: #922560;
-  --theme-hover: #e5e7eb;
-  --theme-active: #3b82f6;
-
-  --theme-titlebar-bg-start: #ffffff;
-  --theme-titlebar-bg-end: #f5f5f5;
-  --theme-titlebar-border: #d1d5db;
-  --theme-titlebar-text: #1f2937;
-  --theme-titlebar-text-secondary: #6b7280;
-  --theme-titlebar-btn-color: #1f2937;
-  --theme-titlebar-btn-hover: #e5e7eb;
-  --theme-titlebar-btn-active: #d1d5db;
-  --theme-titlebar-btn-disabled: #9ca3af;
-  --theme-window-btn-color: #1f2937;
-  --theme-window-btn-hover: rgba(0, 0, 0, 0.08);
-
-  --theme-file-tab-bg: #a82d6e;
-  --theme-file-tab-hover: #922560;
-  --theme-file-tab-text: #ffffff;
-
-  --theme-ribbon-bg-start: #ffffff;
-  --theme-ribbon-bg-end: #f5f5f5;
-  --theme-ribbon-border: #d1d5db;
-  --theme-ribbon-tabs-bg-start: #f5f5f5;
-  --theme-ribbon-tabs-bg-end: #eeeeee;
-  --theme-ribbon-content-bg: #ffffff;
-  --theme-ribbon-text: #6b7280;
-  --theme-ribbon-text-hover: #1f2937;
-  --theme-ribbon-tab-hover: #e5e7eb;
-  --theme-ribbon-tab-active-bg: #ffffff;
-  --theme-ribbon-tab-active-border: #d1d5db;
-  --theme-ribbon-btn-hover: #e5e7eb;
-  --theme-ribbon-btn-hover-border: #d1d5db;
-  --theme-ribbon-btn-active-bg: #dbeafe;
-  --theme-ribbon-btn-active-border: #93c5fd;
-  --theme-ribbon-btn-active-text: #1d4ed8;
-  --theme-ribbon-icon-stroke: #6b7280;
-  --theme-ribbon-group-label: #9ca3af;
-  --theme-ribbon-group-border: #d1d5db;
-  --theme-ribbon-input-bg: #ffffff;
-  --theme-ribbon-input-border: #d1d5db;
-  --theme-ribbon-input-text: #1f2937;
-  --theme-ribbon-input-focus-border: #a82d6e;
-  --theme-ribbon-input-focus-bg: #ffffff;
-  --theme-ribbon-input-label: #9ca3af;
-  --theme-ribbon-dropdown-arrow: #9ca3af;
-
-  --theme-ctx-tab-border: #a82d6e;
-  --theme-ctx-tab-text: #8a2258;
-  --theme-ctx-tab-hover-bg: rgba(168, 45, 110, 0.1);
-  --theme-ctx-tab-active-text: #8a2258;
-
-  --theme-app-menu-bg: #fafafa;
-  --theme-app-menu-sidebar: #f5f5f5;
-  --theme-app-menu-sidebar-border: #d1d5db;
-  --theme-app-menu-text: #1f2937;
-  --theme-app-menu-item-hover: #e5e7eb;
-  --theme-app-menu-item-hover-text: #1f2937;
-  --theme-app-menu-icon: #6b7280;
-  --theme-app-menu-shortcut: #9ca3af;
-  --theme-app-menu-shortcut-hover: #6b7280;
-  --theme-app-menu-divider: #e5e7eb;
-
-  --theme-tab-bg: #f5f5f5;
-  --theme-tab-border: #d1d5db;
-  --theme-tab-hover: #e5e7eb;
-  --theme-tab-active-bg: #ffffff;
-  --theme-tab-active-accent: #a82d6e;
-  --theme-tab-text: #6b7280;
-  --theme-tab-active-text: #1f2937;
-  --theme-tab-close-color: #6b7280;
-  --theme-tab-modified: #a82d6e;
-  --theme-tab-empty-text: #9ca3af;
-  --theme-tab-add-color: #6b7280;
-  --theme-tab-add-border: #d1d5db;
-  --theme-tab-add-hover: #e5e7eb;
-
-  --theme-content-bg: #e0e0e0;
-
-  --theme-panel-bg: #ffffff;
-  --theme-panel-border: #d1d5db;
-  --theme-panel-tab-bg: #f5f5f5;
-  --theme-panel-tab-text: #6b7280;
-  --theme-panel-tab-hover: #e5e7eb;
-  --theme-panel-tab-hover-text: #1f2937;
-  --theme-panel-tab-active-bg: #ffffff;
-  --theme-panel-tab-active-text: #1f2937;
-  --theme-panel-accent: #a82d6e;
-  --theme-panel-header-text: #1f2937;
-  --theme-panel-toggle-bg: #e5e7eb;
-  --theme-panel-toggle-hover: #d1d5db;
-  --theme-panel-toggle-text: #1f2937;
-  --theme-panel-resize: #d1d5db;
-  --theme-panel-resize-hover: #a82d6e;
-
-  --theme-thumbnail-bg: #f5f5f5;
-  --theme-thumbnail-hover: #e5e7eb;
-  --theme-thumbnail-active-bg: #e5e7eb;
-  --theme-thumbnail-active-border: #a82d6e;
-  --theme-thumbnail-selected-bg: #e8e0f0;
-  --theme-thumbnail-selected-border: #b07cc8;
-  --theme-thumbnail-selected-label: #4a3560;
-  --theme-thumbnail-label: #6b7280;
-  --theme-thumbnail-active-label: #1f2937;
-
-  --theme-status-bg: #f5f5f5;
-  --theme-status-border: #d1d5db;
-  --theme-status-text: #6b7280;
-  --theme-status-text-label: #4b5563;
-  --theme-status-text-value: #1f2937;
-  --theme-status-hover: rgba(0, 0, 0, 0.06);
-  --theme-status-separator: rgba(0, 0, 0, 0.12);
-  --theme-status-nav-text: #1f2937;
-  --theme-status-nav-hover: rgba(0, 0, 0, 0.08);
-
-  --theme-placeholder-text: #9ca3af;
-  --theme-placeholder-heading: #6b7280;
-
-  --theme-bookmarks-empty: #9ca3af;
-
-  /* Notification bar */
-  --theme-notifbar-bg: #dbeafe;
-  --theme-notifbar-border: #93c5fd;
-  --theme-notifbar-text: #1f2937;
-  --theme-notifbar-icon: #2563eb;
-  --theme-notifbar-btn-bg: #ffffff;
-  --theme-notifbar-btn-border: #93c5fd;
-  --theme-notifbar-btn-text: #1d4ed8;
-  --theme-notifbar-btn-hover-bg: #bfdbfe;
-  --theme-notifbar-btn-hover-border: #60a5fa;
-  --theme-notifbar-close: #6b7280;
-
-  /* PDF/A bar */
-  --theme-pdfabar-bg: #f8d7da;
-  --theme-pdfabar-border: #e8a0a8;
-  --theme-pdfabar-text: #1f2937;
-  --theme-pdfabar-icon: #b02a37;
-  --theme-pdfabar-btn-bg: #ffffff;
-  --theme-pdfabar-btn-border: #e8a0a8;
-  --theme-pdfabar-btn-text: #b02a37;
-  --theme-pdfabar-btn-hover-bg: #f1b0b7;
-  --theme-pdfabar-btn-hover-border: #b02a37;
-  --theme-pdfabar-close: #6b7280;
-}
-
-/* Blue theme (DevExpress-like) - based on open-2D-studio palette */
+/* Blue theme (DevExpress-like) */
 [data-theme="blue"] {
   --theme-bg: #0d1b2a;
   --theme-surface: #1b263b;
@@ -475,312 +626,8 @@
   --theme-pdfabar-close: #778da9;
 }
 
-/* High Contrast theme - based on open-2D-studio palette */
-[data-theme="highContrast"] {
-  --theme-bg: #000000;
-  --theme-surface: #0a0a0a;
-  --theme-border: #ffffff;
-  --theme-text: #ffffff;
-  --theme-text-secondary: #cccccc;
-  --theme-accent: #ffff00;
-  --theme-accent-hover: #ffcc00;
-  --theme-hover: #333333;
-  --theme-active: #ffff00;
-
-  --theme-titlebar-bg-start: #141414;
-  --theme-titlebar-bg-end: #0a0a0a;
-  --theme-titlebar-border: #ffffff;
-  --theme-titlebar-text: #ffffff;
-  --theme-titlebar-text-secondary: #cccccc;
-  --theme-titlebar-btn-color: #ffffff;
-  --theme-titlebar-btn-hover: #333333;
-  --theme-titlebar-btn-active: #444444;
-  --theme-titlebar-btn-disabled: #999999;
-  --theme-window-btn-color: #ffffff;
-  --theme-window-btn-hover: #333333;
-
-  --theme-file-tab-bg: #ffff00;
-  --theme-file-tab-hover: #ffcc00;
-  --theme-file-tab-text: #000000;
-
-  --theme-ribbon-bg-start: #141414;
-  --theme-ribbon-bg-end: #0a0a0a;
-  --theme-ribbon-border: #ffffff;
-  --theme-ribbon-tabs-bg-start: #141414;
-  --theme-ribbon-tabs-bg-end: #0d0d0d;
-  --theme-ribbon-content-bg: #0a0a0a;
-  --theme-ribbon-text: #ffffff;
-  --theme-ribbon-text-hover: #ffff00;
-  --theme-ribbon-tab-hover: #333333;
-  --theme-ribbon-tab-active-bg: #0a0a0a;
-  --theme-ribbon-tab-active-border: #ffffff;
-  --theme-ribbon-btn-hover: #333333;
-  --theme-ribbon-btn-hover-border: #ffffff;
-  --theme-ribbon-btn-active-bg: #ffff00;
-  --theme-ribbon-btn-active-border: #ffff00;
-  --theme-ribbon-btn-active-text: #000000;
-  --theme-ribbon-icon-stroke: #ffffff;
-  --theme-ribbon-group-label: #cccccc;
-  --theme-ribbon-group-border: #ffffff;
-  --theme-ribbon-input-bg: #000000;
-  --theme-ribbon-input-border: #ffffff;
-  --theme-ribbon-input-text: #ffffff;
-  --theme-ribbon-input-focus-border: #ffff00;
-  --theme-ribbon-input-focus-bg: #000000;
-  --theme-ribbon-input-label: #cccccc;
-  --theme-ribbon-dropdown-arrow: #ffffff;
-
-  --theme-ctx-tab-border: #ffff00;
-  --theme-ctx-tab-text: #ffff00;
-  --theme-ctx-tab-hover-bg: rgba(255, 255, 0, 0.15);
-  --theme-ctx-tab-active-text: #ffff00;
-
-  --theme-app-menu-bg: #000000;
-  --theme-app-menu-sidebar: #0a0a0a;
-  --theme-app-menu-sidebar-border: #ffffff;
-  --theme-app-menu-text: #ffffff;
-  --theme-app-menu-item-hover: #333333;
-  --theme-app-menu-item-hover-text: #ffff00;
-  --theme-app-menu-icon: #ffffff;
-  --theme-app-menu-shortcut: #cccccc;
-  --theme-app-menu-shortcut-hover: #ffff00;
-  --theme-app-menu-divider: #ffffff;
-
-  --theme-tab-bg: #0a0a0a;
-  --theme-tab-border: #ffffff;
-  --theme-tab-hover: #333333;
-  --theme-tab-active-bg: #000000;
-  --theme-tab-active-accent: #ffff00;
-  --theme-tab-text: #ffffff;
-  --theme-tab-active-text: #ffff00;
-  --theme-tab-close-color: #ffffff;
-  --theme-tab-modified: #ffff00;
-  --theme-tab-empty-text: #cccccc;
-  --theme-tab-add-color: #ffffff;
-  --theme-tab-add-border: #ffffff;
-  --theme-tab-add-hover: #333333;
-
-  --theme-content-bg: #333333;
-
-  --theme-panel-bg: #0a0a0a;
-  --theme-panel-border: #ffffff;
-  --theme-panel-tab-bg: #000000;
-  --theme-panel-tab-text: #cccccc;
-  --theme-panel-tab-hover: #333333;
-  --theme-panel-tab-hover-text: #ffffff;
-  --theme-panel-tab-active-bg: #0a0a0a;
-  --theme-panel-tab-active-text: #ffff00;
-  --theme-panel-accent: #ffff00;
-  --theme-panel-header-text: #ffffff;
-  --theme-panel-toggle-bg: #333333;
-  --theme-panel-toggle-hover: #555555;
-  --theme-panel-toggle-text: #ffffff;
-  --theme-panel-resize: #ffffff;
-  --theme-panel-resize-hover: #ffff00;
-
-  --theme-thumbnail-bg: #000000;
-  --theme-thumbnail-hover: #333333;
-  --theme-thumbnail-active-bg: #0a0a0a;
-  --theme-thumbnail-active-border: #ffff00;
-  --theme-thumbnail-selected-bg: #1a1a00;
-  --theme-thumbnail-selected-border: #999900;
-  --theme-thumbnail-selected-label: #cccc00;
-  --theme-thumbnail-label: #ffffff;
-  --theme-thumbnail-active-label: #ffff00;
-
-  --theme-status-bg: #000000;
-  --theme-status-border: #ffffff;
-  --theme-status-text: #ffffff;
-  --theme-status-text-label: #ffffff;
-  --theme-status-text-value: #ffff00;
-  --theme-status-hover: rgba(255, 255, 255, 0.15);
-  --theme-status-separator: #ffffff;
-  --theme-status-nav-text: #ffffff;
-  --theme-status-nav-hover: rgba(255, 255, 255, 0.2);
-
-  --theme-placeholder-text: #999999;
-  --theme-placeholder-heading: #ffffff;
-
-  --theme-bookmarks-empty: #999999;
-
-  /* Notification bar */
-  --theme-notifbar-bg: #000080;
-  --theme-notifbar-border: #ffffff;
-  --theme-notifbar-text: #ffffff;
-  --theme-notifbar-icon: #ffff00;
-  --theme-notifbar-btn-bg: #000000;
-  --theme-notifbar-btn-border: #ffffff;
-  --theme-notifbar-btn-text: #ffffff;
-  --theme-notifbar-btn-hover-bg: #333333;
-  --theme-notifbar-btn-hover-border: #ffff00;
-  --theme-notifbar-close: #ffffff;
-
-  /* PDF/A bar */
-  --theme-pdfabar-bg: #800000;
-  --theme-pdfabar-border: #ffffff;
-  --theme-pdfabar-text: #ffffff;
-  --theme-pdfabar-icon: #ffff00;
-  --theme-pdfabar-btn-bg: #000000;
-  --theme-pdfabar-btn-border: #ffffff;
-  --theme-pdfabar-btn-text: #ffffff;
-  --theme-pdfabar-btn-hover-bg: #333333;
-  --theme-pdfabar-btn-hover-border: #ffff00;
-  --theme-pdfabar-close: #ffffff;
-}
-
-/* OpenAEC Brown theme - Warm Dark Brown with Construction Amber accent */
-[data-theme="openaec-brown"] {
-  --theme-bg: #3E3636;
-  --theme-surface: #4a4242;
-  --theme-border: rgba(217, 119, 6, 0.25);
-  --theme-text: #F5F0EB;
-  --theme-text-secondary: rgba(245, 240, 235, 0.6);
-  --theme-accent: #D97706;
-  --theme-accent-hover: #B45309;
-  --theme-hover: rgba(217, 119, 6, 0.1);
-  --theme-active: #D97706;
-
-  --theme-titlebar-bg-start: #4a4242;
-  --theme-titlebar-bg-end: #3E3636;
-  --theme-titlebar-border: rgba(217, 119, 6, 0.25);
-  --theme-titlebar-text: #F5F0EB;
-  --theme-titlebar-text-secondary: rgba(245, 240, 235, 0.6);
-  --theme-titlebar-btn-color: #F5F0EB;
-  --theme-titlebar-btn-hover: rgba(217, 119, 6, 0.15);
-  --theme-titlebar-btn-active: rgba(217, 119, 6, 0.25);
-  --theme-titlebar-btn-disabled: rgba(245, 240, 235, 0.4);
-  --theme-window-btn-color: #F5F0EB;
-  --theme-window-btn-hover: rgba(217, 119, 6, 0.15);
-
-  --theme-file-tab-bg: #D97706;
-  --theme-file-tab-hover: #B45309;
-  --theme-file-tab-text: #3E3636;
-
-  --theme-ribbon-bg-start: #4a4242;
-  --theme-ribbon-bg-end: #3E3636;
-  --theme-ribbon-border: rgba(217, 119, 6, 0.25);
-  --theme-ribbon-tabs-bg-start: #4a4242;
-  --theme-ribbon-tabs-bg-end: #443c3c;
-  --theme-ribbon-content-bg: #3E3636;
-  --theme-ribbon-text: rgba(245, 240, 235, 0.6);
-  --theme-ribbon-text-hover: #F5F0EB;
-  --theme-ribbon-tab-hover: rgba(217, 119, 6, 0.1);
-  --theme-ribbon-tab-active-bg: #3E3636;
-  --theme-ribbon-tab-active-border: rgba(217, 119, 6, 0.25);
-  --theme-ribbon-btn-hover: rgba(217, 119, 6, 0.15);
-  --theme-ribbon-btn-hover-border: rgba(217, 119, 6, 0.30);
-  --theme-ribbon-btn-active-bg: rgba(217, 119, 6, 0.20);
-  --theme-ribbon-btn-active-border: rgba(217, 119, 6, 0.40);
-  --theme-ribbon-btn-active-text: #D97706;
-  --theme-ribbon-icon-stroke: rgba(245, 240, 235, 0.6);
-  --theme-ribbon-group-label: rgba(217, 119, 6, 0.8);
-  --theme-ribbon-group-border: rgba(217, 119, 6, 0.15);
-  --theme-ribbon-input-bg: rgba(217, 119, 6, 0.05);
-  --theme-ribbon-input-border: rgba(217, 119, 6, 0.2);
-  --theme-ribbon-input-text: #F5F0EB;
-  --theme-ribbon-input-focus-border: #D97706;
-  --theme-ribbon-input-focus-bg: rgba(217, 119, 6, 0.08);
-  --theme-ribbon-input-label: rgba(245, 240, 235, 0.5);
-  --theme-ribbon-dropdown-arrow: rgba(245, 240, 235, 0.5);
-
-  --theme-ctx-tab-border: #D97706;
-  --theme-ctx-tab-text: #D97706;
-  --theme-ctx-tab-hover-bg: rgba(217, 119, 6, 0.15);
-  --theme-ctx-tab-active-text: #D97706;
-
-  --theme-app-menu-bg: #4a4242;
-  --theme-app-menu-sidebar: #3E3636;
-  --theme-app-menu-sidebar-border: rgba(217, 119, 6, 0.2);
-  --theme-app-menu-text: #F5F0EB;
-  --theme-app-menu-item-hover: rgba(217, 119, 6, 0.1);
-  --theme-app-menu-item-hover-text: #F5F0EB;
-  --theme-app-menu-icon: rgba(245, 240, 235, 0.6);
-  --theme-app-menu-shortcut: rgba(245, 240, 235, 0.5);
-  --theme-app-menu-shortcut-hover: rgba(217, 119, 6, 0.7);
-  --theme-app-menu-divider: rgba(217, 119, 6, 0.15);
-
-  --theme-tab-bg: #332d2d;
-  --theme-tab-border: rgba(217, 119, 6, 0.2);
-  --theme-tab-hover: rgba(217, 119, 6, 0.1);
-  --theme-tab-active-bg: #3E3636;
-  --theme-tab-active-accent: #D97706;
-  --theme-tab-text: rgba(245, 240, 235, 0.6);
-  --theme-tab-active-text: #F5F0EB;
-  --theme-tab-close-color: rgba(245, 240, 235, 0.5);
-  --theme-tab-modified: #D97706;
-  --theme-tab-empty-text: rgba(245, 240, 235, 0.4);
-  --theme-tab-add-color: rgba(245, 240, 235, 0.5);
-  --theme-tab-add-border: rgba(217, 119, 6, 0.2);
-  --theme-tab-add-hover: rgba(217, 119, 6, 0.1);
-
-  --theme-content-bg: #2e2828;
-
-  --theme-panel-bg: #4a4242;
-  --theme-panel-border: rgba(217, 119, 6, 0.2);
-  --theme-panel-tab-bg: #3E3636;
-  --theme-panel-tab-text: rgba(245, 240, 235, 0.6);
-  --theme-panel-tab-hover: rgba(217, 119, 6, 0.1);
-  --theme-panel-tab-hover-text: #F5F0EB;
-  --theme-panel-tab-active-bg: #4a4242;
-  --theme-panel-tab-active-text: #F5F0EB;
-  --theme-panel-accent: #D97706;
-  --theme-panel-header-text: #F5F0EB;
-  --theme-panel-toggle-bg: rgba(217, 119, 6, 0.1);
-  --theme-panel-toggle-hover: rgba(217, 119, 6, 0.18);
-  --theme-panel-toggle-text: #F5F0EB;
-  --theme-panel-resize: rgba(217, 119, 6, 0.2);
-  --theme-panel-resize-hover: #D97706;
-
-  --theme-thumbnail-bg: #3E3636;
-  --theme-thumbnail-hover: rgba(217, 119, 6, 0.1);
-  --theme-thumbnail-active-bg: #4a4242;
-  --theme-thumbnail-active-border: #D97706;
-  --theme-thumbnail-selected-bg: rgba(217, 119, 6, 0.12);
-  --theme-thumbnail-selected-border: #B45309;
-  --theme-thumbnail-selected-label: #D97706;
-  --theme-thumbnail-label: rgba(245, 240, 235, 0.6);
-  --theme-thumbnail-active-label: #F5F0EB;
-
-  --theme-status-bg: #D97706;
-  --theme-status-border: #D97706;
-  --theme-status-text: #3E3636;
-  --theme-status-text-label: rgba(62, 54, 54, 0.7);
-  --theme-status-text-value: #3E3636;
-  --theme-status-hover: rgba(62, 54, 54, 0.15);
-  --theme-status-separator: rgba(62, 54, 54, 0.25);
-  --theme-status-nav-text: #3E3636;
-  --theme-status-nav-hover: rgba(62, 54, 54, 0.15);
-
-  --theme-placeholder-text: rgba(245, 240, 235, 0.5);
-  --theme-placeholder-heading: #F5F0EB;
-
-  --theme-bookmarks-empty: rgba(245, 240, 235, 0.5);
-
-  --theme-notifbar-bg: rgba(217, 119, 6, 0.15);
-  --theme-notifbar-border: rgba(217, 119, 6, 0.3);
-  --theme-notifbar-text: #F5F0EB;
-  --theme-notifbar-icon: #D97706;
-  --theme-notifbar-btn-bg: #3E3636;
-  --theme-notifbar-btn-border: rgba(217, 119, 6, 0.3);
-  --theme-notifbar-btn-text: #D97706;
-  --theme-notifbar-btn-hover-bg: rgba(217, 119, 6, 0.2);
-  --theme-notifbar-btn-hover-border: #D97706;
-  --theme-notifbar-close: rgba(245, 240, 235, 0.5);
-
-  --theme-pdfabar-bg: #3b1c1c;
-  --theme-pdfabar-border: #5c2d2d;
-  --theme-pdfabar-text: #f0a0a0;
-  --theme-pdfabar-icon: #e06060;
-  --theme-pdfabar-btn-bg: #3E3636;
-  --theme-pdfabar-btn-border: #5c2d2d;
-  --theme-pdfabar-btn-text: #f0a0a0;
-  --theme-pdfabar-btn-hover-bg: #5c2d2d;
-  --theme-pdfabar-btn-hover-border: #e06060;
-  --theme-pdfabar-close: rgba(245, 240, 235, 0.5);
-}
-
-/* OpenAEC Dark theme - Deep Navy with Construction Amber accent */
-[data-theme="openaec-dark"] {
+/* Amber Navy theme - Deep Navy with Construction Amber accent */
+[data-theme="amber-navy"] {
   --theme-bg: #1a1a2e;
   --theme-surface: #242445;
   --theme-border: rgba(217, 119, 6, 0.2);
@@ -1079,6 +926,159 @@
   --theme-pdfabar-btn-hover-bg: #5c2d2d;
   --theme-pdfabar-btn-hover-border: #e06060;
   --theme-pdfabar-close: rgba(250, 250, 249, 0.5);
+}
+
+/* High Contrast theme */
+[data-theme="highContrast"] {
+  --theme-bg: #000000;
+  --theme-surface: #0a0a0a;
+  --theme-border: #ffffff;
+  --theme-text: #ffffff;
+  --theme-text-secondary: #cccccc;
+  --theme-accent: #ffff00;
+  --theme-accent-hover: #ffcc00;
+  --theme-hover: #333333;
+  --theme-active: #ffff00;
+
+  --theme-titlebar-bg-start: #141414;
+  --theme-titlebar-bg-end: #0a0a0a;
+  --theme-titlebar-border: #ffffff;
+  --theme-titlebar-text: #ffffff;
+  --theme-titlebar-text-secondary: #cccccc;
+  --theme-titlebar-btn-color: #ffffff;
+  --theme-titlebar-btn-hover: #333333;
+  --theme-titlebar-btn-active: #444444;
+  --theme-titlebar-btn-disabled: #999999;
+  --theme-window-btn-color: #ffffff;
+  --theme-window-btn-hover: #333333;
+
+  --theme-file-tab-bg: #ffff00;
+  --theme-file-tab-hover: #ffcc00;
+  --theme-file-tab-text: #000000;
+
+  --theme-ribbon-bg-start: #141414;
+  --theme-ribbon-bg-end: #0a0a0a;
+  --theme-ribbon-border: #ffffff;
+  --theme-ribbon-tabs-bg-start: #141414;
+  --theme-ribbon-tabs-bg-end: #0d0d0d;
+  --theme-ribbon-content-bg: #0a0a0a;
+  --theme-ribbon-text: #ffffff;
+  --theme-ribbon-text-hover: #ffff00;
+  --theme-ribbon-tab-hover: #333333;
+  --theme-ribbon-tab-active-bg: #0a0a0a;
+  --theme-ribbon-tab-active-border: #ffffff;
+  --theme-ribbon-btn-hover: #333333;
+  --theme-ribbon-btn-hover-border: #ffffff;
+  --theme-ribbon-btn-active-bg: #ffff00;
+  --theme-ribbon-btn-active-border: #ffff00;
+  --theme-ribbon-btn-active-text: #000000;
+  --theme-ribbon-icon-stroke: #ffffff;
+  --theme-ribbon-group-label: #cccccc;
+  --theme-ribbon-group-border: #ffffff;
+  --theme-ribbon-input-bg: #000000;
+  --theme-ribbon-input-border: #ffffff;
+  --theme-ribbon-input-text: #ffffff;
+  --theme-ribbon-input-focus-border: #ffff00;
+  --theme-ribbon-input-focus-bg: #000000;
+  --theme-ribbon-input-label: #cccccc;
+  --theme-ribbon-dropdown-arrow: #ffffff;
+
+  --theme-ctx-tab-border: #ffff00;
+  --theme-ctx-tab-text: #ffff00;
+  --theme-ctx-tab-hover-bg: rgba(255, 255, 0, 0.15);
+  --theme-ctx-tab-active-text: #ffff00;
+
+  --theme-app-menu-bg: #000000;
+  --theme-app-menu-sidebar: #0a0a0a;
+  --theme-app-menu-sidebar-border: #ffffff;
+  --theme-app-menu-text: #ffffff;
+  --theme-app-menu-item-hover: #333333;
+  --theme-app-menu-item-hover-text: #ffff00;
+  --theme-app-menu-icon: #ffffff;
+  --theme-app-menu-shortcut: #cccccc;
+  --theme-app-menu-shortcut-hover: #ffff00;
+  --theme-app-menu-divider: #ffffff;
+
+  --theme-tab-bg: #0a0a0a;
+  --theme-tab-border: #ffffff;
+  --theme-tab-hover: #333333;
+  --theme-tab-active-bg: #000000;
+  --theme-tab-active-accent: #ffff00;
+  --theme-tab-text: #ffffff;
+  --theme-tab-active-text: #ffff00;
+  --theme-tab-close-color: #ffffff;
+  --theme-tab-modified: #ffff00;
+  --theme-tab-empty-text: #cccccc;
+  --theme-tab-add-color: #ffffff;
+  --theme-tab-add-border: #ffffff;
+  --theme-tab-add-hover: #333333;
+
+  --theme-content-bg: #333333;
+
+  --theme-panel-bg: #0a0a0a;
+  --theme-panel-border: #ffffff;
+  --theme-panel-tab-bg: #000000;
+  --theme-panel-tab-text: #cccccc;
+  --theme-panel-tab-hover: #333333;
+  --theme-panel-tab-hover-text: #ffffff;
+  --theme-panel-tab-active-bg: #0a0a0a;
+  --theme-panel-tab-active-text: #ffff00;
+  --theme-panel-accent: #ffff00;
+  --theme-panel-header-text: #ffffff;
+  --theme-panel-toggle-bg: #333333;
+  --theme-panel-toggle-hover: #555555;
+  --theme-panel-toggle-text: #ffffff;
+  --theme-panel-resize: #ffffff;
+  --theme-panel-resize-hover: #ffff00;
+
+  --theme-thumbnail-bg: #000000;
+  --theme-thumbnail-hover: #333333;
+  --theme-thumbnail-active-bg: #0a0a0a;
+  --theme-thumbnail-active-border: #ffff00;
+  --theme-thumbnail-selected-bg: #1a1a00;
+  --theme-thumbnail-selected-border: #999900;
+  --theme-thumbnail-selected-label: #cccc00;
+  --theme-thumbnail-label: #ffffff;
+  --theme-thumbnail-active-label: #ffff00;
+
+  --theme-status-bg: #000000;
+  --theme-status-border: #ffffff;
+  --theme-status-text: #ffffff;
+  --theme-status-text-label: #ffffff;
+  --theme-status-text-value: #ffff00;
+  --theme-status-hover: rgba(255, 255, 255, 0.15);
+  --theme-status-separator: #ffffff;
+  --theme-status-nav-text: #ffffff;
+  --theme-status-nav-hover: rgba(255, 255, 255, 0.2);
+
+  --theme-placeholder-text: #999999;
+  --theme-placeholder-heading: #ffffff;
+
+  --theme-bookmarks-empty: #999999;
+
+  /* Notification bar */
+  --theme-notifbar-bg: #000080;
+  --theme-notifbar-border: #ffffff;
+  --theme-notifbar-text: #ffffff;
+  --theme-notifbar-icon: #ffff00;
+  --theme-notifbar-btn-bg: #000000;
+  --theme-notifbar-btn-border: #ffffff;
+  --theme-notifbar-btn-text: #ffffff;
+  --theme-notifbar-btn-hover-bg: #333333;
+  --theme-notifbar-btn-hover-border: #ffff00;
+  --theme-notifbar-close: #ffffff;
+
+  /* PDF/A bar */
+  --theme-pdfabar-bg: #800000;
+  --theme-pdfabar-border: #ffffff;
+  --theme-pdfabar-text: #ffffff;
+  --theme-pdfabar-icon: #ffff00;
+  --theme-pdfabar-btn-bg: #000000;
+  --theme-pdfabar-btn-border: #ffffff;
+  --theme-pdfabar-btn-text: #ffffff;
+  --theme-pdfabar-btn-hover-bg: #333333;
+  --theme-pdfabar-btn-hover-border: #ffff00;
+  --theme-pdfabar-close: #ffffff;
 }
 
 /* ============================================================

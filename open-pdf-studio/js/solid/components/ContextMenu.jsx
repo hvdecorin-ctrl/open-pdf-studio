@@ -17,7 +17,7 @@ import {
   rotateLeftSvg, rotateRightSvg, flipHorizontalSvg, flipVerticalSvg
 } from '../data/contextMenuIcons.js';
 
-import { state, clearSelection, isSelected } from '../../core/state.js';
+import { state, getActiveDocument, clearSelection, isSelected } from '../../core/state.js';
 import { showProperties, hideProperties } from '../../ui/panels/properties-panel.js';
 import { redrawAnnotations, redrawContinuous } from '../../annotations/rendering.js';
 import { copyAnnotation, copyAnnotations, pasteFromClipboard, duplicateAnnotation } from '../../annotations/clipboard.js';
@@ -37,7 +37,7 @@ import { getSelectedPagesArray, formatPageRangeString, selectAllPages, clearPage
 import { useTranslation } from '../../i18n/useTranslation.js';
 
 function redraw() {
-  if (state.viewMode === 'continuous') {
+  if (getActiveDocument()?.viewMode === 'continuous') {
     redrawContinuous();
   } else {
     redrawAnnotations();
@@ -145,10 +145,11 @@ function AnnotationMenuContent() {
 
       <MenuItem icon={cutIcon} label={tCommon('cut')} shortcut="Ctrl+X" disabled={isLocked()} onClick={() => {
         const a = ann();
+        const doc = getActiveDocument();
         copyAnnotation(a);
-        const idx = state.annotations.indexOf(a);
+        const idx = (doc?.annotations || []).indexOf(a);
         recordDelete(a, idx);
-        state.annotations = state.annotations.filter(x => x !== a);
+        if (doc) doc.annotations = doc.annotations.filter(x => x !== a);
         hideProperties();
         redraw();
       }} />
@@ -165,9 +166,10 @@ function AnnotationMenuContent() {
           preferenceKey: 'confirmBeforeDelete'
         });
         if (confirmed) {
-          const idx = state.annotations.indexOf(a);
+          const doc = getActiveDocument();
+          const idx = (doc?.annotations || []).indexOf(a);
           recordDelete(a, idx);
-          state.annotations = state.annotations.filter(x => x !== a);
+          if (doc) doc.annotations = doc.annotations.filter(x => x !== a);
           hideProperties();
           redraw();
         }
@@ -196,7 +198,7 @@ function AnnotationMenuContent() {
         if (a) {
           a.locked = !a.locked;
           a.modifiedAt = new Date().toISOString();
-          if (state.selectedAnnotation === a) showProperties(a);
+          if (getActiveDocument()?.selectedAnnotation === a) showProperties(a);
         }
       }} />
       <MenuItem icon={markedIcon} label={t('annotation.marked')} checkbox={true} checked={ann()?.marked || false} onClick={() => {
@@ -267,7 +269,9 @@ function AnnotationMenuContent() {
         <Separator />
         <MenuItem icon={transformIcon} label={t('annotation.transform')} onClick={() => showProperties(ann())} />
         <MenuItem icon={duplicateIcon} label={tCommon('duplicate')} onClick={() => {
-          state.selectedAnnotation = ann();
+          const _d = getActiveDocument();
+          const _a = ann();
+          if (_d && _a) { _d.selectedAnnotation = _a; _d.selectedAnnotations = [_a]; }
           duplicateAnnotation();
         }} />
       </Submenu>
@@ -369,13 +373,16 @@ function MultiAnnotationMenuContent() {
   return (
     <>
       <MenuItem icon={copyIcon} label={t('multiSelect.copyAnnotations', { count: count() })} onClick={() => {
-        copyAnnotations(state.selectedAnnotations);
+        const _d = getActiveDocument();
+        copyAnnotations(_d ? _d.selectedAnnotations : []);
       }} />
       <MenuItem icon={cutIcon} label={t('multiSelect.cutAnnotations', { count: count() })} onClick={() => {
-        copyAnnotations(state.selectedAnnotations);
-        recordBulkDelete(state.selectedAnnotations);
-        const toDelete = new Set(state.selectedAnnotations);
-        state.annotations = state.annotations.filter(a => !toDelete.has(a));
+        const _d = getActiveDocument();
+        const _sel = _d ? _d.selectedAnnotations : [];
+        copyAnnotations(_sel);
+        recordBulkDelete(_sel);
+        const toDelete = new Set(_sel);
+        if (_d) _d.annotations = _d.annotations.filter(a => !toDelete.has(a));
         clearSelection();
         hideProperties();
         redraw();
@@ -384,10 +391,12 @@ function MultiAnnotationMenuContent() {
       <Separator />
 
       <MenuItem label={t('multiSelect.bringAllToFront')} onClick={() => {
-        for (const a of state.selectedAnnotations) bringToFront(a);
+        const _d = getActiveDocument();
+        for (const a of (_d ? _d.selectedAnnotations : [])) bringToFront(a);
       }} />
       <MenuItem label={t('multiSelect.sendAllToBack')} onClick={() => {
-        for (const a of [...state.selectedAnnotations].reverse()) sendToBack(a);
+        const _d = getActiveDocument();
+        for (const a of [...(_d ? _d.selectedAnnotations : [])].reverse()) sendToBack(a);
       }} />
 
       <Separator />
@@ -413,9 +422,11 @@ function MultiAnnotationMenuContent() {
           preferenceKey: 'confirmBeforeDelete'
         });
         if (confirmed) {
-          recordBulkDelete(state.selectedAnnotations);
-          const toDelete = new Set(state.selectedAnnotations);
-          state.annotations = state.annotations.filter(a => !toDelete.has(a));
+          const _d = getActiveDocument();
+          const _sel = _d ? _d.selectedAnnotations : [];
+          recordBulkDelete(_sel);
+          const toDelete = new Set(_sel);
+          if (_d) _d.annotations = _d.annotations.filter(a => !toDelete.has(a));
           clearSelection();
           hideProperties();
           redraw();
@@ -474,17 +485,20 @@ function PageMenuContent() {
         }} />
         <MenuItem label={t('page.lastPage')} onClick={() => {
           import('../../pdf/renderer.js').then(m => {
-            if (state.pdfDoc && m.renderPage) m.renderPage(state.pdfDoc.numPages);
+            const doc = getActiveDocument();
+            if (doc?.pdfDoc && m.renderPage) m.renderPage(doc.pdfDoc.numPages);
           });
         }} />
         <MenuItem label={t('page.previousPage')} onClick={() => {
           import('../../pdf/renderer.js').then(m => {
-            if (state.currentPage > 1 && m.renderPage) m.renderPage(state.currentPage - 1);
+            const doc = getActiveDocument();
+            if (doc && doc.currentPage > 1 && m.renderPage) m.renderPage(doc.currentPage - 1);
           });
         }} />
         <MenuItem label={t('page.nextPage')} onClick={() => {
           import('../../pdf/renderer.js').then(m => {
-            if (state.pdfDoc && state.currentPage < state.pdfDoc.numPages && m.renderPage) m.renderPage(state.currentPage + 1);
+            const doc = getActiveDocument();
+            if (doc?.pdfDoc && doc.currentPage < doc.pdfDoc.numPages && m.renderPage) m.renderPage(doc.currentPage + 1);
           });
         }} />
       </Submenu>
@@ -568,7 +582,7 @@ function ThumbnailMenuContent() {
     <>
       <MenuItem icon={thumbnailCutIcon}
         label={isMulti() ? t('thumbnail.cutPages', { count: count() }) : tCommon('cut')}
-        disabled={state.pdfDoc?.numPages <= count()}
+        disabled={state.documents[state.activeDocumentIndex]?.pdfDoc?.numPages <= count()}
         onClick={async () => {
           const pm = await import('../../pdf/page-manager.js');
           if (isMulti()) {
@@ -615,7 +629,7 @@ function ThumbnailMenuContent() {
       <MenuItem icon={thumbnailExtractIcon} label={t('thumbnail.extractPages')} onClick={() => {
         const rangeStr = formatPageRangeString(pages());
         import('../stores/dialogStore.js').then(m => m.openDialog('extract-pages', {
-          totalPages: state.pdfDoc?.numPages, currentPage: pageNum(), pageRange: rangeStr
+          totalPages: state.documents[state.activeDocumentIndex]?.pdfDoc?.numPages, currentPage: pageNum(), pageRange: rangeStr
         }));
       }} />
       <MenuItem icon={thumbnailReplaceIcon} label={t('thumbnail.replacePages')} disabled={isMulti()} onClick={async () => {
@@ -624,11 +638,11 @@ function ThumbnailMenuContent() {
       }} />
       <MenuItem icon={thumbnailDeleteIcon}
         label={isMulti() ? t('thumbnail.deletePagesMulti', { count: count() }) : t('thumbnail.deletePages')}
-        disabled={state.pdfDoc?.numPages <= count()}
+        disabled={state.documents[state.activeDocumentIndex]?.pdfDoc?.numPages <= count()}
         onClick={() => {
           const rangeStr = formatPageRangeString(pages());
           import('../stores/dialogStore.js').then(m => m.openDialog('delete-pages', {
-            totalPages: state.pdfDoc?.numPages, currentPage: pageNum(), pageRange: rangeStr
+            totalPages: state.documents[state.activeDocumentIndex]?.pdfDoc?.numPages, currentPage: pageNum(), pageRange: rangeStr
           }));
         }} />
 

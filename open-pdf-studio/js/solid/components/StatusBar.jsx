@@ -1,44 +1,48 @@
 import { Show } from 'solid-js';
-import { state } from '../../core/state.js';
+import { state, getActiveDocument } from '../../core/state.js';
 import { useTranslation, localizeNumber } from '../../i18n/useTranslation.js';
 
 async function goFirst() {
   const { renderPage } = await import('../../pdf/renderer.js');
   const { hideProperties } = await import('../../ui/panels/properties-panel.js');
-  if (state.pdfDoc && state.currentPage !== 1) {
-    state.currentPage = 1;
+  const doc = getActiveDocument();
+  if (doc?.pdfDoc && doc.currentPage !== 1) {
+    doc.currentPage = 1;
     hideProperties();
-    await renderPage(state.currentPage);
+    await renderPage(doc.currentPage);
   }
 }
 
 async function goPrev() {
   const { renderPage } = await import('../../pdf/renderer.js');
   const { hideProperties } = await import('../../ui/panels/properties-panel.js');
-  if (state.currentPage > 1) {
-    state.currentPage--;
+  const doc = getActiveDocument();
+  if (doc && doc.currentPage > 1) {
+    doc.currentPage--;
     hideProperties();
-    await renderPage(state.currentPage);
+    await renderPage(doc.currentPage);
   }
 }
 
 async function goNext() {
   const { renderPage } = await import('../../pdf/renderer.js');
   const { hideProperties } = await import('../../ui/panels/properties-panel.js');
-  if (state.pdfDoc && state.currentPage < state.pdfDoc.numPages) {
-    state.currentPage++;
+  const doc = getActiveDocument();
+  if (doc?.pdfDoc && doc.currentPage < doc.pdfDoc.numPages) {
+    doc.currentPage++;
     hideProperties();
-    await renderPage(state.currentPage);
+    await renderPage(doc.currentPage);
   }
 }
 
 async function goLast() {
   const { renderPage } = await import('../../pdf/renderer.js');
   const { hideProperties } = await import('../../ui/panels/properties-panel.js');
-  if (state.pdfDoc && state.currentPage !== state.pdfDoc.numPages) {
-    state.currentPage = state.pdfDoc.numPages;
+  const doc = getActiveDocument();
+  if (doc?.pdfDoc && doc.currentPage !== doc.pdfDoc.numPages) {
+    doc.currentPage = doc.pdfDoc.numPages;
     hideProperties();
-    await renderPage(state.currentPage);
+    await renderPage(doc.currentPage);
   }
 }
 
@@ -48,21 +52,23 @@ async function handlePageInput(e) {
   const { renderPage } = await import('../../pdf/renderer.js');
   const { hideProperties } = await import('../../ui/panels/properties-panel.js');
   const pageNum = parseInt(e.target.value, 10);
-  if (state.pdfDoc && pageNum >= 1 && pageNum <= state.pdfDoc.numPages) {
-    state.currentPage = pageNum;
+  const doc = getActiveDocument();
+  if (doc?.pdfDoc && pageNum >= 1 && pageNum <= doc.pdfDoc.numPages) {
+    doc.currentPage = pageNum;
     hideProperties();
-    await renderPage(state.currentPage);
-  } else {
-    e.target.value = state.currentPage;
+    await renderPage(doc.currentPage);
+  } else if (doc) {
+    e.target.value = doc.currentPage;
   }
   e.target.blur();
 }
 
 async function handlePageBlur(e) {
-  if (state.pdfDoc) {
+  const doc = getActiveDocument();
+  if (doc?.pdfDoc) {
     const pageNum = parseInt(e.target.value, 10);
-    if (isNaN(pageNum) || pageNum < 1 || pageNum > state.pdfDoc.numPages) {
-      e.target.value = state.currentPage;
+    if (isNaN(pageNum) || pageNum < 1 || pageNum > doc.pdfDoc.numPages) {
+      e.target.value = doc.currentPage;
     }
   }
 }
@@ -116,17 +122,25 @@ export default function StatusBar() {
     const translated = t(key);
     return translated !== key ? translated : state.currentTool;
   };
-  const totalPages = () => localizeNumber(state.pdfDoc?.numPages || 0);
+  const currentPage = () => {
+    const doc = state.documents[state.activeDocumentIndex];
+    return doc ? doc.currentPage : 1;
+  };
+  const totalPages = () => {
+    const doc = state.documents[state.activeDocumentIndex];
+    return localizeNumber(doc?.pdfDoc?.numPages || 0);
+  };
   const zoomText = () => {
     const doc = state.documents[state.activeDocumentIndex];
     return localizeNumber(Math.round((doc ? doc.scale : 1.5) * 100)) + '%';
   };
   const annotationText = () => {
-    if (state.viewMode === 'continuous') {
-      return localizeNumber(state.annotations.length);
+    const annotations = state.documents[state.activeDocumentIndex]?.annotations || [];
+    if ((state.documents[state.activeDocumentIndex]?.viewMode || 'single') === 'continuous') {
+      return localizeNumber(annotations.length);
     }
-    const pageCount = state.annotations.filter(a => a.page === state.currentPage).length;
-    return t('annotationsCount', { count: pageCount, total: state.annotations.length });
+    const pageCount = annotations.filter(a => a.page === (state.documents[state.activeDocumentIndex]?.currentPage || 1)).length;
+    return t('annotationsCount', { count: pageCount, total: annotations.length });
   };
 
   return (
@@ -143,7 +157,7 @@ export default function StatusBar() {
         </div>
       </div>
 
-      <Show when={!!state.pdfDoc}>
+      <Show when={!!state.documents[state.activeDocumentIndex]?.pdfDoc}>
         <div class="status-bar-center">
           <button class="status-nav-btn" tabIndex={-1} title={t('firstPage')} onClick={goFirst}>
             <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -158,7 +172,7 @@ export default function StatusBar() {
           </button>
 
           <span class="status-page-info">
-            {t('page')} <input type="number" class="status-page-input" tabIndex={-1} value={state.currentPage} min="1" onKeyDown={handlePageInput} onBlur={handlePageBlur} /> / <span>{totalPages()}</span>
+            {t('page')} <input type="number" class="status-page-input" tabIndex={-1} value={currentPage()} min="1" onKeyDown={handlePageInput} onBlur={handlePageBlur} /> / <span>{totalPages()}</span>
           </span>
 
           <button class="status-nav-btn" tabIndex={-1} title={t('nextPage')} onClick={goNext}>

@@ -3,7 +3,7 @@ import RibbonButton from './RibbonButton.jsx';
 import RibbonButtonStack from './RibbonButtonStack.jsx';
 import { colorPickerValue, setColorPickerValue, lineWidthValue, setLineWidthValue } from '../../stores/ribbonStore.js';
 import { setTool } from '../../../tools/manager.js';
-import { state, noPdf } from '../../../core/state.js';
+import { state, getActiveDocument, noPdf } from '../../../core/state.js';
 import { isPdfAReadOnly } from '../../../pdf/loader.js';
 import { recordClearPage, recordClearAll } from '../../../core/undo-manager.js';
 import { hideProperties } from '../../../ui/panels/properties-panel.js';
@@ -127,23 +127,26 @@ export default function CommentTab() {
                   confirmed = confirm(t('comment.clearPageConfirm'));
                 }
                 if (confirmed) {
-                  recordClearPage(state.currentPage, state.annotations);
-                  state.annotations = state.annotations.filter(a => a.page !== state.currentPage);
+                  const cpDoc = getActiveDocument();
+                  const cpPage = cpDoc ? cpDoc.currentPage : 1;
+                  recordClearPage(cpPage, cpDoc?.annotations || []);
+                  if (cpDoc) cpDoc.annotations = cpDoc.annotations.filter(a => a.page !== cpPage);
                   clearSelection();
                   hideProperties();
-                  if (state.viewMode === 'continuous') { redrawContinuous(); } else { redrawAnnotations(); }
+                  if (getActiveDocument()?.viewMode === 'continuous') { redrawContinuous(); } else { redrawAnnotations(); }
                 }
               }} />
             <RibbonButton size="small" id="ribbon-clear-all" title={t('comment.clearAllAnnotations')} icon={clearAllIcon} label={t('comment.clearAll')}
               disabled={noPdf() || isPdfAReadOnly()} onClick={async () => {
-                if (state.annotations.length === 0) return;
+                const caDoc = getActiveDocument();
+                if (!caDoc || caDoc.annotations.length === 0) return;
                 const confirmed = await window.__TAURI__?.dialog?.ask(t('comment.clearAllConfirm'), { title: t('comment.clearAll'), kind: 'warning' });
                 if (confirmed) {
-                  recordClearAll(state.annotations);
-                  state.annotations = [];
+                  recordClearAll(caDoc.annotations);
+                  caDoc.annotations = [];
                   clearSelection();
                   hideProperties();
-                  if (state.viewMode === 'continuous') { redrawContinuous(); } else { redrawAnnotations(); }
+                  if (getActiveDocument()?.viewMode === 'continuous') { redrawContinuous(); } else { redrawAnnotations(); }
                 }
               }} />
           </RibbonButtonStack>

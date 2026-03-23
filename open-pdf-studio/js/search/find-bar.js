@@ -2,17 +2,21 @@
  * Find Bar - UI component for PDF text search
  */
 
-import { state } from '../core/state.js';
-import { executeSearch, findNext, findPrevious, getCurrentResult, clearSearch, getResultsForPage } from './find-controller.js';
+import { state, getActiveDocument } from '../core/state.js';
+import { executeSearch, executeProgressiveSearch, findNext, findPrevious, getCurrentResult, clearSearch, getResultsForPage } from './find-controller.js';
 import { renderPage, renderContinuous } from '../pdf/renderer.js';
 import {
   setFindBarVisible as setVisible, setFindBarResultsText as setResultsText,
   setFindBarMessageText as setMessageText, setFindBarNotFound as setNotFound,
   setFindBarNavDisabled as setNavDisabled,
+  setFindBarSearching as setSearching,
 } from '../bridge.js';
 
 // Debounce timer for search input
 let searchDebounceTimer = null;
+
+// Cancel function for the current progressive search
+let cancelProgressiveSearch = null;
 
 /**
  * Initialize the find bar (no-op, retained for backward compatibility).
@@ -42,6 +46,13 @@ export function closeFindBar() {
   setVisible(false);
   state.search.isOpen = false;
 
+  // Cancel any in-progress search
+  if (cancelProgressiveSearch) {
+    cancelProgressiveSearch();
+    cancelProgressiveSearch = null;
+  }
+  setSearching(false);
+
   // Clear highlights but keep search state
   clearHighlights();
 }
@@ -65,6 +76,12 @@ export function handleSearchInput(value) {
   const query = value;
   state.search.query = query;
 
+  // Cancel any in-progress search
+  if (cancelProgressiveSearch) {
+    cancelProgressiveSearch();
+    cancelProgressiveSearch = null;
+  }
+
   // Debounce search
   if (searchDebounceTimer) {
     clearTimeout(searchDebounceTimer);
@@ -72,6 +89,7 @@ export function handleSearchInput(value) {
 
   if (!query) {
     clearSearch();
+    setSearching(false);
     updateUI();
     clearHighlights();
     return;
@@ -79,7 +97,7 @@ export function handleSearchInput(value) {
 
   searchDebounceTimer = setTimeout(() => {
     executeSearchAndUpdate();
-  }, 150);
+  }, 300);
 }
 
 /**
@@ -150,7 +168,17 @@ export function onOptionsChange(options) {
   state.search.matchCase = options.matchCase;
   state.search.wholeWord = options.wholeWord;
 
+  // Cancel any in-progress search
+  if (cancelProgressiveSearch) {
+    cancelProgressiveSearch();
+    cancelProgressiveSearch = null;
+  }
+
   if (state.search.query) {
+    // Reset results before re-searching
+    state.search.results = [];
+    state.search.totalMatches = 0;
+    state.search.currentIndex = -1;
     executeSearchAndUpdate();
   }
 }
@@ -165,19 +193,100 @@ export function onHighlightChange(highlightAll) {
 }
 
 /**
- * Execute search and update UI
+ * Execute search and update UI progressively
  */
 async function executeSearchAndUpdate() {
-  await executeSearch();
-  updateUI();
-
-  // Navigate to first result if found
-  const result = getCurrentResult();
-  if (result) {
-    await navigateToResult(result);
+  // Cancel any in-progress search
+  if (cancelProgressiveSearch) {
+    cancelProgressiveSearch();
+    cancelProgressiveSearch = null;
   }
 
-  highlightResults();
+  const query = state.search.query;
+  if (!query) return;
+
+  // Reset state
+  state.search.results = [];
+  state.search.totalMatches = 0;
+  state.search.currentIndex = -1;
+
+  setSearching(true);
+  setResultsText('Searching...');
+  setMessageText('');
+  setNotFound(false);
+  setNavDisabled(true);
+
+  let navigatedToFirst = false;
+  // Track the matchText of the result we navigated to so we can find it after re-sort
+  let navigatedMatchPage = -1;
+  let navigatedMatchPos = -1;
+
+  cancelProgressiveSearch = executeProgressiveSearch((results, searchedPages, totalPages, done) => {
+    // Update state
+    state.search.results = results;
+    state.search.totalMatches = results.length;
+
+    // Set currentIndex to first result on current page (or first overall)
+    if (results.length > 0 && state.search.currentIndex === -1) {
+      const doc = getActiveDocument();
+      const currentPage = doc ? doc.currentPage : 1;
+      let firstIndex = results.findIndex(r => r.pageNum >= currentPage);
+      if (firstIndex === -1) firstIndex = 0;
+      state.search.currentIndex = firstIndex;
+    }
+
+    // Update results count with page progress
+    if (results.length > 0) {
+      const idx = state.search.currentIndex;
+      if (done) {
+        setResultsText(`${idx + 1} of ${results.length}`);
+      } else {
+        setResultsText(`${results.length}+ (${searchedPages}/${totalPages})`);
+      }
+      setNavDisabled(false);
+      setNotFound(false);
+    } else if (done) {
+      setResultsText('No results');
+      setNotFound(true);
+      setMessageText('Phrase not found');
+    } else {
+      setResultsText(`${searchedPages}/${totalPages} pages...`);
+    }
+
+    // Navigate to first result as soon as we have one
+    if (!navigatedToFirst && results.length > 0) {
+      navigatedToFirst = true;
+      const result = getCurrentResult();
+      if (result) {
+        navigatedMatchPage = result.pageNum;
+        navigatedMatchPos = result.startPos;
+        navigateToResult(result);
+      }
+      highlightResults();
+    }
+
+    if (done) {
+      setSearching(false);
+      cancelProgressiveSearch = null;
+
+      if (results.length > 0) {
+        // After re-sort by page order, find the result we originally navigated to
+        let newIdx = results.findIndex(r =>
+          r.pageNum === navigatedMatchPage && r.startPos === navigatedMatchPos
+        );
+        if (newIdx === -1) {
+          const doc = getActiveDocument();
+          const currentPage = doc ? doc.currentPage : 1;
+          newIdx = results.findIndex(r => r.pageNum >= currentPage);
+          if (newIdx === -1) newIdx = 0;
+        }
+        state.search.currentIndex = newIdx;
+        setResultsText(`${newIdx + 1} of ${results.length}`);
+      }
+      setMessageText(results.length === 0 && query ? 'Phrase not found' : '');
+      highlightResults();
+    }
+  });
 }
 
 /**
@@ -187,10 +296,12 @@ async function navigateToResult(result) {
   if (!result) return;
 
   // Switch to the page if needed
-  if (result.pageNum !== state.currentPage) {
-    state.currentPage = result.pageNum;
+  const doc = getActiveDocument();
+  const docPage = doc ? doc.currentPage : 1;
+  if (result.pageNum !== docPage) {
+    if (doc) doc.currentPage = result.pageNum;
 
-    if (state.viewMode === 'continuous') {
+    if (getActiveDocument()?.viewMode === 'continuous') {
       // Scroll to page in continuous mode
       const pageWrapper = document.querySelector(`[data-page-num="${result.pageNum}"]`);
       if (pageWrapper) {
@@ -260,7 +371,7 @@ export function highlightResults() {
   if (!state.search.highlightAll || state.search.results.length === 0) {
     // Still highlight current match even if highlightAll is off
     const currentResult = getCurrentResult();
-    if (currentResult && currentResult.pageNum === state.currentPage) {
+    if (currentResult && currentResult.pageNum === (getActiveDocument()?.currentPage || 1)) {
       highlightMatch(currentResult, true);
     }
     return;
@@ -268,10 +379,10 @@ export function highlightResults() {
 
   // Get results for the current page (or all pages in continuous mode)
   let pageResults;
-  if (state.viewMode === 'continuous') {
+  if (getActiveDocument()?.viewMode === 'continuous') {
     pageResults = state.search.results;
   } else {
-    pageResults = getResultsForPage(state.currentPage);
+    pageResults = getResultsForPage(getActiveDocument()?.currentPage || 1);
   }
 
   const currentResult = getCurrentResult();
@@ -286,7 +397,7 @@ export function highlightResults() {
 /**
  * Find all occurrences of search text in the text layer and return their positions
  */
-function findAllMatchPositions(textLayer, searchText, matchCase) {
+function findAllMatchPositions(textLayer, searchText, matchCase, wholeWord) {
   const positions = [];
   const textSpans = textLayer.querySelectorAll('span');
   const compareSearchText = matchCase ? searchText : searchText.toLowerCase();
@@ -301,6 +412,18 @@ function findAllMatchPositions(textLayer, searchText, matchCase) {
     while (true) {
       const matchIndex = compareSpanText.indexOf(compareSearchText, startIndex);
       if (matchIndex === -1) break;
+
+      // Whole word check: verify word boundaries in the span text
+      if (wholeWord) {
+        const before = matchIndex > 0 ? compareSpanText[matchIndex - 1] : ' ';
+        const after = matchIndex + compareSearchText.length < compareSpanText.length
+          ? compareSpanText[matchIndex + compareSearchText.length] : ' ';
+        const isWordChar = (c) => /\w/.test(c);
+        if (isWordChar(before) || isWordChar(after)) {
+          startIndex = matchIndex + 1;
+          continue;
+        }
+      }
 
       const textNode = span.firstChild;
       if (textNode && textNode.nodeType === Node.TEXT_NODE) {
@@ -385,7 +508,7 @@ function highlightMatch(result, isCurrent) {
 
   // Get the text layer for this page
   let textLayer;
-  if (state.viewMode === 'continuous') {
+  if (getActiveDocument()?.viewMode === 'continuous') {
     textLayer = document.querySelector(`[data-page-num="${pageNum}"] .textLayer`);
   } else {
     textLayer = document.querySelector('.textLayer');
@@ -394,7 +517,7 @@ function highlightMatch(result, isCurrent) {
   if (!textLayer) return;
 
   // Find all match positions in the text layer
-  const positions = findAllMatchPositions(textLayer, result.matchText, state.search.matchCase);
+  const positions = findAllMatchPositions(textLayer, result.matchText, state.search.matchCase, state.search.wholeWord);
 
   // Count which occurrence this result is on this page
   const pageResults = state.search.results.filter(r => r.pageNum === pageNum);
@@ -437,4 +560,74 @@ export function onPageRendered() {
       highlightResults();
     });
   }
+}
+
+// ==================== Replace handlers ====================
+
+export async function onReplace() {
+  try {
+    const { replaceCurrentMatch, clearTextCache, getCurrentResult } = await import('./find-controller.js');
+    const replaceWith = state.search.replaceQuery || '';
+
+    // Ensure we're on the correct page
+    const currentResult = getCurrentResult();
+    if (currentResult) {
+      const doc = getActiveDocument();
+      if (doc && currentResult.pageNum !== doc.currentPage) {
+        await navigateToResult(currentResult);
+        await new Promise(r => setTimeout(r, 200));
+      }
+    }
+
+    const replaced = await replaceCurrentMatch(replaceWith);
+    if (replaced) {
+      const { markDocumentModified } = await import('../ui/chrome/tabs.js');
+      markDocumentModified();
+
+      const doc = getActiveDocument();
+      if (doc) clearTextCache(doc.id);
+
+      if (getActiveDocument()?.viewMode === 'continuous') {
+        await renderContinuous();
+      } else {
+        await renderPage(getActiveDocument()?.currentPage || 1);
+      }
+      await executeSearchAndUpdate();
+    }
+  } catch (err) {
+    console.error('[onReplace]', err);
+  }
+}
+
+export async function onReplaceAll() {
+  const { replaceAllMatches, clearTextCache } = await import('./find-controller.js');
+  const replaceWith = state.search.replaceQuery || '';
+
+  const count = await replaceAllMatches(replaceWith);
+  if (count > 0) {
+    const { markDocumentModified } = await import('../ui/chrome/tabs.js');
+    markDocumentModified();
+
+    const doc = getActiveDocument();
+    if (doc) clearTextCache(doc.id);
+
+    // Re-render to show the text edits
+    if (getActiveDocument()?.viewMode === 'continuous') {
+      const { redrawContinuous } = await import('../annotations/rendering.js');
+      redrawContinuous();
+    } else {
+      await renderPage(getActiveDocument()?.currentPage || 1);
+    }
+
+    // Re-search
+    await executeSearchAndUpdate();
+
+    setMessageText(`Replaced ${count} occurrences`);
+  } else {
+    setMessageText('No replacements made');
+  }
+}
+
+export function handleReplaceInput(value) {
+  state.search.replaceQuery = value;
 }

@@ -1,4 +1,4 @@
-import { state } from '../core/state.js';
+import { state, getActiveDocument } from '../core/state.js';
 import { annotationCanvas, annotationCtx } from '../ui/dom-elements.js';
 import { updateStatusAnnotations } from '../ui/chrome/status-bar.js';
 import { updateAnnotationsList } from '../ui/panels/annotations-list.js';
@@ -925,15 +925,17 @@ export function redrawAnnotations(lightweight = false) {
     drawGrid(annotationCtx, annotationCanvas.width / scale, annotationCanvas.height / scale);
   }
 
+  const curPage = doc ? doc.currentPage : 1;
+
   // Draw watermarks behind content
-  renderWatermarksBehind(annotationCtx, state.currentPage, annotationCanvas.width / scale, annotationCanvas.height / scale);
+  renderWatermarksBehind(annotationCtx, curPage, annotationCanvas.width / scale, annotationCanvas.height / scale);
 
   // Draw text edits (cover-and-replace) before annotations
-  drawTextEdits(annotationCtx, state.currentPage);
+  drawTextEdits(annotationCtx, curPage);
 
   // Draw all annotations for current page
   annotations.forEach(annotation => {
-    if (annotation.page !== state.currentPage) return;
+    if (annotation.page !== curPage) return;
     drawAnnotation(annotationCtx, annotation);
   });
 
@@ -941,13 +943,14 @@ export function redrawAnnotations(lightweight = false) {
   annotationCtx.globalCompositeOperation = 'source-over';
 
   // Draw watermarks in front of content
-  renderWatermarksInFront(annotationCtx, state.currentPage, annotationCanvas.width / scale, annotationCanvas.height / scale);
+  renderWatermarksInFront(annotationCtx, curPage, annotationCanvas.width / scale, annotationCanvas.height / scale);
 
   // Draw selection highlight and handles (use selectedAnnotations array as source of truth)
-  const selected = state.selectedAnnotations;
+  const _renderDoc = getActiveDocument();
+  const selected = _renderDoc ? _renderDoc.selectedAnnotations : [];
   if (selected.length > 0) {
     for (const ann of selected) {
-      if (ann.page !== state.currentPage) continue;
+      if (ann.page !== curPage) continue;
       drawSelectionHandles(annotationCtx, ann);
     }
   }

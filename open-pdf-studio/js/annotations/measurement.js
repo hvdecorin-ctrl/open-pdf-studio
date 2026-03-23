@@ -7,7 +7,8 @@ import { savePreferences } from '../core/preferences.js';
 // Per-document scale takes priority, then legacy global preference, then default (px)
 export function getMeasureScale() {
   // 1. Per-document scale
-  const docScale = state.measureScale;
+  const doc = getActiveDocument();
+  const docScale = doc?.measureScale;
   if (docScale && docScale.pixelsPerUnit > 0) {
     return { pixelsPerUnit: docScale.pixelsPerUnit, unit: docScale.unit || 'px' };
   }
@@ -147,14 +148,14 @@ export function setScaleFromLine(pixelLength, realValue, unit, sourceAnnotation)
     sourceAnnotation.measureText = `${realValue.toFixed(prec)} ${unit}`;
 
     // Redraw canvas
-    if (state.viewMode === 'continuous') {
+    if (getActiveDocument()?.viewMode === 'continuous') {
       redrawContinuous();
     } else {
       redrawAnnotations();
     }
 
     // Refresh properties panel if this annotation is selected
-    if (state.selectedAnnotation === sourceAnnotation) {
+    if (getActiveDocument()?.selectedAnnotation === sourceAnnotation) {
       import('../bridge.js').then(m => m.storeShowProperties(sourceAnnotation));
     }
   }
@@ -194,7 +195,7 @@ export function recalculateAllMeasurements() {
   }
 
   // Redraw canvas
-  if (state.viewMode === 'continuous') {
+  if (getActiveDocument()?.viewMode === 'continuous') {
     redrawContinuous();
   } else {
     redrawAnnotations();

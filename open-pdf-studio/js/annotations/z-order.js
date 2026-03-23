@@ -1,18 +1,20 @@
-import { state } from '../core/state.js';
+import { state, getActiveDocument } from '../core/state.js';
 import { redrawAnnotations, redrawContinuous } from './rendering.js';
 import { showProperties, showMultiSelectionProperties } from '../ui/panels/properties-panel.js';
 
 // Bring annotation to front (top of z-order)
 export function bringToFront(annotation) {
   if (!annotation) return;
+  const doc = getActiveDocument();
+  if (!doc) return;
 
-  const index = state.annotations.indexOf(annotation);
+  const index = doc.annotations.indexOf(annotation);
   if (index > -1) {
-    state.annotations.splice(index, 1);
-    state.annotations.push(annotation);
+    doc.annotations.splice(index, 1);
+    doc.annotations.push(annotation);
     annotation.modifiedAt = new Date().toISOString();
 
-    if (state.viewMode === 'continuous') {
+    if (doc.viewMode === 'continuous') {
       redrawContinuous();
     } else {
       redrawAnnotations();
@@ -23,14 +25,16 @@ export function bringToFront(annotation) {
 // Send annotation to back (bottom of z-order)
 export function sendToBack(annotation) {
   if (!annotation) return;
+  const doc = getActiveDocument();
+  if (!doc) return;
 
-  const index = state.annotations.indexOf(annotation);
+  const index = doc.annotations.indexOf(annotation);
   if (index > -1) {
-    state.annotations.splice(index, 1);
-    state.annotations.unshift(annotation);
+    doc.annotations.splice(index, 1);
+    doc.annotations.unshift(annotation);
     annotation.modifiedAt = new Date().toISOString();
 
-    if (state.viewMode === 'continuous') {
+    if (doc.viewMode === 'continuous') {
       redrawContinuous();
     } else {
       redrawAnnotations();
@@ -41,15 +45,17 @@ export function sendToBack(annotation) {
 // Move annotation forward (one step up in z-order)
 export function bringForward(annotation) {
   if (!annotation) return;
+  const doc = getActiveDocument();
+  if (!doc) return;
 
-  const index = state.annotations.indexOf(annotation);
-  if (index > -1 && index < state.annotations.length - 1) {
+  const index = doc.annotations.indexOf(annotation);
+  if (index > -1 && index < doc.annotations.length - 1) {
     // Swap with next annotation
-    [state.annotations[index], state.annotations[index + 1]] =
-    [state.annotations[index + 1], state.annotations[index]];
+    [doc.annotations[index], doc.annotations[index + 1]] =
+    [doc.annotations[index + 1], doc.annotations[index]];
     annotation.modifiedAt = new Date().toISOString();
 
-    if (state.viewMode === 'continuous') {
+    if (doc.viewMode === 'continuous') {
       redrawContinuous();
     } else {
       redrawAnnotations();
@@ -60,15 +66,17 @@ export function bringForward(annotation) {
 // Move annotation backward (one step down in z-order)
 export function sendBackward(annotation) {
   if (!annotation) return;
+  const doc = getActiveDocument();
+  if (!doc) return;
 
-  const index = state.annotations.indexOf(annotation);
+  const index = doc.annotations.indexOf(annotation);
   if (index > 0) {
     // Swap with previous annotation
-    [state.annotations[index], state.annotations[index - 1]] =
-    [state.annotations[index - 1], state.annotations[index]];
+    [doc.annotations[index], doc.annotations[index - 1]] =
+    [doc.annotations[index - 1], doc.annotations[index]];
     annotation.modifiedAt = new Date().toISOString();
 
-    if (state.viewMode === 'continuous') {
+    if (doc.viewMode === 'continuous') {
       redrawContinuous();
     } else {
       redrawAnnotations();
@@ -172,14 +180,16 @@ export function flipVertical(annotation) {
 
 // Redraw canvas and refresh properties panel
 function redrawAndRefresh() {
-  if (state.viewMode === 'continuous') {
+  if (getActiveDocument()?.viewMode === 'continuous') {
     redrawContinuous();
   } else {
     redrawAnnotations();
   }
-  if (state.selectedAnnotations.length === 1) {
-    showProperties(state.selectedAnnotations[0]);
-  } else if (state.selectedAnnotations.length > 1) {
+  const _zDoc = getActiveDocument();
+  const _zSel = _zDoc ? _zDoc.selectedAnnotations : [];
+  if (_zSel.length === 1) {
+    showProperties(_zSel[0]);
+  } else if (_zSel.length > 1) {
     showMultiSelectionProperties();
   }
 }

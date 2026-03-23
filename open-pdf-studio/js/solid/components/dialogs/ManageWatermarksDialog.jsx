@@ -1,14 +1,14 @@
 import { For, Show } from 'solid-js';
 import Dialog from '../Dialog.jsx';
 import { closeDialog, openDialog } from '../../stores/dialogStore.js';
-import { state } from '../../../core/state.js';
+import { state, getActiveDocument } from '../../../core/state.js';
 import { recordRemoveWatermark, recordModifyWatermark } from '../../../core/undo-manager.js';
 import { markDocumentModified } from '../../../ui/chrome/tabs.js';
 import { redrawAnnotations, redrawContinuous } from '../../../annotations/rendering.js';
 import { useTranslation } from '../../../i18n/useTranslation.js';
 
 function refresh() {
-  if (state.viewMode === 'continuous') {
+  if (getActiveDocument()?.viewMode === 'continuous') {
     redrawContinuous();
   } else {
     redrawAnnotations();
@@ -74,9 +74,12 @@ export default function ManageWatermarksDialog() {
   }
 
   function handleDelete(wm) {
-    const idx = state.watermarks.indexOf(wm);
+    const doc = getActiveDocument();
+    const watermarks = doc?.watermarks;
+    if (!watermarks) return;
+    const idx = watermarks.indexOf(wm);
     if (idx !== -1) {
-      state.watermarks.splice(idx, 1);
+      watermarks.splice(idx, 1);
       recordRemoveWatermark(wm, idx);
       markDocumentModified();
       refresh();
@@ -105,10 +108,10 @@ export default function ManageWatermarksDialog() {
     >
       <div class="manage-wm-list">
         <Show
-          when={state.watermarks && state.watermarks.length > 0}
+          when={state.documents[state.activeDocumentIndex]?.watermarks && state.documents[state.activeDocumentIndex]?.watermarks.length > 0}
           fallback={<div class="manage-wm-empty">{t('manageWatermarks.noWatermarks')}</div>}
         >
-          <For each={state.watermarks}>
+          <For each={state.documents[state.activeDocumentIndex]?.watermarks}>
             {(wm) => (
               <div class="manage-wm-item">
                 <span class="manage-wm-item-icon">{getWmIcon(wm)}</span>
