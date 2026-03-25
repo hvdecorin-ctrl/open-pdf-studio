@@ -22,6 +22,6 @@ jobs:
       deploy_user: ${{ vars.DEPLOY_USER }}
       deploy_path: /var/www/open-pdf-studio.open-aec.com
       checkout_sparse: |
-        index.html
+        open-pdf-studio
     secrets:
       deploy_ssh_key: ${{ secrets.DEPLOY_SSH_KEY }}
