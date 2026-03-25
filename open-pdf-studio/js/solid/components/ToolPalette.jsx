@@ -64,9 +64,37 @@ export function initToolPalette() {
   if (prefs.toolPaletteVisible && mode.startsWith('docked-')) {
     registerPaletteDock('tool', mode.replace('docked-', ''));
   }
+  // Clamp after first render in case saved position is outside current viewport
+  if (mode === 'float') {
+    requestAnimationFrame(() => requestAnimationFrame(clampFloatPosition));
+  }
 }
 
 window.__toggleToolPalette = toggleToolPalette;
+
+// --- Clamp floating palette within viewport on window resize ---
+function clampFloatPosition() {
+  if (paletteMode() !== 'float' || !paletteVisible()) return;
+  const el = document.querySelector('.tp-float:not(.tp-ext)');
+  const w = el ? el.offsetWidth : 80;
+  const h = el ? el.offsetHeight : 40;
+  const pos = floatPos();
+  const nx = Math.max(0, Math.min(pos.x, window.innerWidth - w));
+  const ny = Math.max(0, Math.min(pos.y, window.innerHeight - h));
+  if (nx !== pos.x || ny !== pos.y) {
+    setFloatPos({ x: nx, y: ny });
+    savePaletteState();
+  }
+}
+
+let _resizeRafId = null;
+window.addEventListener('resize', () => {
+  if (_resizeRafId) return;
+  _resizeRafId = requestAnimationFrame(() => {
+    _resizeRafId = null;
+    clampFloatPosition();
+  });
+});
 
 const DOCK_STRIP_WIDTH = 34;
 const DOCK_SNAP = 60;
@@ -131,8 +159,11 @@ function startDrag(e, fromDocked) {
       }
     }
 
-    const nx = Math.max(0, Math.min(ev.clientX - offsetX, window.innerWidth - 80));
-    const ny = Math.max(0, Math.min(ev.clientY - offsetY, window.innerHeight - 40));
+    const el = document.querySelector('.tp-float:not(.tp-ext)');
+    const pw = el ? el.offsetWidth : 80;
+    const ph = el ? el.offsetHeight : 40;
+    const nx = Math.max(0, Math.min(ev.clientX - offsetX, window.innerWidth - pw));
+    const ny = Math.max(0, Math.min(ev.clientY - offsetY, window.innerHeight - ph));
     setFloatPos({ x: nx, y: ny });
     setDockPreview(getSnapSide(ev.clientX));
   }

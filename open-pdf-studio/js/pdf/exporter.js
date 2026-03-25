@@ -81,7 +81,7 @@ export async function renderPageOffscreen(pageNum, exportScale) {
   const savedScale = state.documents[state.activeDocumentIndex].scale;
   state.documents[state.activeDocumentIndex].scale = exportScale;
 
-  renderAnnotationsForPage(annCtx, pageNum, annCanvas.width, annCanvas.height);
+  renderAnnotationsForPage(annCtx, pageNum, annCanvas.width, annCanvas.height, 1);
 
   // Restore original scale
   state.documents[state.activeDocumentIndex].scale = savedScale;

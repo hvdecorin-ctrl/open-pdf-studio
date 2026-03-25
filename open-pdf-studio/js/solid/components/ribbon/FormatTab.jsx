@@ -247,8 +247,9 @@ export default function FormatTab() {
                     if (canvas) {
                       const resetDoc = getActiveDocument();
                       const resetScale = resetDoc?.scale || 1.5;
-                      const cx = (canvas.width / resetScale) / 2;
-                      const cy = (canvas.height / resetScale) / 2;
+                      const resetDpr = window.devicePixelRatio || 1;
+                      const cx = (canvas.width / (resetScale * resetDpr)) / 2;
+                      const cy = (canvas.height / (resetScale * resetDpr)) / 2;
                       const w = ann.width || 100;
                       const h = ann.height || 50;
                       ann.x = cx - w / 2;

@@ -209,13 +209,14 @@ export async function addTextAnnotation(x, y, pageNum, canvasEl) {
 
   // Determine page height for coordinate conversion
   const addTextScale = doc?.scale || 1.5;
+  const dpr = window.devicePixelRatio || 1;
   let pageHeight;
   if (canvasEl) {
-    pageHeight = canvasEl.height / addTextScale;
+    pageHeight = canvasEl.height / (addTextScale * dpr);
   } else {
     const canvas = annotationCanvas || document.getElementById('annotation-canvas');
     if (canvas) {
-      pageHeight = canvas.height / addTextScale;
+      pageHeight = canvas.height / (addTextScale * dpr);
     } else {
       return;
     }

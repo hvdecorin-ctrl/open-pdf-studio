@@ -54,6 +54,10 @@ export function initExtPalette(id, defaults) {
   if (ps.visible[0]() && mode.startsWith('docked-')) {
     registerPaletteDock(id, mode.replace('docked-', ''));
   }
+  // Clamp after first render in case saved position is outside current viewport
+  if (ps.visible[0]() && mode === 'float') {
+    requestAnimationFrame(() => requestAnimationFrame(clampAllExtFloatPositions));
+  }
 }
 
 export function toggleExtPalette(id) {
@@ -73,6 +77,33 @@ export function isExtPaletteVisible(id) {
   const ps = paletteStates[id];
   return ps ? ps.visible[0]() : false;
 }
+
+// --- Clamp all floating extension palettes within viewport on window resize ---
+function clampAllExtFloatPositions() {
+  for (const id of Object.keys(paletteStates)) {
+    const ps = paletteStates[id];
+    if (ps.mode[0]() !== 'float' || !ps.visible[0]()) continue;
+    const el = document.querySelector('.tp-float.tp-ext');
+    const w = el ? el.offsetWidth : 80;
+    const h = el ? el.offsetHeight : 40;
+    const pos = ps.floatPos[0]();
+    const nx = Math.max(0, Math.min(pos.x, window.innerWidth - w));
+    const ny = Math.max(0, Math.min(pos.y, window.innerHeight - h));
+    if (nx !== pos.x || ny !== pos.y) {
+      ps.floatPos[1]({ x: nx, y: ny });
+      savePalettePrefs(id);
+    }
+  }
+}
+
+let _extResizeRafId = null;
+window.addEventListener('resize', () => {
+  if (_extResizeRafId) return;
+  _extResizeRafId = requestAnimationFrame(() => {
+    _extResizeRafId = null;
+    clampAllExtFloatPositions();
+  });
+});
 
 // --- Drag logic (per palette instance) ---
 function startExtDrag(id, e, fromDocked) {
@@ -110,8 +141,11 @@ function startExtDrag(id, e, fromDocked) {
         unregisterPaletteDock(id);
       }
     }
-    const nx = Math.max(0, Math.min(ev.clientX - offsetX, window.innerWidth - 80));
-    const ny = Math.max(0, Math.min(ev.clientY - offsetY, window.innerHeight - 40));
+    const el = document.querySelector('.tp-float.tp-ext');
+    const pw = el ? el.offsetWidth : 80;
+    const ph = el ? el.offsetHeight : 40;
+    const nx = Math.max(0, Math.min(ev.clientX - offsetX, window.innerWidth - pw));
+    const ny = Math.max(0, Math.min(ev.clientY - offsetY, window.innerHeight - ph));
     ps.floatPos[1]({ x: nx, y: ny });
     ps.dockPreview[1](getSnapSide(ev.clientX));
   }

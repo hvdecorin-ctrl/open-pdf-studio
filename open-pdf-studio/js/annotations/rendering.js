@@ -916,19 +916,21 @@ export function redrawAnnotations(lightweight = false) {
 
   annotationCtx.clearRect(0, 0, annotationCanvas.width, annotationCanvas.height);
 
-  // Apply scale transformation for zooming
+  // Apply scale transformation for zooming (includes hi-DPI factor)
+  const dpr = window.devicePixelRatio || 1;
+  const effectiveScale = scale * dpr;
   annotationCtx.save();
-  annotationCtx.scale(scale, scale);
+  annotationCtx.scale(effectiveScale, effectiveScale);
 
   // Draw grid overlay if enabled
   if (state.preferences.showGrid) {
-    drawGrid(annotationCtx, annotationCanvas.width / scale, annotationCanvas.height / scale);
+    drawGrid(annotationCtx, annotationCanvas.width / effectiveScale, annotationCanvas.height / effectiveScale);
   }
 
   const curPage = doc ? doc.currentPage : 1;
 
   // Draw watermarks behind content
-  renderWatermarksBehind(annotationCtx, curPage, annotationCanvas.width / scale, annotationCanvas.height / scale);
+  renderWatermarksBehind(annotationCtx, curPage, annotationCanvas.width / effectiveScale, annotationCanvas.height / effectiveScale);
 
   // Draw text edits (cover-and-replace) before annotations
   drawTextEdits(annotationCtx, curPage);
@@ -943,7 +945,7 @@ export function redrawAnnotations(lightweight = false) {
   annotationCtx.globalCompositeOperation = 'source-over';
 
   // Draw watermarks in front of content
-  renderWatermarksInFront(annotationCtx, curPage, annotationCanvas.width / scale, annotationCanvas.height / scale);
+  renderWatermarksInFront(annotationCtx, curPage, annotationCanvas.width / effectiveScale, annotationCanvas.height / effectiveScale);
 
   // Draw selection highlight and handles (use selectedAnnotations array as source of truth)
   const _renderDoc = getActiveDocument();
@@ -974,7 +976,7 @@ export function redrawAnnotations(lightweight = false) {
 }
 
 // Render annotations for a specific page (continuous mode)
-export function renderAnnotationsForPage(ctx, pageNum, width, height) {
+export function renderAnnotationsForPage(ctx, pageNum, width, height, overrideDpr) {
   ctx.clearRect(0, 0, width, height);
 
   // Read scale and annotations from the active document directly
@@ -982,12 +984,14 @@ export function renderAnnotationsForPage(ctx, pageNum, width, height) {
   const scale = doc ? doc.scale : 1;
   const annotations = doc ? doc.annotations : [];
 
-  // Apply scale transformation for zooming
+  // Apply scale transformation for zooming (includes hi-DPI factor)
+  const dpr = overrideDpr !== undefined ? overrideDpr : (window.devicePixelRatio || 1);
+  const effectiveScale = scale * dpr;
   ctx.save();
-  ctx.scale(scale, scale);
+  ctx.scale(effectiveScale, effectiveScale);
 
   // Draw watermarks behind content
-  renderWatermarksBehind(ctx, pageNum, width / scale, height / scale);
+  renderWatermarksBehind(ctx, pageNum, width / effectiveScale, height / effectiveScale);
 
   // Draw text edits (cover-and-replace)
   drawTextEdits(ctx, pageNum);
@@ -998,7 +1002,7 @@ export function renderAnnotationsForPage(ctx, pageNum, width, height) {
   });
 
   // Draw watermarks in front of content
-  renderWatermarksInFront(ctx, pageNum, width / scale, height / scale);
+  renderWatermarksInFront(ctx, pageNum, width / effectiveScale, height / effectiveScale);
 
   // Restore context
   ctx.restore();

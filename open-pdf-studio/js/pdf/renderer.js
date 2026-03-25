@@ -15,6 +15,17 @@ import { clearPdfVectorCache, prefetchPdfVectorGeometry } from '../tools/pdf-sna
 import { clearDetectionCache } from '../tools/pdf-element-detector.js';
 import { onPageRendered, clearHighlights } from '../search/find-bar.js';
 
+// Hi-DPI support: render canvases at device pixel ratio for sharp text
+export function getCanvasDPR() { return window.devicePixelRatio || 1; }
+
+function setupCanvasHiDPI(canvas, width, height) {
+  const dpr = getCanvasDPR();
+  canvas.width = Math.floor(width * dpr);
+  canvas.height = Math.floor(height * dpr);
+  canvas.style.width = Math.floor(width) + 'px';
+  canvas.style.height = Math.floor(height) + 'px';
+}
+
 // Track current render task to cancel if needed
 let currentRenderTask = null;
 
@@ -55,11 +66,9 @@ export async function renderPage(pageNum) {
   const annotationCanvas = getAnnotationCanvas();
   if (!pdfCanvas || !annotationCanvas) return;
 
-  // Set canvas dimensions
-  pdfCanvas.width = viewport.width;
-  pdfCanvas.height = viewport.height;
-  annotationCanvas.width = viewport.width;
-  annotationCanvas.height = viewport.height;
+  // Set canvas dimensions (hi-DPI: buffer at dpr, CSS at logical size)
+  setupCanvasHiDPI(pdfCanvas, viewport.width, viewport.height);
+  setupCanvasHiDPI(annotationCanvas, viewport.width, viewport.height);
 
   // Set CSS scale variables for PDF.js text/annotation layers
   const container = document.getElementById('canvas-container');
@@ -70,9 +79,11 @@ export async function renderPage(pageNum) {
 
   // Render PDF page
   const ctx = pdfCanvas.getContext('2d');
+  const dpr = getCanvasDPR();
   const renderContext = {
     canvasContext: ctx,
     viewport: viewport,
+    transform: dpr !== 1 ? [dpr, 0, 0, dpr, 0, 0] : null,
     annotationMode: 0 // DISABLE - annotations are rendered by the app's overlay canvas
   };
 
@@ -172,20 +183,18 @@ async function renderContinuousPage(pageNum) {
   canvasContainer.style.setProperty('--scale-factor', viewport.scale);
   canvasContainer.style.setProperty('--total-scale-factor', viewport.scale);
 
-  // Create PDF canvas
+  // Create PDF canvas (hi-DPI)
   const pdfCanvasEl = document.createElement('canvas');
   pdfCanvasEl.className = 'pdf-canvas';
-  pdfCanvasEl.width = viewport.width;
-  pdfCanvasEl.height = viewport.height;
+  setupCanvasHiDPI(pdfCanvasEl, viewport.width, viewport.height);
   pdfCanvasEl.dataset.page = pageNum;
   pdfCanvasEl.style.display = 'block';
   pdfCanvasEl.style.background = 'white';
 
-  // Create annotation canvas
+  // Create annotation canvas (hi-DPI)
   const annotationCanvasEl = document.createElement('canvas');
   annotationCanvasEl.className = 'annotation-canvas';
-  annotationCanvasEl.width = viewport.width;
-  annotationCanvasEl.height = viewport.height;
+  setupCanvasHiDPI(annotationCanvasEl, viewport.width, viewport.height);
   annotationCanvasEl.dataset.page = pageNum;
   annotationCanvasEl.style.position = 'absolute';
   annotationCanvasEl.style.top = '0';
@@ -202,9 +211,11 @@ async function renderContinuousPage(pageNum) {
 
   // Render PDF page
   const pdfCtxEl = pdfCanvasEl.getContext('2d');
+  const contDpr = getCanvasDPR();
   const contRenderContext = {
     canvasContext: pdfCtxEl,
     viewport: viewport,
+    transform: contDpr !== 1 ? [contDpr, 0, 0, contDpr, 0, 0] : null,
     annotationMode: 0
   };
   if (state.preferences.thinLines) {

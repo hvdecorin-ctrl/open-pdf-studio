@@ -130,8 +130,9 @@ export async function placeOverrideStamp(x, y) {
     const canvas = document.getElementById('annotation-canvas') || document.getElementById('pdf-canvas');
     const doc = getActiveDocument();
     const stampScale = doc?.scale || 1.5;
-    const pageW = canvas ? canvas.width / stampScale : 600;
-    const pageH = canvas ? canvas.height / stampScale : 800;
+    const dpr = window.devicePixelRatio || 1;
+    const pageW = canvas ? canvas.width / (stampScale * dpr) : 600;
+    const pageH = canvas ? canvas.height / (stampScale * dpr) : 800;
     const margin = overrides.stampPageMargin || 20;
     stampWidth = Math.round(pageW - margin * 2);
     stampHeight = Math.round(pageH - margin * 2);

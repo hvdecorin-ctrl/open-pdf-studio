@@ -1,0 +1,282 @@
+import { PDFName } from 'pdf-lib';
+
+// Convert hex color to RGB values (0-1 range)
+export function hexToRgb(hex) {
+  const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+  if (!result) return [0, 0, 0];
+  return [
+    parseInt(result[1], 16) / 255,
+    parseInt(result[2], 16) / 255,
+    parseInt(result[3], 16) / 255
+  ];
+}
+
+// Build a BS (Border Style) dictionary
+export function buildBorderStyle(context, width, borderStyle) {
+  const s = (borderStyle === 'dashed' || borderStyle === 'dotted') ? 'D' : 'S';
+  const bs = { Type: 'Border', W: width, S: s };
+  if (borderStyle === 'dashed') {
+    bs.D = [8, 4];
+  } else if (borderStyle === 'dotted') {
+    bs.D = [2, 2];
+  }
+  return context.obj(bs);
+}
+
+// Compute annotation flags (F entry) from annotation properties
+export function computeAnnotFlags(ann) {
+  let flags = 0;
+  if (ann.printable !== false) flags |= 4;   // Bit 3: Print (default on)
+  if (ann.readOnly) flags |= 64;              // Bit 7: ReadOnly
+  if (ann.locked) flags |= 128;               // Bit 8: Locked
+  return flags;
+}
+
+// Map CSS font family + bold/italic to PDF standard font name for DA string
+export function mapFontToPdfName(fontFamily, bold, italic) {
+  const f = (fontFamily || '').toLowerCase();
+
+  // Map well-known CSS fonts to PDF standard 14 font names
+  if (f.includes('courier') || f === 'mono' || f === 'monospace') {
+    if (bold && italic) return 'Courier-BoldOblique';
+    if (bold) return 'Courier-Bold';
+    if (italic) return 'Courier-Oblique';
+    return 'Courier';
+  }
+  if (f.includes('times') || (f.includes('serif') && !f.includes('sans'))) {
+    if (bold && italic) return 'Times-BoldItalic';
+    if (bold) return 'Times-Bold';
+    if (italic) return 'Times-Italic';
+    return 'Times-Roman';
+  }
+  if (f === 'helvetica' || f === 'arial' || f === 'sans-serif') {
+    if (bold && italic) return 'Helvetica-BoldOblique';
+    if (bold) return 'Helvetica-Bold';
+    if (italic) return 'Helvetica-Oblique';
+    return 'Helvetica';
+  }
+
+  // For non-standard fonts, preserve the actual name as CamelCase (no spaces)
+  // The loader's mapPdfFontName re-inserts spaces from CamelCase (e.g. "SegoeUI" → "Segoe UI")
+  let baseName = (fontFamily || 'Helvetica').replace(/\s+/g, '');
+  let suffix = '';
+  if (bold && italic) suffix = '-BoldItalic';
+  else if (bold) suffix = '-Bold';
+  else if (italic) suffix = '-Italic';
+  return baseName + suffix;
+}
+
+// Ensure AcroForm Default Resources contain fonts used by FreeText annotations
+// so DA strings can reference them (e.g. /Helv, /Courier, /SegoeUI)
+export function ensureAcroFormFonts(pdfDoc, context, usedFonts) {
+  const catalog = context.lookup(context.trailerInfo.Root);
+  if (!catalog) return;
+
+  // Get or create AcroForm dictionary
+  let acroFormRef = catalog.get(PDFName.of('AcroForm'));
+  let acroForm;
+  if (acroFormRef) {
+    acroForm = context.lookup(acroFormRef);
+  }
+  if (!acroForm) {
+    acroForm = context.obj({ Fields: [] });
+    acroFormRef = context.register(acroForm);
+    catalog.set(PDFName.of('AcroForm'), acroFormRef);
+  }
+
+  // Get or create DR (Default Resources) dictionary
+  let drRef = acroForm.get(PDFName.of('DR'));
+  let dr;
+  if (drRef) {
+    dr = context.lookup(drRef);
+  }
+  if (!dr) {
+    dr = context.obj({});
+    acroForm.set(PDFName.of('DR'), dr);
+  }
+
+  // Get or create Font dictionary within DR
+  let fontDictRef = dr.get(PDFName.of('Font'));
+  let fontDict;
+  if (fontDictRef) {
+    fontDict = context.lookup(fontDictRef);
+  }
+  if (!fontDict) {
+    fontDict = context.obj({});
+    dr.set(PDFName.of('Font'), fontDict);
+  }
+
+  // Add standard 14 fonts
+  const standardFonts = [
+    'Helv', 'Helvetica', 'Helvetica-Bold', 'Helvetica-Oblique', 'Helvetica-BoldOblique',
+    'Courier', 'Courier-Bold', 'Courier-Oblique', 'Courier-BoldOblique',
+    'Times-Roman', 'Times-Bold', 'Times-Italic', 'Times-BoldItalic'
+  ];
+  const baseFontMap = { 'Helv': 'Helvetica' };
+
+  for (const fontName of standardFonts) {
+    if (!fontDict.get(PDFName.of(fontName))) {
+      const baseFont = baseFontMap[fontName] || fontName;
+      fontDict.set(PDFName.of(fontName), context.obj({
+        Type: 'Font',
+        Subtype: 'Type1',
+        BaseFont: baseFont,
+        Encoding: 'WinAnsiEncoding'
+      }));
+    }
+  }
+
+  // Also register any non-standard fonts actually used by annotations
+  // (e.g. "SegoeUI", "SegoeUI-Bold") so viewers can resolve the DA font reference
+  if (usedFonts) {
+    for (const fontName of usedFonts) {
+      if (!fontDict.get(PDFName.of(fontName))) {
+        fontDict.set(PDFName.of(fontName), context.obj({
+          Type: 'Font',
+          Subtype: 'TrueType',
+          BaseFont: fontName,
+          Encoding: 'WinAnsiEncoding'
+        }));
+      }
+    }
+  }
+}
+
+// Strip PDF/A conformance from XMP metadata so the saved file
+// is not falsely reported as PDF/A after modifications.
+export function stripPdfAMetadata(pdfDocLib) {
+  try {
+    const catalog = pdfDocLib.catalog;
+    const metadataRef = catalog.get(PDFName.of('Metadata'));
+    if (!metadataRef) return;
+
+    const metadataObj = pdfDocLib.context.lookup(metadataRef);
+    if (!metadataObj || typeof metadataObj.getContents !== 'function') return;
+
+    const xmlBytes = metadataObj.getContents();
+    let xml = new TextDecoder().decode(xmlBytes);
+
+    // Remove pdfaid:part and pdfaid:conformance elements
+    xml = xml.replace(/<pdfaid:part>[^<]*<\/pdfaid:part>/g, '');
+    xml = xml.replace(/<pdfaid:conformance>[^<]*<\/pdfaid:conformance>/g, '');
+
+    // Remove empty pdfaid Description blocks left behind
+    xml = xml.replace(/<rdf:Description[^>]*xmlns:pdfaid[^>]*>\s*<\/rdf:Description>/g, '');
+
+    const newBytes = new TextEncoder().encode(xml);
+    metadataObj.setContents(newBytes);
+  } catch (e) {
+    console.warn('Failed to strip PDF/A metadata:', e);
+  }
+}
+
+// Generate a PDF appearance stream (Form XObject) for an annotation
+export function generateAppearanceStream(context, ann, convertY) {
+  try {
+    let streamContent = '';
+    let bbox;
+
+    switch (ann.type) {
+      case 'box': {
+        const w = ann.width;
+        const h = ann.height;
+        bbox = [0, 0, w, h];
+        const [r, g, b] = hexToRgb(ann.strokeColor || ann.color || '#000000');
+        const lw = ann.lineWidth ?? 2;
+        streamContent = `${lw} w\n${r} ${g} ${b} RG\n`;
+        if (ann.fillColor) {
+          const [fr, fg, fb] = hexToRgb(ann.fillColor);
+          streamContent += `${fr} ${fg} ${fb} rg\n0 0 ${w} ${h} re B\n`;
+        } else {
+          streamContent += `0 0 ${w} ${h} re S\n`;
+        }
+        break;
+      }
+      case 'circle': {
+        const w = ann.width || ann.radius * 2;
+        const h = ann.height || ann.radius * 2;
+        bbox = [0, 0, w, h];
+        const cx = w / 2, cy = h / 2;
+        const rx = w / 2, ry = h / 2;
+        const k = 0.5522847498; // Bezier approximation of circle
+        const [r, g, b] = hexToRgb(ann.strokeColor || ann.color || '#000000');
+        const lw = ann.lineWidth ?? 2;
+        streamContent = `${lw} w\n${r} ${g} ${b} RG\n`;
+        if (ann.fillColor) {
+          const [fr, fg, fb] = hexToRgb(ann.fillColor);
+          streamContent += `${fr} ${fg} ${fb} rg\n`;
+        }
+        // Ellipse via Bezier curves
+        streamContent += `${cx} ${cy + ry} m\n`;
+        streamContent += `${cx + k*rx} ${cy + ry} ${cx + rx} ${cy + k*ry} ${cx + rx} ${cy} c\n`;
+        streamContent += `${cx + rx} ${cy - k*ry} ${cx + k*rx} ${cy - ry} ${cx} ${cy - ry} c\n`;
+        streamContent += `${cx - k*rx} ${cy - ry} ${cx - rx} ${cy - k*ry} ${cx - rx} ${cy} c\n`;
+        streamContent += `${cx - rx} ${cy + k*ry} ${cx - k*rx} ${cy + ry} ${cx} ${cy + ry} c\n`;
+        streamContent += ann.fillColor ? 'B\n' : 'S\n';
+        break;
+      }
+      case 'line': {
+        // Skip AP stream for lines and arrows - let PDF viewers render natively
+        // from /L, /LE, and /BS entries. Custom AP streams cause coordinate
+        // mismatches between BBox and Rect, and override native arrowhead rendering.
+        return null;
+      }
+      case 'draw': {
+        if (!ann.path || ann.path.length < 2) return null;
+        const xs = ann.path.map(p => p.x);
+        const ys = ann.path.map(p => p.y);
+        const minX = Math.min(...xs) - 2;
+        const minY = Math.min(...ys) - 2;
+        const maxX = Math.max(...xs) + 2;
+        const maxY = Math.max(...ys) + 2;
+        bbox = [0, 0, maxX - minX, maxY - minY];
+        const [r, g, b] = hexToRgb(ann.strokeColor || ann.color || '#000000');
+        const lw = ann.lineWidth ?? 2;
+        streamContent = `${lw} w\n${r} ${g} ${b} RG\n`;
+        streamContent += `${ann.path[0].x - minX} ${maxY - ann.path[0].y} m\n`;
+        for (let i = 1; i < ann.path.length; i++) {
+          streamContent += `${ann.path[i].x - minX} ${maxY - ann.path[i].y} l\n`;
+        }
+        streamContent += 'S\n';
+        break;
+      }
+      case 'text':
+      case 'textbox':
+      case 'callout': {
+        // Skip AP stream for FreeText - let PDF viewers render from Contents + DA
+        // natively, which properly displays text. AP stream only draws shapes,
+        // causing text to disappear in viewers that use AP over DA.
+        return null;
+      }
+      default:
+        return null;
+    }
+
+    if (!streamContent || !bbox) return null;
+
+    const streamDict = {
+      Type: 'XObject',
+      Subtype: 'Form',
+      BBox: bbox
+    };
+
+    // Add rotation Matrix for rotated annotations (negate: canvas Y-down → PDF Y-up)
+    if (ann.rotation && (ann.type === 'box' || ann.type === 'circle')) {
+      const rad = -ann.rotation * Math.PI / 180;
+      const cos = Math.cos(rad);
+      const sin = Math.sin(rad);
+      streamDict.Matrix = [
+        parseFloat(cos.toFixed(6)),
+        parseFloat(sin.toFixed(6)),
+        parseFloat((-sin).toFixed(6)),
+        parseFloat(cos.toFixed(6)),
+        0, 0
+      ];
+    }
+
+    return context.stream(streamContent, streamDict);
+  } catch (e) {
+    console.warn('Failed to generate appearance stream for', ann.type, e);
+    return null;
+  }
+}

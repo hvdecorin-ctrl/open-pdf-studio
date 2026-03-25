@@ -696,7 +696,8 @@ export function findTextEditAtPosition(x, y, pageNum, canvasEl) {
   const pageEdits = doc.textEdits.filter(e => e.page === pageNum);
   if (pageEdits.length === 0) return null;
 
-  const pageHeight = canvasEl.height / (doc.scale || 1.5);
+  const _dpr = window.devicePixelRatio || 1;
+  const pageHeight = canvasEl.height / ((doc.scale || 1.5) * _dpr);
 
   for (const edit of pageEdits) {
     const fontSize = edit.fontSize;
@@ -724,7 +725,8 @@ export function startTextEditEditing(textEdit, pageNum, canvasEl) {
 
   const editDoc = getActiveDocument();
   const editScale = editDoc?.scale || 1.5;
-  const pageHeight = canvasEl.height / editScale;
+  const editDpr = window.devicePixelRatio || 1;
+  const pageHeight = canvasEl.height / (editScale * editDpr);
   const fontSize = textEdit.fontSize;
   const ls = textEdit.lineSpacing || fontSize * 1.2;
   const newLines = textEdit.newText.split('\n');
