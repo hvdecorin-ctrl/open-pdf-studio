@@ -91,13 +91,16 @@ export function setupWheelZoom() {
           showLoading('Rendering...');
         }, 200);
 
-        // Reset CSS sizing and render at full quality
-        document.querySelectorAll(canvasSelector).forEach(c => {
-          c.style.width = '';
-          c.style.height = '';
-        });
+        // Render at full quality — renderPage uses double-buffering so the
+        // old CSS-scaled content stays visible until new pixels are ready.
+        // CSS overrides are cleared after render since setupCanvasHiDPI /
+        // the atomic swap sets the correct style values.
         try {
           if (isContinuous) {
+            document.querySelectorAll(canvasSelector).forEach(c => {
+              c.style.width = '';
+              c.style.height = '';
+            });
             await renderContinuous();
           } else {
             const curDoc = state.documents[state.activeDocumentIndex];

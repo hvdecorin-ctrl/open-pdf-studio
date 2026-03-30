@@ -66,22 +66,19 @@ export async function renderPage(pageNum) {
   const annotationCanvas = getAnnotationCanvas();
   if (!pdfCanvas || !annotationCanvas) return;
 
-  // Set canvas dimensions (hi-DPI: buffer at dpr, CSS at logical size)
-  setupCanvasHiDPI(pdfCanvas, viewport.width, viewport.height);
-  setupCanvasHiDPI(annotationCanvas, viewport.width, viewport.height);
-
-  // Set CSS scale variables for PDF.js text/annotation layers
-  const container = document.getElementById('canvas-container');
-  if (container) {
-    container.style.setProperty('--scale-factor', viewport.scale);
-    container.style.setProperty('--total-scale-factor', viewport.scale);
-  }
-
-  // Render PDF page
-  const ctx = pdfCanvas.getContext('2d');
   const dpr = getCanvasDPR();
+  const bufferW = Math.floor(viewport.width * dpr);
+  const bufferH = Math.floor(viewport.height * dpr);
+
+  // Render PDF to an offscreen canvas so the visible canvas keeps its old
+  // content (possibly CSS-scaled) until the new pixels are ready.
+  const offscreen = document.createElement('canvas');
+  offscreen.width = bufferW;
+  offscreen.height = bufferH;
+  const offCtx = offscreen.getContext('2d');
+
   const renderContext = {
-    canvasContext: ctx,
+    canvasContext: offCtx,
     viewport: viewport,
     transform: dpr !== 1 ? [dpr, 0, 0, dpr, 0, 0] : null,
     annotationMode: 0 // DISABLE - annotations are rendered by the app's overlay canvas
@@ -103,6 +100,24 @@ export async function renderPage(pageNum) {
   }
 
   currentRenderTask = null;
+
+  // Atomic swap: resize the visible canvas and blit the offscreen content
+  // in the same synchronous block — no visible blank frame.
+  pdfCanvas.width = bufferW;
+  pdfCanvas.height = bufferH;
+  pdfCanvas.style.width = Math.floor(viewport.width) + 'px';
+  pdfCanvas.style.height = Math.floor(viewport.height) + 'px';
+  pdfCanvas.getContext('2d').drawImage(offscreen, 0, 0);
+
+  // Annotation canvas resize is deferred to just before redrawAnnotations()
+  // so the clear+redraw happens in one synchronous block (no blink).
+
+  // Set CSS scale variables for PDF.js text/annotation layers
+  const container = document.getElementById('canvas-container');
+  if (container) {
+    container.style.setProperty('--scale-factor', viewport.scale);
+    container.style.setProperty('--total-scale-factor', viewport.scale);
+  }
 
   // Create text layer for text selection
   try {
@@ -145,7 +160,8 @@ export async function renderPage(pageNum) {
     prefetchPdfVectorGeometry(pageNum);
   }
 
-  // Redraw annotations
+  // Resize annotation canvas and redraw in one synchronous block — no blink
+  setupCanvasHiDPI(annotationCanvas, viewport.width, viewport.height);
   redrawAnnotations();
 
   // Re-apply search highlights after re-render
