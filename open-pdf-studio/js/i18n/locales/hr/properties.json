@@ -158,7 +158,8 @@
     "measureDistance": "Udaljenost",
     "measureArea": "Površina",
     "measurePerimeter": "Opseg",
-    "redaction": "Redigiranje"
+    "redaction": "Redigiranje",
+    "scaleBar": "Scale Bar"
   },
   "leftPanel": {
     "togglePanel": "Prebaci ploču",
@@ -225,5 +226,20 @@
     "importComments": "Uvezi komentare...",
     "exportComments": "Izvezi komentare u podatkovnu datoteku...",
     "exportSelectedComments": "Izvezi odabrane komentare u podatkovnu datoteku..."
+  },
+  "scaleBar": {
+    "title": "Scale Bar",
+    "unit": "Unit",
+    "totalLength": "Total Length",
+    "divisions": "Divisions",
+    "barHeight": "Bar Height"
+  },
+  "measurement": {
+    "title": "Measurement",
+    "name": "Name",
+    "namePlaceholder": "Area name (optional)",
+    "scale": "Scale",
+    "unit": "Unit",
+    "precision": "Precision (Decimals)"
   }
 }

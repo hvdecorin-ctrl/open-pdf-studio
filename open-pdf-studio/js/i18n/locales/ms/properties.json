@@ -158,7 +158,8 @@
     "measureDistance": "Jarak",
     "measureArea": "Luas",
     "measurePerimeter": "Perimeter",
-    "redaction": "Redaksi"
+    "redaction": "Redaksi",
+    "scaleBar": "Scale Bar"
   },
   "leftPanel": {
     "togglePanel": "Togol Panel",
@@ -225,5 +226,20 @@
     "importComments": "Import komen...",
     "exportComments": "Eksport komen ke fail data...",
     "exportSelectedComments": "Eksport komen terpilih ke fail data..."
+  },
+  "scaleBar": {
+    "title": "Scale Bar",
+    "unit": "Unit",
+    "totalLength": "Total Length",
+    "divisions": "Divisions",
+    "barHeight": "Bar Height"
+  },
+  "measurement": {
+    "title": "Measurement",
+    "name": "Name",
+    "namePlaceholder": "Area name (optional)",
+    "scale": "Scale",
+    "unit": "Unit",
+    "precision": "Precision (Decimals)"
   }
 }

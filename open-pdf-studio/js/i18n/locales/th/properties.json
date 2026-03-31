@@ -158,7 +158,8 @@
     "measureDistance": "ระยะทาง",
     "measureArea": "พื้นที่",
     "measurePerimeter": "เส้นรอบรูป",
-    "redaction": "การปกปิด"
+    "redaction": "การปกปิด",
+    "scaleBar": "Scale Bar"
   },
   "leftPanel": {
     "togglePanel": "สลับแผง",
@@ -225,5 +226,20 @@
     "importComments": "นำเข้าความคิดเห็น...",
     "exportComments": "ส่งออกความคิดเห็นไปยังไฟล์ข้อมูล...",
     "exportSelectedComments": "ส่งออกความคิดเห็นที่เลือกไปยังไฟล์ข้อมูล..."
+  },
+  "scaleBar": {
+    "title": "Scale Bar",
+    "unit": "Unit",
+    "totalLength": "Total Length",
+    "divisions": "Divisions",
+    "barHeight": "Bar Height"
+  },
+  "measurement": {
+    "title": "Measurement",
+    "name": "Name",
+    "namePlaceholder": "Area name (optional)",
+    "scale": "Scale",
+    "unit": "Unit",
+    "precision": "Precision (Decimals)"
   }
 }

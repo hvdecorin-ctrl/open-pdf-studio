@@ -22,7 +22,8 @@ export const HANDLE_TYPES = {
   CALLOUT_MOVE: 'callout_move',
   POLYLINE_NODE: 'polyline_node',
   LEADER_START: 'leader_start',
-  LEADER_END: 'leader_end'
+  LEADER_END: 'leader_end',
+  LABEL_MOVE: 'label_move'
 } as const;
 
 // Default application preferences
@@ -48,6 +49,9 @@ export const DEFAULT_PREFERENCES: Preferences = {
   snapToMidpoints: true,
   snapToCenters: true,
   snapToEdges: false,
+  snapToIntersections: true,
+  snapToPerpendicular: false,
+  showSnapTypeLabel: true,
   objectSnapRadius: 10,
   snapToPdfContent: true,
 
@@ -213,6 +217,17 @@ export const DEFAULT_PREFERENCES: Preferences = {
 
   paletteLeftOrder: [],
   paletteRightOrder: [],
+
+  // Symbol palette
+  symbolPaletteVisible: true,
+  symbolPaletteMode: 'docked-right',
+  symbolPaletteFloatX: 300,
+  symbolPaletteFloatY: 150,
+  customSymbolGroups: [],
+  disabledSymbolGroups: [],
+
+  // Schedule
+  scheduleTemplates: [],
 
   // Feedback
   feedbackEmail: '',

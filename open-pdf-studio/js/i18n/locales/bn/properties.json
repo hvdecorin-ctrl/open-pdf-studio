@@ -158,7 +158,8 @@
     "measureDistance": "দূরত্ব",
     "measureArea": "ক্ষেত্রফল",
     "measurePerimeter": "পরিধি",
-    "redaction": "সংশোধন"
+    "redaction": "সংশোধন",
+    "scaleBar": "Scale Bar"
   },
   "leftPanel": {
     "togglePanel": "প্যানেল টগল করুন",
@@ -225,5 +226,20 @@
     "importComments": "মন্তব্য আমদানি...",
     "exportComments": "মন্তব্য ডেটা ফাইলে রপ্তানি...",
     "exportSelectedComments": "নির্বাচিত মন্তব্য ডেটা ফাইলে রপ্তানি..."
+  },
+  "scaleBar": {
+    "title": "Scale Bar",
+    "unit": "Unit",
+    "totalLength": "Total Length",
+    "divisions": "Divisions",
+    "barHeight": "Bar Height"
+  },
+  "measurement": {
+    "title": "Measurement",
+    "name": "Name",
+    "namePlaceholder": "Area name (optional)",
+    "scale": "Scale",
+    "unit": "Unit",
+    "precision": "Precision (Decimals)"
   }
 }

@@ -158,7 +158,8 @@
     "measureDistance": "距離",
     "measureArea": "面積",
     "measurePerimeter": "周長",
-    "redaction": "墨消し"
+    "redaction": "墨消し",
+    "scaleBar": "Scale Bar"
   },
   "leftPanel": {
     "togglePanel": "パネルの切替",
@@ -225,5 +226,20 @@
     "importComments": "コメントのインポート...",
     "exportComments": "コメントをデータファイルにエクスポート...",
     "exportSelectedComments": "選択したコメントをデータファイルにエクスポート..."
+  },
+  "scaleBar": {
+    "title": "Scale Bar",
+    "unit": "Unit",
+    "totalLength": "Total Length",
+    "divisions": "Divisions",
+    "barHeight": "Bar Height"
+  },
+  "measurement": {
+    "title": "Measurement",
+    "name": "Name",
+    "namePlaceholder": "Area name (optional)",
+    "scale": "Scale",
+    "unit": "Unit",
+    "precision": "Precision (Decimals)"
   }
 }

@@ -16,6 +16,8 @@ import ContextMenu from './components/ContextMenu.jsx';
 import LoadingOverlay from './components/LoadingOverlay.jsx';
 import { DockedToolPalette, FloatingToolPalette, DockTargets, PaletteContextMenu } from './components/ToolPalette.jsx';
 import { DockedExtPalette, FloatingExtPalette, ExtDockTargets } from './components/ExtensionToolPalette.jsx';
+import { DockedSymbolPalette, FloatingSymbolPalette, SymbolSettingsDialog } from './components/SymbolPalette.jsx';
+import SchedulePanel from './components/SchedulePanel.jsx';
 import { getRegisteredPalettes } from '../plugins/palette-registry.js';
 import { leftOrder, rightOrder } from './stores/paletteOrder.js';
 import { useTranslation } from '../i18n/useTranslation.js';
@@ -29,7 +31,7 @@ function OrderedDockedPalettes(props) {
   const allIds = () => {
     const o = order();
     const extIds = extPalettes().map(p => p.id);
-    const all = ['tool', ...extIds];
+    const all = ['tool', 'symbols', ...extIds];
     // Ordered ones first, then any remaining (for palettes not yet in the order list)
     const ordered = [...o.filter(id => all.includes(id)), ...all.filter(id => !o.includes(id))];
     // Right side: first docked should be closest to the edge (rightmost in DOM), so reverse
@@ -41,6 +43,9 @@ function OrderedDockedPalettes(props) {
       {(id) => {
         if (id === 'tool') {
           return <DockedToolPalette side={props.side} />;
+        }
+        if (id === 'symbols') {
+          return <DockedSymbolPalette side={props.side} />;
         }
         const descriptor = extPalettes().find(p => p.id === id);
         return descriptor ? <DockedExtPalette side={props.side} descriptor={descriptor} /> : null;
@@ -108,10 +113,13 @@ function DesktopApp() {
       <DialogHost />
       <ContextMenu />
       <FloatingToolPalette />
+      <FloatingSymbolPalette />
       <For each={extPalettes()}>
         {(p) => <FloatingExtPalette descriptor={p} />}
       </For>
       <PaletteContextMenu />
+      <SymbolSettingsDialog />
+      <SchedulePanel />
       <LoadingOverlay />
     </>
   );

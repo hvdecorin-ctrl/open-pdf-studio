@@ -158,7 +158,8 @@
     "measureDistance": "Odległość",
     "measureArea": "Powierzchnia",
     "measurePerimeter": "Obwód",
-    "redaction": "Redakcja"
+    "redaction": "Redakcja",
+    "scaleBar": "Scale Bar"
   },
   "leftPanel": {
     "togglePanel": "Przełącz Panel",
@@ -225,5 +226,20 @@
     "importComments": "Importuj komentarze...",
     "exportComments": "Eksportuj komentarze do pliku danych...",
     "exportSelectedComments": "Eksportuj wybrane komentarze do pliku danych..."
+  },
+  "scaleBar": {
+    "title": "Scale Bar",
+    "unit": "Unit",
+    "totalLength": "Total Length",
+    "divisions": "Divisions",
+    "barHeight": "Bar Height"
+  },
+  "measurement": {
+    "title": "Measurement",
+    "name": "Name",
+    "namePlaceholder": "Area name (optional)",
+    "scale": "Scale",
+    "unit": "Unit",
+    "precision": "Precision (Decimals)"
   }
 }

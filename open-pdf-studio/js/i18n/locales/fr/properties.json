@@ -158,7 +158,8 @@
     "measureDistance": "Distance",
     "measureArea": "Surface",
     "measurePerimeter": "Périmètre",
-    "redaction": "Caviardage"
+    "redaction": "Caviardage",
+    "scaleBar": "Scale Bar"
   },
   "leftPanel": {
     "togglePanel": "Afficher/masquer le panneau",
@@ -225,5 +226,20 @@
     "importComments": "Importer les commentaires...",
     "exportComments": "Exporter les commentaires vers un fichier...",
     "exportSelectedComments": "Exporter les commentaires sélectionnés vers un fichier..."
+  },
+  "scaleBar": {
+    "title": "Scale Bar",
+    "unit": "Unit",
+    "totalLength": "Total Length",
+    "divisions": "Divisions",
+    "barHeight": "Bar Height"
+  },
+  "measurement": {
+    "title": "Measurement",
+    "name": "Name",
+    "namePlaceholder": "Area name (optional)",
+    "scale": "Scale",
+    "unit": "Unit",
+    "precision": "Precision (Decimals)"
   }
 }

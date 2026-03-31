@@ -158,7 +158,8 @@
     "measureDistance": "מרחק",
     "measureArea": "שטח",
     "measurePerimeter": "היקף",
-    "redaction": "השחרה"
+    "redaction": "השחרה",
+    "scaleBar": "Scale Bar"
   },
   "leftPanel": {
     "togglePanel": "החלפת לוח",
@@ -225,5 +226,20 @@
     "importComments": "ייבא הערות...",
     "exportComments": "ייצא הערות לקובץ נתונים...",
     "exportSelectedComments": "ייצא הערות נבחרות לקובץ נתונים..."
+  },
+  "scaleBar": {
+    "title": "Scale Bar",
+    "unit": "Unit",
+    "totalLength": "Total Length",
+    "divisions": "Divisions",
+    "barHeight": "Bar Height"
+  },
+  "measurement": {
+    "title": "Measurement",
+    "name": "Name",
+    "namePlaceholder": "Area name (optional)",
+    "scale": "Scale",
+    "unit": "Unit",
+    "precision": "Precision (Decimals)"
   }
 }

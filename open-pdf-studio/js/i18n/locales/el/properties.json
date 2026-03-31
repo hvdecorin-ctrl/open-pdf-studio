@@ -158,7 +158,8 @@
     "measureDistance": "Απόσταση",
     "measureArea": "Εμβαδόν",
     "measurePerimeter": "Περίμετρος",
-    "redaction": "Απαλοιφή"
+    "redaction": "Απαλοιφή",
+    "scaleBar": "Scale Bar"
   },
   "leftPanel": {
     "togglePanel": "Εναλλαγή πίνακα",
@@ -225,5 +226,20 @@
     "importComments": "Εισαγωγή σχολίων...",
     "exportComments": "Εξαγωγή σχολίων σε αρχείο...",
     "exportSelectedComments": "Εξαγωγή επιλεγμένων σχολίων σε αρχείο..."
+  },
+  "scaleBar": {
+    "title": "Scale Bar",
+    "unit": "Unit",
+    "totalLength": "Total Length",
+    "divisions": "Divisions",
+    "barHeight": "Bar Height"
+  },
+  "measurement": {
+    "title": "Measurement",
+    "name": "Name",
+    "namePlaceholder": "Area name (optional)",
+    "scale": "Scale",
+    "unit": "Unit",
+    "precision": "Precision (Decimals)"
   }
 }

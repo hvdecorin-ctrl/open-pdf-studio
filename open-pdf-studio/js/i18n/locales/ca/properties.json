@@ -158,7 +158,8 @@
     "measureDistance": "Distància",
     "measureArea": "Àrea",
     "measurePerimeter": "Perímetre",
-    "redaction": "Redacció"
+    "redaction": "Redacció",
+    "scaleBar": "Scale Bar"
   },
   "leftPanel": {
     "togglePanel": "Commuta el panell",
@@ -213,5 +214,20 @@
     "expandAll": "Expandir-ho tot",
     "collapseAll": "Reduir-ho tot",
     "annotationsMenu": "Menú"
+  },
+  "scaleBar": {
+    "title": "Scale Bar",
+    "unit": "Unit",
+    "totalLength": "Total Length",
+    "divisions": "Divisions",
+    "barHeight": "Bar Height"
+  },
+  "measurement": {
+    "title": "Measurement",
+    "name": "Name",
+    "namePlaceholder": "Area name (optional)",
+    "scale": "Scale",
+    "unit": "Unit",
+    "precision": "Precision (Decimals)"
   }
 }

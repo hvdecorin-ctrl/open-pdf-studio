@@ -36,6 +36,7 @@
     "applyDefaultStyle": "既定のスタイルを適用",
     "exportSubmenu": "エクスポート",
     "exportAsImage": "画像としてエクスポート...",
+    "addHole": "穴を追加",
     "properties": "プロパティ...",
     "calibrateFromLine": "Calibrate from this Line..."
   },

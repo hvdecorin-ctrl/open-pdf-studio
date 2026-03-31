@@ -158,7 +158,8 @@
     "measureDistance": "Distanta",
     "measureArea": "Suprafata",
     "measurePerimeter": "Perimetru",
-    "redaction": "Redactare"
+    "redaction": "Redactare",
+    "scaleBar": "Scale Bar"
   },
   "leftPanel": {
     "togglePanel": "Comutare panou",
@@ -225,5 +226,20 @@
     "importComments": "Importă comentarii...",
     "exportComments": "Exportă comentarii în fișier de date...",
     "exportSelectedComments": "Exportă comentariile selectate în fișier de date..."
+  },
+  "scaleBar": {
+    "title": "Scale Bar",
+    "unit": "Unit",
+    "totalLength": "Total Length",
+    "divisions": "Divisions",
+    "barHeight": "Bar Height"
+  },
+  "measurement": {
+    "title": "Measurement",
+    "name": "Name",
+    "namePlaceholder": "Area name (optional)",
+    "scale": "Scale",
+    "unit": "Unit",
+    "precision": "Precision (Decimals)"
   }
 }

@@ -1004,12 +1004,13 @@ export async function savePDF(saveAsPath = null) {
                 case 'closed': return 'ClosedArrow';
                 case 'diamond': return 'Diamond';
                 case 'circle': return 'Circle';
+                case 'openCircle': return 'Circle';
                 case 'square': return 'Square';
                 case 'slash': return 'Slash';
                 case 'butt': return 'Butt';
                 case 'openReversed': return 'ROpenArrow';
                 case 'closedReversed': return 'RClosedArrow';
-                default: return 'ClosedArrow';
+                default: return 'Circle';
               }
             };
             // Save as Line annotation with Measure dictionary
@@ -1133,6 +1134,18 @@ export async function savePDF(saveAsPath = null) {
             }
             annotDict = context.obj(maDict);
             annotDict.set(PDFName.of('BS'), buildBorderStyle(context, borderWidth, ann.borderStyle));
+            // Save holes as custom OPS_Holes array
+            if (ann.holes && ann.holes.length > 0) {
+              const holesArray = ann.holes.map(hole => {
+                const holeVertices = [];
+                for (const pt of hole) {
+                  holeVertices.push(convertX(pt.x));
+                  holeVertices.push(convertY(pt.y));
+                }
+                return context.obj(holeVertices);
+              });
+              annotDict.set(PDFName.of('OPS_Holes'), context.obj(holesArray));
+            }
             break;
           }
 

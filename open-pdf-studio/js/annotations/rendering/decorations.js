@@ -43,6 +43,11 @@ export function drawArrowheadOnCanvas(ctx, x, y, angle, size, style) {
     ctx.arc(-radius, 0, radius, 0, 2 * Math.PI);
     ctx.fill();
     ctx.stroke();
+  } else if (style === 'openCircle') {
+    // Open circle style - stroke only, no fill (used for dimension ticks)
+    const radius = 4;
+    ctx.arc(0, 0, radius, 0, 2 * Math.PI);
+    ctx.stroke();
   } else if (style === 'square') {
     // Square style - thin stroke for filled shape
     ctx.lineWidth = Math.min(ctx.lineWidth, 1);
@@ -86,11 +91,13 @@ export function drawArrowheadOnCanvas(ctx, x, y, angle, size, style) {
 export function drawDimensionLineEnding(ctx, x, y, angle, size, style) {
   if (style === 'none') return;
   let ox = x, oy = y, a = angle;
-  const unfilled = style === 'circle' || style === 'diamond' || style === 'square';
+  const unfilled = style === 'circle' || style === 'diamond' || style === 'square' || style === 'openCircle';
   if (style === 'circle') {
     const r = size / 3;
     ox += Math.cos(angle) * r;
     oy += Math.sin(angle) * r;
+  } else if (style === 'openCircle') {
+    // openCircle is centered on the endpoint, no offset needed
   } else if (style === 'diamond' || style === 'square') {
     const off = size / 2;
     ox += Math.cos(angle) * off;

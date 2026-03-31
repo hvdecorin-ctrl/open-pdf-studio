@@ -14,11 +14,10 @@ import {
   rectIcon, ellipseIcon, polygonIcon, cloudIcon, cloudPolylineIcon,
   textAnnotIcon, textboxIcon, noteIcon, calloutIcon,
   stampIcon, signatureIcon,
-  measureDistanceIcon, measureAreaIcon, measurePerimeterIcon, calibrateIcon,
   redactionIcon, applyRedactionsIcon,
   clearPageIcon, clearAllIcon
 } from '../../data/ribbonIcons.js';
-import { showCalibrationDialog } from '../../../annotations/measurement.js';
+
 import { useTranslation } from '../../../i18n/useTranslation.js';
 
 export default function CommentTab() {
@@ -71,19 +70,6 @@ export default function CommentTab() {
             disabled={noPdf() || isPdfAReadOnly()} active={state.currentTool === 'stamp'} onClick={() => setTool('stamp')} />
           <RibbonButton id="tool-signature" title={t('comment.signature')} icon={signatureIcon} label={t('comment.signature')}
             disabled={noPdf() || isPdfAReadOnly()} active={state.currentTool === 'signature'} onClick={() => setTool('signature')} />
-        </RibbonGroup>
-
-        <RibbonGroup label={t('comment.measure')}>
-          <RibbonButtonStack>
-            <RibbonButton size="small" id="tool-measure-distance" title={t('comment.measureDistance')} icon={measureDistanceIcon} label={t('comment.distance')}
-              disabled={noPdf() || isPdfAReadOnly()} active={state.currentTool === 'measureDistance'} onClick={() => setTool('measureDistance')} />
-            <RibbonButton size="small" id="tool-measure-area" title={t('comment.measureArea')} icon={measureAreaIcon} label={t('comment.area')}
-              disabled={noPdf() || isPdfAReadOnly()} active={state.currentTool === 'measureArea'} onClick={() => setTool('measureArea')} />
-            <RibbonButton size="small" id="tool-measure-perimeter" title={t('comment.measurePerimeter')} icon={measurePerimeterIcon} label={t('comment.perimeter')}
-              disabled={noPdf() || isPdfAReadOnly()} active={state.currentTool === 'measurePerimeter'} onClick={() => setTool('measurePerimeter')} />
-          </RibbonButtonStack>
-          <RibbonButton id="tool-calibrate" title={t('comment.calibrateTitle')} icon={calibrateIcon} label={t('comment.calibrate')}
-            disabled={noPdf()} onClick={() => showCalibrationDialog()} />
         </RibbonGroup>
 
         <RibbonGroup label={t('comment.redaction')}>

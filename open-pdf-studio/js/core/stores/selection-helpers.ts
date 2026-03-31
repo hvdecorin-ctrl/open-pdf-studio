@@ -90,6 +90,8 @@ export function getAnnotationBounds(ann: Annotation): AnnotationBounds | null {
     case 'stamp':
     case 'signature':
     case 'redaction':
+    case 'scaleBar':
+    case 'scheduleTable':
       return { x: ann.x!, y: ann.y!, width: ann.width!, height: ann.height! };
     case 'textHighlight':
     case 'textStrikethrough':

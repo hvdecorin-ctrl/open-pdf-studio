@@ -252,7 +252,7 @@ export async function convertPdfAnnotation(annot, pageNum, viewport, stampImageM
               const unit = mdProps.measureUnit || 'mm';
               mdText = `${scaledVal.toFixed(prec)} ${unit}`;
             } else {
-              const dist = calculateDistance(lsx, lsy, lex, ley);
+              const dist = calculateDistance(lsx, lsy, lex, ley, pageNum);
               mdText = formatMeasurement(dist);
             }
           }
@@ -264,21 +264,21 @@ export async function convertPdfAnnotation(annot, pageNum, viewport, stampImageM
               case 'OpenArrow': return 'open';
               case 'ClosedArrow': return 'closed';
               case 'Diamond': return 'diamond';
-              case 'Circle': return 'circle';
+              case 'Circle': return 'openCircle';
               case 'Square': return 'square';
               case 'Slash': return 'slash';
               case 'Butt': return 'butt';
               case 'ROpenArrow': return 'openReversed';
               case 'RClosedArrow': return 'closedReversed';
-              default: return 'closed';
+              default: return 'openCircle';
             }
           };
           if (mdLe.length >= 2) {
             mdProps.startHead = mapMdHead(mdLe[0]);
             mdProps.endHead = mapMdHead(mdLe[1]);
           } else {
-            mdProps.startHead = 'closed';
-            mdProps.endHead = 'closed';
+            mdProps.startHead = 'openCircle';
+            mdProps.endHead = 'openCircle';
           }
           mdProps.headSize = extraColors.opsHeadSize || 12;
           if (extraColors.opsPrecision != null) mdProps.measurePrecision = extraColors.opsPrecision;
@@ -383,7 +383,7 @@ export async function convertPdfAnnotation(annot, pageNum, viewport, stampImageM
         if (isMeasurePerim) {
           let mpText = (annot.contentsObj && annot.contentsObj.str) || annot.contents || baseProps.subject || '';
           if (!mpText) {
-            const perim = calculatePerimeter(plPoints);
+            const perim = calculatePerimeter(plPoints, pageNum);
             mpText = formatMeasurement(perim);
           }
           const mpProps = {
@@ -462,7 +462,7 @@ export async function convertPdfAnnotation(annot, pageNum, viewport, stampImageM
         if (isMeasureArea) {
           let maText = (annot.contentsObj && annot.contentsObj.str) || annot.contents || baseProps.subject || '';
           if (!maText) {
-            const area = calculateArea(polyPoints);
+            const area = calculateArea(polyPoints, undefined, pageNum);
             maText = formatMeasurement(area);
           }
           const maProps = {
@@ -484,6 +484,15 @@ export async function convertPdfAnnotation(annot, pageNum, viewport, stampImageM
             if (areaPrecision !== undefined) maProps.measurePrecision = areaPrecision;
           }
           if (extraColors.opsPrecision != null) maProps.measurePrecision = extraColors.opsPrecision;
+          // Load holes from custom OPS_Holes data (convert PDF→app coordinates)
+          if (extraColors.holes && extraColors.holes.length > 0) {
+            maProps.holes = extraColors.holes.map(hole =>
+              hole.map(pt => {
+                const [hx, hy] = convertPoint(pt.x, pt.y);
+                return { x: hx, y: hy };
+              })
+            );
+          }
           return createAnnotation(maProps);
         }
 

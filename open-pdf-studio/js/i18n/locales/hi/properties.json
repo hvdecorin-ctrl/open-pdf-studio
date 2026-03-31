@@ -158,7 +158,8 @@
     "measureDistance": "दूरी",
     "measureArea": "क्षेत्रफल",
     "measurePerimeter": "परिधि",
-    "redaction": "संपादन-रहित"
+    "redaction": "संपादन-रहित",
+    "scaleBar": "Scale Bar"
   },
   "leftPanel": {
     "togglePanel": "पैनल टॉगल करें",
@@ -225,5 +226,20 @@
     "importComments": "टिप्पणियाँ आयात करें...",
     "exportComments": "टिप्पणियाँ डेटा फ़ाइल में निर्यात करें...",
     "exportSelectedComments": "चयनित टिप्पणियाँ डेटा फ़ाइल में निर्यात करें..."
+  },
+  "scaleBar": {
+    "title": "Scale Bar",
+    "unit": "Unit",
+    "totalLength": "Total Length",
+    "divisions": "Divisions",
+    "barHeight": "Bar Height"
+  },
+  "measurement": {
+    "title": "Measurement",
+    "name": "Name",
+    "namePlaceholder": "Area name (optional)",
+    "scale": "Scale",
+    "unit": "Unit",
+    "precision": "Precision (Decimals)"
   }
 }

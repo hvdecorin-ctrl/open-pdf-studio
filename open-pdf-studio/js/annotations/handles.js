@@ -30,6 +30,8 @@ function getAnnotationCenter(annotation) {
     case 'image':
     case 'stamp':
     case 'signature':
+    case 'scaleBar':
+    case 'scheduleTable':
     case 'redaction':
       return {
         x: annotation.x + annotation.width / 2,
@@ -195,11 +197,36 @@ export function getAnnotationHandles(annotation, scale = 1) {
           handles.push({ type: HANDLE_TYPES.POLYLINE_NODE, x: p.x - hs/2, y: p.y - hs/2, nodeIndex: i });
         });
       }
+      // Per-node handles for holes in measureArea
+      if (annotation.type === 'measureArea' && annotation.holes && annotation.holes.length > 0) {
+        annotation.holes.forEach((hole, holeIdx) => {
+          if (!hole) return;
+          hole.forEach((p, nodeIdx) => {
+            handles.push({ type: `${HANDLE_TYPES.POLYLINE_NODE}_hole_${holeIdx}`, x: p.x - hs/2, y: p.y - hs/2, nodeIndex: nodeIdx, isHole: true });
+          });
+        });
+      }
+      // Label drag handle for measureArea (at label position or centroid)
+      if (annotation.type === 'measureArea' && annotation.points && annotation.points.length >= 3 && annotation.measureText) {
+        let lx, ly;
+        if (annotation.labelX != null && annotation.labelY != null) {
+          lx = annotation.labelX;
+          ly = annotation.labelY;
+        } else {
+          lx = 0; ly = 0;
+          for (const p of annotation.points) { lx += p.x; ly += p.y; }
+          lx /= annotation.points.length;
+          ly /= annotation.points.length;
+        }
+        handles.push({ type: HANDLE_TYPES.LABEL_MOVE, x: lx - hs/2, y: ly - hs/2 });
+      }
       break;
 
     case 'image':
     case 'stamp':
     case 'signature':
+    case 'scaleBar':
+    case 'scheduleTable':
       // Corner handles for resize
       handles.push({ type: HANDLE_TYPES.TOP_LEFT, x: annotation.x - hs/2, y: annotation.y - hs/2 });
       handles.push({ type: HANDLE_TYPES.TOP_RIGHT, x: annotation.x + annotation.width - hs/2, y: annotation.y - hs/2 });
@@ -284,6 +311,10 @@ export function findHandleAt(x, y, annotation, scale = 1) {
   if (!bestHandle) return null;
   // For polyline nodes, encode the index in the type string
   if (bestHandle.type === HANDLE_TYPES.POLYLINE_NODE) {
+    return `${bestHandle.type}_${bestHandle.nodeIndex}`;
+  }
+  // For hole node handles (type = "polyline_node_hole_<holeIdx>"), append the nodeIndex
+  if (typeof bestHandle.type === 'string' && bestHandle.type.startsWith(HANDLE_TYPES.POLYLINE_NODE + '_hole_')) {
     return `${bestHandle.type}_${bestHandle.nodeIndex}`;
   }
   return bestHandle.type;
@@ -384,6 +415,7 @@ export function getCursorForHandle(handleType, rotation, annotation) {
     case HANDLE_TYPES.ROTATE:
       return 'grab';
     case HANDLE_TYPES.CALLOUT_MOVE:
+    case HANDLE_TYPES.LABEL_MOVE:
       return 'move';
     case HANDLE_TYPES.CALLOUT_ARROW:
       return 'crosshair';

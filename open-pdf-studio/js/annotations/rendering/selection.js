@@ -94,6 +94,8 @@ export function drawSelectionHandles(ctx, annotation) {
     case 'image':
     case 'stamp':
     case 'signature':
+    case 'scaleBar':
+    case 'scheduleTable':
       ctx.save();
       if (annotation.rotation) {
         const imgCenterX = annotation.x + annotation.width / 2;
@@ -182,6 +184,41 @@ export function drawSelectionHandles(ctx, annotation) {
       ctx.moveTo(cx - a, cy); ctx.lineTo(cx + a, cy);
       ctx.moveTo(cx, cy - a); ctx.lineTo(cx, cy + a);
       ctx.stroke();
+      return;
+    }
+
+    // Label move handle — four-arrow cross shape (orange)
+    if (handle.type === HANDLE_TYPES.LABEL_MOVE) {
+      const r = hs * 0.8;
+      const a = hs * 0.35;
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath();
+      ctx.arc(cx, cy, r, 0, 2 * Math.PI);
+      ctx.fill();
+      ctx.strokeStyle = '#f59e0b';
+      ctx.lineWidth = lw;
+      ctx.stroke();
+      // Draw cross arrows
+      ctx.strokeStyle = '#f59e0b';
+      ctx.lineWidth = lw * 1.2;
+      ctx.beginPath();
+      ctx.moveTo(cx - a, cy); ctx.lineTo(cx + a, cy);
+      ctx.moveTo(cx, cy - a); ctx.lineTo(cx, cy + a);
+      ctx.stroke();
+      return;
+    }
+
+    // Hole vertex handles — diamond shape with orange border
+    if (handle.isHole) {
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.rotate(Math.PI / 4);
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(-hs / 2, -hs / 2, hs, hs);
+      ctx.strokeStyle = '#f59e0b';
+      ctx.lineWidth = lw;
+      ctx.strokeRect(-hs / 2, -hs / 2, hs, hs);
+      ctx.restore();
       return;
     }
 

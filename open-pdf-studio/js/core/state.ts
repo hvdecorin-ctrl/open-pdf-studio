@@ -94,6 +94,10 @@ export interface AppState {
   activeContinuousCanvas: HTMLCanvasElement | null;
   activeContinuousPage: number | null;
   measurePoints: Point[] | null;
+  measurePhase: 'outer' | 'holes';
+  measureOuterPoints: Point[] | null;
+  measureHoles: Point[][];
+  calibrationPoints: Point[];
   lastSnapResult: any;
 
   // Backward compat — clipboard-store
@@ -214,6 +218,18 @@ export const state = createMutable<AppState>({
   set activeContinuousPage(v) { interactionState.activeContinuousPage = v; },
   get measurePoints() { return interactionState.measurePoints; },
   set measurePoints(v) { interactionState.measurePoints = v; },
+  get measurePhase() { return interactionState.measurePhase; },
+  set measurePhase(v) { interactionState.measurePhase = v; },
+  get measureOuterPoints() { return interactionState.measureOuterPoints; },
+  set measureOuterPoints(v) { interactionState.measureOuterPoints = v; },
+  get measureHoles() { return interactionState.measureHoles; },
+  set measureHoles(v) { interactionState.measureHoles = v; },
+  get calibrationPoints() { return interactionState.calibrationPoints; },
+  set calibrationPoints(v) { interactionState.calibrationPoints = v; },
+  get addHoleTargetId() { return interactionState.addHoleTargetId; },
+  set addHoleTargetId(v) { interactionState.addHoleTargetId = v; },
+  get addHolePoints() { return interactionState.addHolePoints; },
+  set addHolePoints(v) { interactionState.addHolePoints = v; },
   get lastSnapResult() { return interactionState.lastSnapResult; },
   set lastSnapResult(v) { interactionState.lastSnapResult = v; },
 

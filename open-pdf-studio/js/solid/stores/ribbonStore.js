@@ -5,6 +5,7 @@ const [contextualTabsVisible, setContextualTabsVisible] = createSignal(false);
 const [colorPickerValue, setColorPickerValue] = createSignal('#ffff00');
 const [lineWidthValue, setLineWidthValue] = createSignal(3);
 const [currentTheme, setCurrentTheme] = createSignal('dark');
+const [calibrationPixelDistance, setCalibrationPixelDistance] = createSignal(null);
 
 // Fall back to 'home' when contextual tabs hide while a contextual tab is active
 createRoot(() => {
@@ -35,5 +36,6 @@ export {
   contextualTabsVisible, setContextualTabsVisible,
   colorPickerValue, setColorPickerValue,
   lineWidthValue, setLineWidthValue,
-  currentTheme, setCurrentTheme
+  currentTheme, setCurrentTheme,
+  calibrationPixelDistance, setCalibrationPixelDistance
 };

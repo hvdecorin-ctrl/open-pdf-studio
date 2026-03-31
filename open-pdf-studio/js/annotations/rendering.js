@@ -670,7 +670,12 @@ export function drawAnnotation(ctx, annotation) {
 
     case 'stamp': {
       // Render stamp - image or text-based
-      const stampImg = annotation.imageId ? state.imageCache.get(annotation.imageId) : null;
+      // Try annotation-local cache first, then global imageCache
+      let stampImg = annotation._cachedImg;
+      if (!stampImg && annotation.imageId) {
+        stampImg = state.imageCache.get(annotation.imageId) || null;
+        if (stampImg) annotation._cachedImg = stampImg;  // cache locally for perf
+      }
       if (stampImg && stampImg.complete) {
         ctx.save();
         const cx = annotation.x + annotation.width / 2;
@@ -702,6 +707,23 @@ export function drawAnnotation(ctx, annotation) {
         ctx.textAlign = 'left';
         ctx.textBaseline = 'alphabetic';
         ctx.restore();
+      } else if (annotation.stampSvg) {
+        // SVG fallback: rasterize on-the-fly when imageId is not yet in cache
+        const blob = new Blob([annotation.stampSvg], { type: 'image/svg+xml' });
+        const url = URL.createObjectURL(blob);
+        const fallbackImg = new Image();
+        fallbackImg.onload = () => {
+          URL.revokeObjectURL(url);
+          const cacheId = annotation.imageId || ('stamp_svg_' + annotation.id);
+          state.imageCache.set(cacheId, fallbackImg);
+          if (!annotation.imageId) annotation.imageId = cacheId;
+          annotation._cachedImg = fallbackImg;  // store directly for next render
+          redrawAnnotations();
+        };
+        fallbackImg.onerror = () => {
+          URL.revokeObjectURL(url);
+        };
+        fallbackImg.src = url;
       }
       break;
     }
@@ -745,8 +767,8 @@ export function drawAnnotation(ctx, annotation) {
         endX: annotation.endX, endY: annotation.endY,
         leaderStartX: annotation.leaderStartX, leaderStartY: annotation.leaderStartY,
         leaderEndX: annotation.leaderEndX, leaderEndY: annotation.leaderEndY,
-        startHead: annotation.startHead || 'closed',
-        endHead: annotation.endHead || 'closed',
+        startHead: annotation.startHead || 'openCircle',
+        endHead: annotation.endHead || 'openCircle',
         headSize: annotation.headSize || 12,
         color: strokeColor,
         measureText: annotation.measureText
@@ -760,9 +782,14 @@ export function drawAnnotation(ctx, annotation) {
       ctx.strokeStyle = strokeColor;
       ctx.lineWidth = thinLw(annotation.lineWidth ?? 1);
 
-      drawMeasureAreaShape(ctx, annotation.points, annotation.color || '#ff0000', annotation.lineWidth, annotation.fillColor, annotation.borderStyle);
+      const maHatch = annotation.hatchPattern === 'none'
+        ? null  // User explicitly disabled hatch
+        : annotation.hatchPattern
+          ? { pattern: annotation.hatchPattern, color: annotation.hatchColor || '#ff0000', scale: annotation.hatchScale, angle: annotation.hatchAngle }
+          : { pattern: 'diagonal-left', color: annotation.hatchColor || '#ff0000', scale: 100, angle: 0 };  // Default: red 45° hatch
+      drawMeasureAreaShape(ctx, annotation.points, annotation.color || '#ff0000', annotation.lineWidth, annotation.fillColor, annotation.borderStyle, annotation.holes, maHatch);
       if (annotation.measureText) {
-        drawCentroidLabel(ctx, annotation.points, annotation.measureText, strokeColor);
+        drawCentroidLabel(ctx, annotation.points, annotation.measureText, strokeColor, annotation);
       }
       break;
     }
@@ -830,6 +857,188 @@ export function drawAnnotation(ctx, annotation) {
         ctx.font = '11px Arial';
         ctx.fillStyle = strokeColor;
         ctx.fillText(annotation.measureText, lastPt.x + 8, lastPt.y - 4);
+      }
+      break;
+    }
+
+    case 'scaleBar': {
+      // Scale bar: alternating black/white blocks with labels
+      const sbX = annotation.x;
+      const sbY = annotation.y;
+      const sbW = annotation.width;
+      const sbH = annotation.height || 12;
+      const divisions = annotation.divisions || 5;
+      const totalUnits = annotation.totalUnits || divisions;
+      const unit = annotation.unit || 'mm';
+      const divWidth = sbW / divisions;
+
+      ctx.save();
+
+      // Handle rotation
+      if (annotation.rotation) {
+        const cx = sbX + sbW / 2;
+        const cy = sbY + sbH / 2;
+        ctx.translate(cx, cy);
+        ctx.rotate(annotation.rotation * Math.PI / 180);
+        ctx.translate(-cx, -cy);
+      }
+
+      // Draw alternating blocks
+      for (let i = 0; i < divisions; i++) {
+        const bx = sbX + i * divWidth;
+        if (i % 2 === 0) {
+          ctx.fillStyle = '#000000';
+          ctx.fillRect(bx, sbY, divWidth, sbH);
+        } else {
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(bx, sbY, divWidth, sbH);
+          ctx.strokeStyle = '#000000';
+          ctx.lineWidth = 0.5;
+          ctx.strokeRect(bx, sbY, divWidth, sbH);
+        }
+      }
+
+      // Outer border
+      ctx.strokeStyle = '#000000';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(sbX, sbY, sbW, sbH);
+
+      // Tick marks and labels below
+      ctx.fillStyle = '#000000';
+      ctx.font = '8px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'top';
+      const unitsPerDiv = totalUnits / divisions;
+      for (let i = 0; i <= divisions; i++) {
+        const tx = sbX + i * divWidth;
+        // Tick mark
+        ctx.beginPath();
+        ctx.moveTo(tx, sbY + sbH);
+        ctx.lineTo(tx, sbY + sbH + 4);
+        ctx.stroke();
+        // Smart label: show meters if mm and large values
+        const rawVal = Math.round(i * unitsPerDiv * 100) / 100;
+        let labelStr;
+        if (unit === 'mm' && totalUnits >= 1000) {
+          labelStr = String(rawVal / 1000);
+        } else {
+          labelStr = String(rawVal);
+        }
+        ctx.fillText(labelStr, tx, sbY + sbH + 5);
+      }
+
+      // Unit label
+      const displayUnit = (unit === 'mm' && totalUnits >= 1000) ? 'm' : unit;
+      ctx.textAlign = 'left';
+      ctx.fillText(displayUnit, sbX + sbW + 4, sbY + sbH + 5);
+
+      // Draw dashed scale region rectangle (if region is defined and > 0)
+      if (annotation.regionWidth > 0 && annotation.regionHeight > 0) {
+        ctx.setLineDash([6, 3]);
+        ctx.strokeStyle = '#0066cc';
+        ctx.lineWidth = 1;
+        ctx.globalAlpha = 0.5;
+        ctx.strokeRect(annotation.regionX, annotation.regionY, annotation.regionWidth, annotation.regionHeight);
+        ctx.globalAlpha = 1;
+        ctx.setLineDash([]);
+      }
+
+      ctx.restore();
+      break;
+    }
+
+    case 'scheduleTable': {
+      // Render schedule table as annotation on canvas
+      const data = annotation.scheduleData || [];
+      if (data.length === 0) break;
+      const tx = annotation.x;
+      const ty = annotation.y;
+      const tw = annotation.width || 350;
+      const rowH = 16;
+      const headerH = 20;
+      const cols = [0, 0.25, 0.45, 0.7, 0.85]; // fractional column positions
+
+      ctx.save();
+      ctx.font = '9px sans-serif';
+
+      // Header background
+      ctx.fillStyle = '#f0f0f0';
+      ctx.fillRect(tx, ty, tw, headerH);
+      ctx.strokeStyle = '#000';
+      ctx.lineWidth = 0.5;
+      ctx.strokeRect(tx, ty, tw, headerH);
+
+      // Header text
+      ctx.fillStyle = '#000';
+      ctx.textBaseline = 'middle';
+      const headers = ['Label', 'Subject', 'Value', 'Unit', 'Pg'];
+      for (let i = 0; i < headers.length; i++) {
+        ctx.fillText(headers[i], tx + cols[i] * tw + 4, ty + headerH / 2);
+      }
+
+      // Data rows
+      for (let r = 0; r < data.length; r++) {
+        const ry = ty + headerH + r * rowH;
+        ctx.strokeStyle = '#ccc';
+        ctx.strokeRect(tx, ry, tw, rowH);
+        ctx.fillStyle = '#000';
+        const d = data[r];
+        ctx.fillText(d.label || d.type || '', tx + cols[0] * tw + 4, ry + rowH / 2);
+        ctx.fillText(d.subject || '', tx + cols[1] * tw + 4, ry + rowH / 2);
+        ctx.fillText(d.text || String(d.value || ''), tx + cols[2] * tw + 4, ry + rowH / 2);
+        ctx.fillText(d.unit || '', tx + cols[3] * tw + 4, ry + rowH / 2);
+        ctx.fillText(String(d.page || ''), tx + cols[4] * tw + 4, ry + rowH / 2);
+      }
+
+      // Outer border
+      ctx.strokeStyle = '#000';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(tx, ty, tw, headerH + data.length * rowH);
+
+      ctx.restore();
+      break;
+    }
+
+    case 'measureAngle': {
+      if (!annotation.point1 || !annotation.vertex || !annotation.point2) break;
+      const p1 = annotation.point1;
+      const v = annotation.vertex;
+      const p2 = annotation.point2;
+      const r = annotation.arcRadius || 30;
+
+      // Draw two rays from vertex
+      ctx.strokeStyle = strokeColor;
+      ctx.lineWidth = thinLw(annotation.lineWidth ?? 1);
+      ctx.setLineDash([]);
+      ctx.beginPath();
+      ctx.moveTo(p1.x, p1.y);
+      ctx.lineTo(v.x, v.y);
+      ctx.lineTo(p2.x, p2.y);
+      ctx.stroke();
+
+      // Draw arc between the two rays (shortest arc)
+      const a1 = Math.atan2(p1.y - v.y, p1.x - v.x);
+      const a2 = Math.atan2(p2.y - v.y, p2.x - v.x);
+      let diff = a2 - a1;
+      if (diff < 0) diff += 2 * Math.PI;
+      const counterclockwise = diff > Math.PI;
+      ctx.beginPath();
+      ctx.arc(v.x, v.y, r, a1, a2, counterclockwise);
+      ctx.stroke();
+
+      // Draw angle label near the arc midpoint
+      if (annotation.measureText) {
+        const midAngle = counterclockwise
+          ? a1 - (2 * Math.PI - diff) / 2
+          : a1 + diff / 2;
+        const labelR = r + 12;
+        const lx = v.x + labelR * Math.cos(midAngle);
+        const ly = v.y + labelR * Math.sin(midAngle);
+        ctx.font = '11px sans-serif';
+        ctx.fillStyle = strokeColor;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(annotation.measureText, lx, ly);
       }
       break;
     }

@@ -158,7 +158,8 @@
     "measureDistance": "Distância",
     "measureArea": "Área",
     "measurePerimeter": "Perímetro",
-    "redaction": "Redação"
+    "redaction": "Redação",
+    "scaleBar": "Scale Bar"
   },
   "leftPanel": {
     "togglePanel": "Alternar Painel",
@@ -225,5 +226,20 @@
     "importComments": "Importar comentários...",
     "exportComments": "Exportar comentários para arquivo de dados...",
     "exportSelectedComments": "Exportar comentários selecionados para arquivo de dados..."
+  },
+  "scaleBar": {
+    "title": "Scale Bar",
+    "unit": "Unit",
+    "totalLength": "Total Length",
+    "divisions": "Divisions",
+    "barHeight": "Bar Height"
+  },
+  "measurement": {
+    "title": "Measurement",
+    "name": "Name",
+    "namePlaceholder": "Area name (optional)",
+    "scale": "Scale",
+    "unit": "Unit",
+    "precision": "Precision (Decimals)"
   }
 }

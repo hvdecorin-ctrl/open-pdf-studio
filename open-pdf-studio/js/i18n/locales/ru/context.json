@@ -36,6 +36,7 @@
     "applyDefaultStyle": "Применить стиль по умолчанию",
     "exportSubmenu": "Экспорт",
     "exportAsImage": "Экспортировать как изображение...",
+    "addHole": "Добавить отверстие",
     "properties": "Свойства...",
     "calibrateFromLine": "Calibrate from this Line..."
   },

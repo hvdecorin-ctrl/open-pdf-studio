@@ -2,7 +2,7 @@
 
 /* Shared tool button styles */
 .tp-btn {
-  width: 30px; height: 28px;
+  width: 36px; height: 34px;
   border: 1px solid transparent;
   background: transparent;
   cursor: pointer;
@@ -14,7 +14,7 @@
   flex-shrink: 0;
   margin: 1px 2px;
 }
-.tp-btn svg { width: 18px; height: 18px; }
+.tp-btn svg { width: 22px; height: 22px; }
 .tp-btn:hover:not(:disabled) {
   background: var(--theme-ribbon-btn-hover);
   border-color: var(--theme-ribbon-btn-hover-border);
@@ -34,7 +34,7 @@
 .tp-btn:disabled { opacity: 0.3; cursor: default; }
 
 .tp-sep {
-  width: 22px; height: 1px;
+  width: 28px; height: 1px;
   background: var(--theme-border);
   margin: 3px auto;
   flex-shrink: 0;
@@ -113,11 +113,12 @@
   align-items: center;
   justify-content: center;
   padding: 0;
-  color: var(--theme-text-secondary);
+  color: var(--theme-text, #ccc);
+  opacity: 0.7;
   flex-shrink: 0;
   margin: 2px;
 }
-.tp-close:hover { background: #e81123; color: #fff; }
+.tp-close:hover { background: #e81123; color: #fff; opacity: 1; }
 
 /* --- Floating mode --- */
 .tp-float {
@@ -209,18 +210,18 @@
 
 /* --- Tool palette large icons mode --- */
 .tp-large .tp-btn {
-  width: 42px;
-  height: 40px;
+  width: 48px;
+  height: 46px;
   margin: 1px 2px;
 }
 
 .tp-large .tp-btn svg {
-  width: 28px;
-  height: 28px;
+  width: 34px;
+  height: 34px;
 }
 
 .tp-large .tp-sep {
-  width: 34px;
+  width: 40px;
 }
 
 /* --- Tool palette right-click context menu --- */

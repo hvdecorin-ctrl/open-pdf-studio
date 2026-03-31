@@ -11,6 +11,7 @@ import { loadPreferences, savePreferences } from './core/preferences.js';
 import { initDomElements } from './ui/dom-elements.js';
 import { initPropertiesPanel } from './ui/panels/properties-panel.js';
 import { initToolPalette } from './solid/components/ToolPalette.jsx';
+import { initSymbolPalette } from './solid/stores/symbolStore.js';
 import { initPaletteOrder } from './solid/stores/paletteOrder.js';
 import { initPlugins } from './plugins/plugin-manager.js';
 
@@ -173,6 +174,7 @@ async function init() {
   // Restore tool palette visibility, mode and position from preferences
   initPaletteOrder();
   initToolPalette();
+  initSymbolPalette();
 
   // Load installed plugins (extension palettes, custom annotation types, etc.)
   initPlugins();

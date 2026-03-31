@@ -158,7 +158,8 @@
     "measureDistance": "Разстояние",
     "measureArea": "Площ",
     "measurePerimeter": "Периметър",
-    "redaction": "Редакция"
+    "redaction": "Редакция",
+    "scaleBar": "Scale Bar"
   },
   "leftPanel": {
     "togglePanel": "Превключване на панела",
@@ -225,5 +226,20 @@
     "importComments": "Импортиране на коментари...",
     "exportComments": "Експортиране на коментари във файл...",
     "exportSelectedComments": "Експортиране на избрани коментари във файл..."
+  },
+  "scaleBar": {
+    "title": "Scale Bar",
+    "unit": "Unit",
+    "totalLength": "Total Length",
+    "divisions": "Divisions",
+    "barHeight": "Bar Height"
+  },
+  "measurement": {
+    "title": "Measurement",
+    "name": "Name",
+    "namePlaceholder": "Area name (optional)",
+    "scale": "Scale",
+    "unit": "Unit",
+    "precision": "Precision (Decimals)"
   }
 }

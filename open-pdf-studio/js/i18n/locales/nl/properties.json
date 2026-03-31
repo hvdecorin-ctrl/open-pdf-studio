@@ -158,7 +158,8 @@
     "measureDistance": "Afstand",
     "measureArea": "Oppervlakte",
     "measurePerimeter": "Omtrek",
-    "redaction": "Redactie"
+    "redaction": "Redactie",
+    "scaleBar": "Scale Bar"
   },
   "leftPanel": {
     "togglePanel": "Paneel in-/uitschakelen",
@@ -225,5 +226,20 @@
     "importComments": "Opmerkingen importeren...",
     "exportComments": "Opmerkingen exporteren naar gegevensbestand...",
     "exportSelectedComments": "Geselecteerde opmerkingen exporteren naar gegevensbestand..."
+  },
+  "scaleBar": {
+    "title": "Scale Bar",
+    "unit": "Unit",
+    "totalLength": "Total Length",
+    "divisions": "Divisions",
+    "barHeight": "Bar Height"
+  },
+  "measurement": {
+    "title": "Measurement",
+    "name": "Name",
+    "namePlaceholder": "Area name (optional)",
+    "scale": "Scale",
+    "unit": "Unit",
+    "precision": "Precision (Decimals)"
   }
 }

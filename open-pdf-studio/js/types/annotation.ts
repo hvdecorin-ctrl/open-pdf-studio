@@ -4,7 +4,8 @@ export type AnnotationType =
   | 'textbox' | 'callout' | 'comment' | 'stamp' | 'image' | 'signature'
   | 'polygon' | 'cloud' | 'cloudPolyline' | 'polyline' | 'text'
   | 'redaction'
-  | 'measureDistance' | 'measureArea' | 'measurePerimeter';
+  | 'measureDistance' | 'measureArea' | 'measurePerimeter' | 'measureAngle'
+  | 'scaleBar';
 
 export interface Point {
   x: number;
@@ -123,6 +124,7 @@ export type Annotation = AnnotationBase & {
   endY?: number;
   path?: Point[];
   points?: Point[];
+  holes?: Point[][];  // Cutout polygons for measureArea
   // Text
   text?: string;
   fontSize?: number;
@@ -157,6 +159,27 @@ export type Annotation = AnnotationBase & {
   // Measurement
   measureValue?: number;
   measureUnit?: string;
+  measureText?: string;
+  measurePixels?: number;
+  measureScale?: number;
+  measurePrecision?: number;
+  measureName?: string;
+  // Label position override (absolute coords; defaults to centroid if unset)
+  labelX?: number;
+  labelY?: number;
+  // Angle measurement
+  point1?: Point;
+  vertex?: Point;
+  point2?: Point;
+  arcRadius?: number;
+  // Scale bar
+  pixelsPerUnit?: number;
+  divisions?: number;
+  totalUnits?: number;
+  regionX?: number;
+  regionY?: number;
+  regionWidth?: number;
+  regionHeight?: number;
 };
 
 export interface AnnotationBounds {

@@ -158,7 +158,8 @@
     "measureDistance": "مسافة",
     "measureArea": "مساحة",
     "measurePerimeter": "محيط",
-    "redaction": "تنقيح"
+    "redaction": "تنقيح",
+    "scaleBar": "Scale Bar"
   },
   "leftPanel": {
     "togglePanel": "تبديل اللوحة",
@@ -225,5 +226,20 @@
     "importComments": "استيراد التعليقات...",
     "exportComments": "تصدير التعليقات إلى ملف بيانات...",
     "exportSelectedComments": "تصدير التعليقات المحددة إلى ملف بيانات..."
+  },
+  "scaleBar": {
+    "title": "Scale Bar",
+    "unit": "Unit",
+    "totalLength": "Total Length",
+    "divisions": "Divisions",
+    "barHeight": "Bar Height"
+  },
+  "measurement": {
+    "title": "Measurement",
+    "name": "Name",
+    "namePlaceholder": "Area name (optional)",
+    "scale": "Scale",
+    "unit": "Unit",
+    "precision": "Precision (Decimals)"
   }
 }

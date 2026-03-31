@@ -158,7 +158,8 @@
     "measureDistance": "فاصله",
     "measureArea": "مساحت",
     "measurePerimeter": "محیط",
-    "redaction": "ویرایش محرمانه"
+    "redaction": "ویرایش محرمانه",
+    "scaleBar": "Scale Bar"
   },
   "leftPanel": {
     "togglePanel": "تغییر وضعیت پنل",
@@ -225,5 +226,20 @@
     "importComments": "وارد کردن نظرات...",
     "exportComments": "صادر کردن نظرات به فایل داده...",
     "exportSelectedComments": "صادر کردن نظرات انتخاب‌شده به فایل داده..."
+  },
+  "scaleBar": {
+    "title": "Scale Bar",
+    "unit": "Unit",
+    "totalLength": "Total Length",
+    "divisions": "Divisions",
+    "barHeight": "Bar Height"
+  },
+  "measurement": {
+    "title": "Measurement",
+    "name": "Name",
+    "namePlaceholder": "Area name (optional)",
+    "scale": "Scale",
+    "unit": "Unit",
+    "precision": "Precision (Decimals)"
   }
 }

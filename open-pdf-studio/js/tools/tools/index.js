@@ -8,9 +8,12 @@ import { drawTool } from './draw-tool.js';
 import { shapeTool } from './shape-tool.js';
 import { lineTool } from './line-tool.js';
 import { polylineTool, cloudPolylineTool } from './polyline-tool.js';
-import { measureDistanceTool, measureAreaTool, measurePerimeterTool } from './measurement-tool.js';
+import { measureDistanceTool, measureAreaTool, measurePerimeterTool, addHoleTool } from './measurement-tool.js';
+import { measureAngleTool } from './angle-tool.js';
 import { commentTool, textTool, stampTool, signatureTool, editTextTool } from './text-tool.js';
+import { calibrationPickTool } from './calibration-pick-tool.js';
 import { pluginClickTool } from './plugin-tool.js';
+import { scaleBarTool } from './scalebar-tool.js';
 
 export function registerAllTools() {
   // Navigation / selection
@@ -43,6 +46,14 @@ export function registerAllTools() {
   registerTool('measureDistance', measureDistanceTool);
   registerTool('measureArea', measureAreaTool);
   registerTool('measurePerimeter', measurePerimeterTool);
+  registerTool('measureAngle', measureAngleTool);
+  registerTool('addHole', addHoleTool);
+
+  // Calibration
+  registerTool('calibrationPick', calibrationPickTool);
+
+  // Scale bar
+  registerTool('scaleBar', scaleBarTool);
 
   // Single-click placement
   registerTool('comment', commentTool);

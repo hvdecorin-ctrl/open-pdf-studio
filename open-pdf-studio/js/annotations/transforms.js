@@ -14,7 +14,7 @@ function computeDimensionText(ann) {
     const prec = ann.measurePrecision !== undefined ? ann.measurePrecision : 2;
     return `${scaledVal.toFixed(prec)} ${unit}`;
   }
-  return formatMeasurement(calculateDistance(ann.startX, ann.startY, ann.endX, ann.endY));
+  return formatMeasurement(calculateDistance(ann.startX, ann.startY, ann.endX, ann.endY, ann.page));
 }
 
 // Recalculate callout leader line geometry from box position and arrow tip.
@@ -502,47 +502,92 @@ export function applyResize(annotation, handleType, deltaX, deltaY, originalAnn,
     case 'cloudPolyline':
     case 'measureArea':
     case 'measurePerimeter':
+      // Label drag for measureArea
+      if (handleType === HANDLE_TYPES.LABEL_MOVE && annotation.type === 'measureArea') {
+        // Compute centroid as default if no label position set
+        let baseLx, baseLy;
+        if (originalAnn.labelX != null && originalAnn.labelY != null) {
+          baseLx = originalAnn.labelX;
+          baseLy = originalAnn.labelY;
+        } else {
+          baseLx = 0; baseLy = 0;
+          for (const p of originalAnn.points) { baseLx += p.x; baseLy += p.y; }
+          baseLx /= originalAnn.points.length;
+          baseLy /= originalAnn.points.length;
+        }
+        annotation.labelX = baseLx + deltaX;
+        annotation.labelY = baseLy + deltaY;
+        break;
+      }
       // Drag individual node
       if (typeof handleType === 'string' && handleType.startsWith(HANDLE_TYPES.POLYLINE_NODE + '_')) {
-        const nodeIdx = parseInt(handleType.split('_').pop(), 10);
-        if (originalAnn.points && !isNaN(nodeIdx) && nodeIdx < originalAnn.points.length) {
-          annotation.points = originalAnn.points.map((p, i) => {
-            if (i === nodeIdx) {
-              let nx = p.x + deltaX, ny = p.y + deltaY;
-              // Shift key: constrain movement to horizontal/vertical/diagonal
-              if (shiftKey) {
-                const len = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
-                if (len > 0) {
-                  const ang = snapAngle(Math.atan2(deltaY, deltaX) * (180 / Math.PI), 45) * (Math.PI / 180);
-                  nx = p.x + len * Math.cos(ang);
-                  ny = p.y + len * Math.sin(ang);
+        // Check if this is a hole node: polyline_node_hole_<holeIdx>_<nodeIdx>
+        const holeMatch = handleType.match(/^polyline_node_hole_(\d+)_(\d+)$/);
+        if (holeMatch && annotation.type === 'measureArea' && originalAnn.holes) {
+          const holeIdx = parseInt(holeMatch[1], 10);
+          const nodeIdx = parseInt(holeMatch[2], 10);
+          if (holeIdx < originalAnn.holes.length && nodeIdx < originalAnn.holes[holeIdx].length) {
+            annotation.holes = originalAnn.holes.map((hole, hi) => {
+              if (hi !== holeIdx) return hole.map(p => ({ x: p.x, y: p.y }));
+              return hole.map((p, ni) => {
+                if (ni !== nodeIdx) return { x: p.x, y: p.y };
+                let nx = p.x + deltaX, ny = p.y + deltaY;
+                if (shiftKey) {
+                  const len = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+                  if (len > 0) {
+                    const ang = snapAngle(Math.atan2(deltaY, deltaX) * (180 / Math.PI), 45) * (Math.PI / 180);
+                    nx = p.x + len * Math.cos(ang);
+                    ny = p.y + len * Math.sin(ang);
+                  }
                 }
-              }
-              // Ctrl key: snap segment to previous point to nearest N units (measure types only)
-              if (ctrlKey && (annotation.type === 'measureArea' || annotation.type === 'measurePerimeter')) {
-                const prevIdx = i > 0 ? i - 1 : originalAnn.points.length - 1;
-                const prev = originalAnn.points[prevIdx];
-                if (prev && prevIdx !== i) {
-                  const s = snapDistanceTo10(prev.x, prev.y, nx, ny);
-                  nx = s.x; ny = s.y;
+                return { x: nx, y: ny };
+              });
+            });
+            // Recalculate measurement text with holes
+            annotation.measureText = formatMeasurement(calculateArea(annotation.points, annotation.holes, annotation.page));
+          }
+        } else {
+          // Regular outer node drag
+          const nodeIdx = parseInt(handleType.split('_').pop(), 10);
+          if (originalAnn.points && !isNaN(nodeIdx) && nodeIdx < originalAnn.points.length) {
+            annotation.points = originalAnn.points.map((p, i) => {
+              if (i === nodeIdx) {
+                let nx = p.x + deltaX, ny = p.y + deltaY;
+                // Shift key: constrain movement to horizontal/vertical/diagonal
+                if (shiftKey) {
+                  const len = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+                  if (len > 0) {
+                    const ang = snapAngle(Math.atan2(deltaY, deltaX) * (180 / Math.PI), 45) * (Math.PI / 180);
+                    nx = p.x + len * Math.cos(ang);
+                    ny = p.y + len * Math.sin(ang);
+                  }
                 }
+                // Ctrl key: snap segment to previous point to nearest N units (measure types only)
+                if (ctrlKey && (annotation.type === 'measureArea' || annotation.type === 'measurePerimeter')) {
+                  const prevIdx = i > 0 ? i - 1 : originalAnn.points.length - 1;
+                  const prev = originalAnn.points[prevIdx];
+                  if (prev && prevIdx !== i) {
+                    const s = snapDistanceTo10(prev.x, prev.y, nx, ny);
+                    nx = s.x; ny = s.y;
+                  }
+                }
+                return { x: nx, y: ny };
               }
-              return { x: nx, y: ny };
+              return { x: p.x, y: p.y };
+            });
+            // Recalculate bounding box
+            const xs = annotation.points.map(p => p.x);
+            const ys = annotation.points.map(p => p.y);
+            annotation.x = Math.min(...xs);
+            annotation.y = Math.min(...ys);
+            annotation.width = Math.max(...xs) - annotation.x;
+            annotation.height = Math.max(...ys) - annotation.y;
+            // Recalculate measurement text (with holes if present)
+            if (annotation.type === 'measureArea') {
+              annotation.measureText = formatMeasurement(calculateArea(annotation.points, annotation.holes, annotation.page));
+            } else if (annotation.type === 'measurePerimeter') {
+              annotation.measureText = formatMeasurement(calculatePerimeter(annotation.points, annotation.page));
             }
-            return { x: p.x, y: p.y };
-          });
-          // Recalculate bounding box
-          const xs = annotation.points.map(p => p.x);
-          const ys = annotation.points.map(p => p.y);
-          annotation.x = Math.min(...xs);
-          annotation.y = Math.min(...ys);
-          annotation.width = Math.max(...xs) - annotation.x;
-          annotation.height = Math.max(...ys) - annotation.y;
-          // Recalculate measurement text
-          if (annotation.type === 'measureArea') {
-            annotation.measureText = formatMeasurement(calculateArea(annotation.points));
-          } else if (annotation.type === 'measurePerimeter') {
-            annotation.measureText = formatMeasurement(calculatePerimeter(annotation.points));
           }
         }
       }
@@ -550,7 +595,9 @@ export function applyResize(annotation, handleType, deltaX, deltaY, originalAnn,
 
     case 'image':
     case 'stamp':
-    case 'signature': {
+    case 'signature':
+    case 'scaleBar':
+    case 'scheduleTable': {
       const lockRatio = shiftKey || annotation.lockAspectRatio;
       if (originalAnn.rotation) {
         applyRotatedResize(annotation, handleType, deltaX, deltaY, originalAnn, lockRatio);
@@ -791,11 +838,24 @@ export function applyMove(annotation, deltaX, deltaY) {
           y: p.y + deltaY
         }));
       }
+      // Move holes along with the outer polygon
+      if (annotation.type === 'measureArea' && annotation.holes) {
+        annotation.holes = annotation.holes.map(hole =>
+          hole.map(p => ({ x: p.x + deltaX, y: p.y + deltaY }))
+        );
+      }
+      // Move label position along with the polygon
+      if (annotation.type === 'measureArea' && annotation.labelX != null && annotation.labelY != null) {
+        annotation.labelX += deltaX;
+        annotation.labelY += deltaY;
+      }
       break;
 
     case 'image':
     case 'stamp':
     case 'signature':
+    case 'scaleBar':
+    case 'scheduleTable':
       annotation.x += deltaX;
       annotation.y += deltaY;
       break;

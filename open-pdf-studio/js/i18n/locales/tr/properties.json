@@ -158,7 +158,8 @@
     "measureDistance": "Mesafe",
     "measureArea": "Alan",
     "measurePerimeter": "Çevre",
-    "redaction": "Karartma"
+    "redaction": "Karartma",
+    "scaleBar": "Scale Bar"
   },
   "leftPanel": {
     "togglePanel": "Paneli Aç/Kapat",
@@ -225,5 +226,20 @@
     "importComments": "Yorumları içe aktar...",
     "exportComments": "Yorumları veri dosyasına aktar...",
     "exportSelectedComments": "Seçili yorumları veri dosyasına aktar..."
+  },
+  "scaleBar": {
+    "title": "Scale Bar",
+    "unit": "Unit",
+    "totalLength": "Total Length",
+    "divisions": "Divisions",
+    "barHeight": "Bar Height"
+  },
+  "measurement": {
+    "title": "Measurement",
+    "name": "Name",
+    "namePlaceholder": "Area name (optional)",
+    "scale": "Scale",
+    "unit": "Unit",
+    "precision": "Precision (Decimals)"
   }
 }

@@ -158,7 +158,8 @@
     "measureDistance": "Jarak",
     "measureArea": "Luas",
     "measurePerimeter": "Keliling",
-    "redaction": "Redaksi"
+    "redaction": "Redaksi",
+    "scaleBar": "Scale Bar"
   },
   "leftPanel": {
     "togglePanel": "Tampilkan/Sembunyikan Panel",
@@ -225,5 +226,20 @@
     "importComments": "Impor komentar...",
     "exportComments": "Ekspor komentar ke file data...",
     "exportSelectedComments": "Ekspor komentar terpilih ke file data..."
+  },
+  "scaleBar": {
+    "title": "Scale Bar",
+    "unit": "Unit",
+    "totalLength": "Total Length",
+    "divisions": "Divisions",
+    "barHeight": "Bar Height"
+  },
+  "measurement": {
+    "title": "Measurement",
+    "name": "Name",
+    "namePlaceholder": "Area name (optional)",
+    "scale": "Scale",
+    "unit": "Unit",
+    "precision": "Precision (Decimals)"
   }
 }

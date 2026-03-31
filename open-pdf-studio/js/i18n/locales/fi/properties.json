@@ -158,7 +158,8 @@
     "measureDistance": "Etäisyys",
     "measureArea": "Pinta-ala",
     "measurePerimeter": "Piiri",
-    "redaction": "Poisto"
+    "redaction": "Poisto",
+    "scaleBar": "Scale Bar"
   },
   "leftPanel": {
     "togglePanel": "Näytä/piilota paneeli",
@@ -225,5 +226,20 @@
     "importComments": "Tuo kommentit...",
     "exportComments": "Vie kommentit datatiedostoon...",
     "exportSelectedComments": "Vie valitut kommentit datatiedostoon..."
+  },
+  "scaleBar": {
+    "title": "Scale Bar",
+    "unit": "Unit",
+    "totalLength": "Total Length",
+    "divisions": "Divisions",
+    "barHeight": "Bar Height"
+  },
+  "measurement": {
+    "title": "Measurement",
+    "name": "Name",
+    "namePlaceholder": "Area name (optional)",
+    "scale": "Scale",
+    "unit": "Unit",
+    "precision": "Precision (Decimals)"
   }
 }

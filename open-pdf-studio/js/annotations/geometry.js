@@ -34,6 +34,8 @@ function getAnnotationCenterAndSize(ann) {
     case 'stamp':
     case 'signature':
     case 'redaction':
+    case 'scaleBar':
+    case 'scheduleTable':
       return {
         centerX: ann.x + ann.width / 2,
         centerY: ann.y + ann.height / 2,
@@ -209,7 +211,9 @@ export function findAnnotationAt(x, y) {
       case 'image':
       case 'stamp':
       case 'signature':
-      case 'redaction': {
+      case 'redaction':
+      case 'scaleBar':
+      case 'scheduleTable': {
         const imgCenter = { x: ann.x + ann.width / 2, y: ann.y + ann.height / 2 };
         const imgLocal = transformPointByInverseRotation(x, y, imgCenter.x, imgCenter.y, ann.rotation);
         const inBounds = imgLocal.x >= ann.x && imgLocal.x <= ann.x + ann.width && imgLocal.y >= ann.y && imgLocal.y <= ann.y + ann.height;
@@ -250,6 +254,20 @@ export function findAnnotationAt(x, y) {
             const last = ann.points.length - 1;
             const d = distanceToLine(x, y, ann.points[last].x, ann.points[last].y, ann.points[0].x, ann.points[0].y);
             if (d < tol) return ann;
+          }
+          // Check hole edges for measureArea
+          if (ann.type === 'measureArea' && ann.holes) {
+            for (const hole of ann.holes) {
+              if (!hole || hole.length < 2) continue;
+              for (let i = 0; i < hole.length - 1; i++) {
+                const hd = distanceToLine(x, y, hole[i].x, hole[i].y, hole[i+1].x, hole[i+1].y);
+                if (hd < tol) return ann;
+              }
+              if (hole.length >= 3) {
+                const hd = distanceToLine(x, y, hole[hole.length-1].x, hole[hole.length-1].y, hole[0].x, hole[0].y);
+                if (hd < tol) return ann;
+              }
+            }
           }
         }
         break;
@@ -360,7 +378,9 @@ export function isPointInsideAnnotation(x, y, annotation) {
     case 'image':
     case 'stamp':
     case 'signature':
-    case 'redaction': {
+    case 'redaction':
+    case 'scaleBar':
+    case 'scheduleTable': {
       const inRect = localX >= annotation.x && localX <= annotation.x + annotation.width &&
                      localY >= annotation.y && localY <= annotation.y + annotation.height;
       if (!inRect) return false;

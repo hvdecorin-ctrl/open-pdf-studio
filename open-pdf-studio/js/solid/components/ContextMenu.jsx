@@ -106,6 +106,7 @@ function AnnotationMenuContent() {
   const isLocked = () => ann()?.locked || false;
   const isLineType = () => ['line', 'arrow'].includes(ann()?.type);
   const isMeasureDistance = () => ann()?.type === 'measureDistance';
+  const isMeasureArea = () => ann()?.type === 'measureArea';
 
   const statusItems = [
     { key: 'None', label: () => t('annotation.statusNone') },
@@ -333,6 +334,18 @@ function AnnotationMenuContent() {
             const annUnit = a.measureUnit || 'mm';
             const currentText = a.measureText || '';
             openDialog('scale', { pixelLength: px, currentText, currentUnit: annUnit, annotation: a });
+          }
+        }} />
+        <Separator />
+      </Show>
+
+      <Show when={isMeasureArea()}>
+        <MenuItem icon={convertMeasurementIcon} label={t('annotation.addHole')} disabled={isLocked()} onClick={() => {
+          const a = ann();
+          if (a) {
+            state.addHoleTargetId = a.id;
+            state.addHolePoints = [];
+            setTool('addHole');
           }
         }} />
         <Separator />

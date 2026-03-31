@@ -171,6 +171,99 @@ export async function renderPage(pageNum) {
   updateAllStatus();
 }
 
+// Render page offscreen and swap canvases atomically to avoid zoom flicker.
+// The visible canvas keeps its CSS-scaled content until the new render is done.
+export async function renderPageOffscreen(pageNum) {
+  clearHighlights();
+
+  const doc = state.documents[state.activeDocumentIndex];
+  if (!doc || !doc.pdfDoc) return;
+  const pdfDoc = doc.pdfDoc;
+  const scale = doc.scale;
+
+  if (!Number.isInteger(pageNum) || pageNum < 1 || pageNum > pdfDoc.numPages) return;
+
+  // Cancel any ongoing render
+  if (currentRenderTask) {
+    try { currentRenderTask.cancel(); await currentRenderTask.promise; } catch {}
+    currentRenderTask = null;
+  }
+
+  const page = await pdfDoc.getPage(pageNum);
+  const extraRotation = getPageRotation(pageNum);
+  const viewportOpts = { scale };
+  if (extraRotation) viewportOpts.rotation = (page.rotate + extraRotation) % 360;
+  const viewport = page.getViewport(viewportOpts);
+  const dpr = getCanvasDPR();
+
+  // Create offscreen canvas for PDF content
+  const offPdf = document.createElement('canvas');
+  const offW = Math.floor(viewport.width * dpr);
+  const offH = Math.floor(viewport.height * dpr);
+  offPdf.width = offW;
+  offPdf.height = offH;
+
+  const offCtx = offPdf.getContext('2d');
+  const renderContext = {
+    canvasContext: offCtx,
+    viewport,
+    transform: dpr !== 1 ? [dpr, 0, 0, dpr, 0, 0] : null,
+    annotationMode: 0
+  };
+  if (state.preferences.thinLines) renderContext.enhanceThinLines = true;
+
+  currentRenderTask = page.render(renderContext);
+  try {
+    await currentRenderTask.promise;
+  } catch (e) {
+    if (e.name === 'RenderingCancelledException') return;
+    throw e;
+  }
+  currentRenderTask = null;
+
+  // --- Swap: copy offscreen buffer to visible canvas atomically ---
+  const pdfCanvas = getPdfCanvas();
+  const annotationCanvas = getAnnotationCanvas();
+  if (!pdfCanvas || !annotationCanvas) return;
+
+  // Resize visible canvases to match new viewport
+  setupCanvasHiDPI(pdfCanvas, viewport.width, viewport.height);
+  setupCanvasHiDPI(annotationCanvas, viewport.width, viewport.height);
+
+  // Copy rendered PDF pixels in one drawImage call (no visible blank frame)
+  const visCtx = pdfCanvas.getContext('2d');
+  visCtx.drawImage(offPdf, 0, 0);
+
+  // Set CSS scale variables for text/annotation layers
+  const container = document.getElementById('canvas-container');
+  if (container) {
+    container.style.setProperty('--scale-factor', viewport.scale);
+    container.style.setProperty('--total-scale-factor', viewport.scale);
+  }
+
+  // Create text, link, form layers
+  try { await createSinglePageTextLayer(page, viewport); } catch {}
+  try { await createSinglePageLinkLayer(page, viewport); } catch {}
+  try { await createSinglePageFormLayer(page, viewport); } catch {}
+
+  // Re-apply overlay state
+  if (state.currentTool === 'select' || state.currentTool === 'editText') {
+    annotationCanvas.style.zIndex = '2';
+    annotationCanvas.style.pointerEvents = 'none';
+    if (container) {
+      container.querySelectorAll('.formLayer section, .linkLayer .pdf-link').forEach(el => {
+        el.style.pointerEvents = 'none';
+      });
+    }
+  }
+
+  await ensureAnnotationsForPage(pageNum);
+  if (state.preferences.snapToPdfContent) prefetchPdfVectorGeometry(pageNum);
+  redrawAnnotations();
+  onPageRendered();
+  updateAllStatus();
+}
+
 // Track which pages have been rendered in continuous mode
 const _renderedPages = new Set();
 let _continuousObserver = null;
@@ -434,7 +527,7 @@ export async function zoomIn() {
   if (doc.viewMode === 'continuous') {
     await renderContinuous();
   } else {
-    await renderPage(doc.currentPage);
+    await renderPageOffscreen(doc.currentPage);
   }
 }
 
@@ -447,7 +540,7 @@ export async function zoomOut() {
     if (doc.viewMode === 'continuous') {
       await renderContinuous();
     } else {
-      await renderPage(doc.currentPage);
+      await renderPageOffscreen(doc.currentPage);
     }
   }
 }
@@ -460,7 +553,7 @@ export async function setZoom(newScale) {
   if (doc.viewMode === 'continuous') {
     await renderContinuous();
   } else {
-    await renderPage(doc.currentPage);
+    await renderPageOffscreen(doc.currentPage);
   }
 }
 
@@ -480,7 +573,7 @@ export async function fitWidth() {
   if (doc.viewMode === 'continuous') {
     await renderContinuous();
   } else {
-    await renderPage(doc.currentPage);
+    await renderPageOffscreen(doc.currentPage);
   }
 }
 
@@ -503,7 +596,7 @@ export async function fitPage() {
   if (doc.viewMode === 'continuous') {
     await renderContinuous();
   } else {
-    await renderPage(doc.currentPage);
+    await renderPageOffscreen(doc.currentPage);
   }
 }
 
@@ -516,7 +609,7 @@ export async function actualSize() {
     if (doc.viewMode === 'continuous') {
       await renderContinuous();
     } else {
-      await renderPage(doc.currentPage);
+      await renderPageOffscreen(doc.currentPage);
     }
   }
 }

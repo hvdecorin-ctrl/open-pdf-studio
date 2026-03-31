@@ -1,5 +1,6 @@
 import { Show, Switch, Match } from 'solid-js';
 import RibbonTab from './RibbonTab.jsx';
+import MeasureTab from './MeasureTab.jsx';
 import HomeTab from './HomeTab.jsx';
 import CommentTab from './CommentTab.jsx';
 import ViewTab from './ViewTab.jsx';
@@ -25,6 +26,9 @@ export default function Ribbon() {
         <RibbonTab label={t('tabs.comment')} dataTab="comment"
           isActive={activeTab() === 'comment'}
           onClick={() => setActiveTab('comment')} />
+        <RibbonTab label={t('tabs.measure') || 'Meten'} dataTab="measure"
+          isActive={activeTab() === 'measure'}
+          onClick={() => setActiveTab('measure')} />
         <RibbonTab label={t('tabs.view')} dataTab="view"
           isActive={activeTab() === 'view'}
           onClick={() => setActiveTab('view')} />
@@ -46,6 +50,7 @@ export default function Ribbon() {
       </div>
 
       <Switch>
+        <Match when={activeTab() === 'measure'}><MeasureTab /></Match>
         <Match when={activeTab() === 'home'}><HomeTab /></Match>
         <Match when={activeTab() === 'comment'}><CommentTab /></Match>
         <Match when={activeTab() === 'view'}><ViewTab /></Match>

@@ -158,7 +158,8 @@
     "measureDistance": "தூரம்",
     "measureArea": "பரப்பளவு",
     "measurePerimeter": "சுற்றளவு",
-    "redaction": "மறைப்பு"
+    "redaction": "மறைப்பு",
+    "scaleBar": "Scale Bar"
   },
   "leftPanel": {
     "togglePanel": "பேனலை மாற்று",
@@ -225,5 +226,20 @@
     "importComments": "கருத்துகளை இறக்குமதி...",
     "exportComments": "கருத்துகளை தரவு கோப்பில் ஏற்றுமதி...",
     "exportSelectedComments": "தேர்ந்தெடுத்த கருத்துகளை தரவு கோப்பில் ஏற்றுமதி..."
+  },
+  "scaleBar": {
+    "title": "Scale Bar",
+    "unit": "Unit",
+    "totalLength": "Total Length",
+    "divisions": "Divisions",
+    "barHeight": "Bar Height"
+  },
+  "measurement": {
+    "title": "Measurement",
+    "name": "Name",
+    "namePlaceholder": "Area name (optional)",
+    "scale": "Scale",
+    "unit": "Unit",
+    "precision": "Precision (Decimals)"
   }
 }

@@ -62,6 +62,15 @@ export async function handleKeydown(e) {
     return;
   }
 
+  // Delegate keydown to active tool (e.g. arc mode toggle for measureArea)
+  const _activeTool = getTool(state.currentTool);
+  if (_activeTool && _activeTool.onKeyDown) {
+    // Build a minimal context for tool key handlers
+    const _keyCtx = { state, redraw };
+    _activeTool.onKeyDown(_keyCtx, e);
+    if (e.defaultPrevented) return;
+  }
+
   // Enter key - complete area/perimeter measurement
   if (e.key === 'Enter' && state.measurePoints && state.measurePoints.length >= 2) {
     e.preventDefault();

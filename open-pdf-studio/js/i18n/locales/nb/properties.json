@@ -158,7 +158,8 @@
     "measureDistance": "Avstand",
     "measureArea": "Areal",
     "measurePerimeter": "Omkrets",
-    "redaction": "Sladding"
+    "redaction": "Sladding",
+    "scaleBar": "Scale Bar"
   },
   "leftPanel": {
     "togglePanel": "Veksle panel",
@@ -225,5 +226,20 @@
     "importComments": "Importer kommentarer...",
     "exportComments": "Eksporter kommentarer til datafil...",
     "exportSelectedComments": "Eksporter valgte kommentarer til datafil..."
+  },
+  "scaleBar": {
+    "title": "Scale Bar",
+    "unit": "Unit",
+    "totalLength": "Total Length",
+    "divisions": "Divisions",
+    "barHeight": "Bar Height"
+  },
+  "measurement": {
+    "title": "Measurement",
+    "name": "Name",
+    "namePlaceholder": "Area name (optional)",
+    "scale": "Scale",
+    "unit": "Unit",
+    "precision": "Precision (Decimals)"
   }
 }

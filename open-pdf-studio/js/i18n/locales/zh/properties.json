@@ -158,7 +158,8 @@
     "measureDistance": "距离",
     "measureArea": "面积",
     "measurePerimeter": "周长",
-    "redaction": "密文"
+    "redaction": "密文",
+    "scaleBar": "Scale Bar"
   },
   "leftPanel": {
     "togglePanel": "切换面板",
@@ -225,5 +226,20 @@
     "importComments": "导入批注...",
     "exportComments": "将批注导出到数据文件...",
     "exportSelectedComments": "将选定批注导出到数据文件..."
+  },
+  "scaleBar": {
+    "title": "Scale Bar",
+    "unit": "Unit",
+    "totalLength": "Total Length",
+    "divisions": "Divisions",
+    "barHeight": "Bar Height"
+  },
+  "measurement": {
+    "title": "Measurement",
+    "name": "Name",
+    "namePlaceholder": "Area name (optional)",
+    "scale": "Scale",
+    "unit": "Unit",
+    "precision": "Precision (Decimals)"
   }
 }

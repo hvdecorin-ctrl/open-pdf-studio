@@ -31,6 +31,12 @@ export interface InteractionState {
   activeContinuousCanvas: HTMLCanvasElement | null;
   activeContinuousPage: number | null;
   measurePoints: Point[] | null;
+  measurePhase: 'outer' | 'holes';
+  measureOuterPoints: Point[] | null;
+  measureHoles: Point[][];
+  calibrationPoints: Point[];
+  addHoleTargetId: string | null;
+  addHolePoints: Point[];
   lastSnapResult: any;
 }
 
@@ -64,6 +70,12 @@ export const interactionState = createMutable<InteractionState>({
   activeContinuousCanvas: null,
   activeContinuousPage: null,
   measurePoints: null,
+  measurePhase: 'outer',
+  measureOuterPoints: null,
+  measureHoles: [],
+  calibrationPoints: [],
+  addHoleTargetId: null,
+  addHolePoints: [],
   lastSnapResult: null,
 });
 
@@ -77,6 +89,10 @@ export function resetDrawing(): void {
   interactionState.dimPoints = [];
   interactionState.isDrawingDimension = false;
   interactionState.measurePoints = null;
+  interactionState.measurePhase = 'outer';
+  interactionState.measureOuterPoints = null;
+  interactionState.measureHoles = [];
+  interactionState.calibrationPoints = [];
   interactionState.lastSnapResult = null;
 }
 

@@ -158,7 +158,8 @@
     "measureDistance": "Umbali",
     "measureArea": "Eneo",
     "measurePerimeter": "Mzunguko",
-    "redaction": "Ufutaji"
+    "redaction": "Ufutaji",
+    "scaleBar": "Scale Bar"
   },
   "leftPanel": {
     "togglePanel": "Badilisha Paneli",
@@ -225,5 +226,20 @@
     "importComments": "Ingiza maoni...",
     "exportComments": "Hamisha maoni kwenye faili ya data...",
     "exportSelectedComments": "Hamisha maoni yaliyochaguliwa kwenye faili ya data..."
+  },
+  "scaleBar": {
+    "title": "Scale Bar",
+    "unit": "Unit",
+    "totalLength": "Total Length",
+    "divisions": "Divisions",
+    "barHeight": "Bar Height"
+  },
+  "measurement": {
+    "title": "Measurement",
+    "name": "Name",
+    "namePlaceholder": "Area name (optional)",
+    "scale": "Scale",
+    "unit": "Unit",
+    "precision": "Precision (Decimals)"
   }
 }

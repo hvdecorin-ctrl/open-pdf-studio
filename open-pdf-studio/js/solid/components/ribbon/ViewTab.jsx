@@ -4,6 +4,8 @@ import RibbonButton from './RibbonButton.jsx';
 import ThemePicker from './ThemePicker.jsx';
 import { singlePageIcon, continuousIcon, navigationIcon, propertiesIcon, annotationsListIcon, toolPaletteIcon } from '../../data/ribbonIcons.js';
 import { toggleToolPalette, paletteVisible } from '../ToolPalette.jsx';
+import { toggleSymbolPalette } from '../SymbolPalette.jsx';
+import { symbolPaletteVisible } from '../../stores/symbolStore.js';
 import { getRegisteredPalettes } from '../../../plugins/palette-registry.js';
 import { toggleExtPalette, isExtPaletteVisible } from '../ExtensionToolPalette.jsx';
 import { setViewMode } from '../../../pdf/renderer.js';
@@ -40,6 +42,8 @@ export default function ViewTab() {
             disabled={noPdf()} onClick={() => toggleAnnotationsListPanel()} />
           <RibbonButton id="ribbon-tool-palette" title={t('view.toolPalette')} icon={toolPaletteIcon} label={t('view.toolPaletteLabel')}
             active={paletteVisible()} onClick={toggleToolPalette} />
+          <RibbonButton id="ribbon-symbol-palette" title="Symbol Library" icon={toolPaletteIcon} label="Symbols"
+            active={symbolPaletteVisible()} onClick={toggleSymbolPalette} />
           <For each={getRegisteredPalettes()}>
             {(p) => {
               const translated = p.translationKey ? t(p.translationKey) : null;

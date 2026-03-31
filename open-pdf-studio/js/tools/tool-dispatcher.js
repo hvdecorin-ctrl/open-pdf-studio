@@ -14,6 +14,8 @@ import { recordAdd, recordModify, recordBulkModify } from '../core/undo-manager.
 import { markDocumentModified } from '../ui/chrome/tabs.js';
 import { isPdfAReadOnly } from '../pdf/loader.js';
 import { getAnnotationType } from '../plugins/annotation-type-registry.js';
+import { syncDocScale } from '../annotations/scale-bar.js';
+import { recalculateAllMeasurements } from '../annotations/measurement.js';
 
 function redraw() {
   if (getActiveDocument()?.viewMode === 'continuous') redrawContinuous();
@@ -274,11 +276,34 @@ function _handleResize(ctx, e, coords) {
     const orig = state.originalAnnotation;
     const h = state.activeHandle;
     let ox, oy;
-    if (typeof h === 'string' && h.startsWith('polyline_node_') && orig.points) {
-      const nodeIdx = parseInt(h.split('_').pop(), 10);
-      if (!isNaN(nodeIdx) && nodeIdx < orig.points.length) {
-        ox = orig.points[nodeIdx].x;
-        oy = orig.points[nodeIdx].y;
+    if (typeof h === 'string' && h.startsWith('polyline_node_')) {
+      // Check for hole node: polyline_node_hole_<holeIdx>_<nodeIdx>
+      const holeSnapMatch = h.match(/^polyline_node_hole_(\d+)_(\d+)$/);
+      if (holeSnapMatch && orig.holes) {
+        const hi = parseInt(holeSnapMatch[1], 10);
+        const ni = parseInt(holeSnapMatch[2], 10);
+        if (hi < orig.holes.length && ni < orig.holes[hi].length) {
+          ox = orig.holes[hi][ni].x;
+          oy = orig.holes[hi][ni].y;
+        }
+      } else if (orig.points) {
+        const nodeIdx = parseInt(h.split('_').pop(), 10);
+        if (!isNaN(nodeIdx) && nodeIdx < orig.points.length) {
+          ox = orig.points[nodeIdx].x;
+          oy = orig.points[nodeIdx].y;
+        }
+      }
+    }
+    // Label move handle
+    if (h === 'label_move' && orig.points) {
+      if (orig.labelX != null && orig.labelY != null) {
+        ox = orig.labelX;
+        oy = orig.labelY;
+      } else {
+        let clx = 0, cly = 0;
+        for (const p of orig.points) { clx += p.x; cly += p.y; }
+        ox = clx / orig.points.length;
+        oy = cly / orig.points.length;
       }
     }
     if (ox === undefined) {
@@ -415,6 +440,19 @@ function _finishDragResize(ctx, e, coords) {
       if (anyChanged) recordBulkModify(_fSel, state.originalAnnotations);
     } else if (state.originalAnnotation && upAnn && _annotationChanged(state.originalAnnotation, upAnn)) {
       recordModify(upAnn.id, state.originalAnnotation, upAnn);
+    }
+
+    // If a scaleBar was modified, recalculate pixelsPerUnit from the new width,
+    // sync doc.measureScale, and recalculate all measurement annotations.
+    const modifiedScaleBars = _fSel.filter(a => a.type === 'scaleBar');
+    if (modifiedScaleBars.length > 0) {
+      for (const sb of modifiedScaleBars) {
+        if (sb.totalUnits > 0) {
+          sb.pixelsPerUnit = sb.width / sb.totalUnits;
+        }
+        syncDocScale(sb);
+      }
+      recalculateAllMeasurements();
     }
   }
 

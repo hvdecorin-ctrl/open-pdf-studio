@@ -1,8 +1,9 @@
 import { state, getActiveDocument } from '../../core/state.js';
 import { annotationCanvas } from '../dom-elements.js';
-import { renderPage, renderContinuous, goToPage } from '../../pdf/renderer.js';
+import { renderPage, renderPageOffscreen, renderContinuous, goToPage } from '../../pdf/renderer.js';
 import { showLoading, hideLoading } from '../chrome/dialogs.js';
 import { clearHighlights } from '../../search/find-bar.js';
+import { getTool } from '../../tools/tool-registry.js';
 
 // Setup wheel zoom
 let _zoomRenderTimer = null;
@@ -13,6 +14,19 @@ export function setupWheelZoom() {
   document.querySelector('.main-view')?.addEventListener('wheel', async (e) => {
     const activeDoc = getActiveDocument();
     if (!activeDoc?.pdfDoc) return;
+
+    // Delegate wheel to active tool first (e.g. arc bulge adjustment)
+    const _wheelTool = getTool(state.currentTool);
+    if (_wheelTool && _wheelTool.onWheel) {
+      const _wheelCtx = { state, redraw: () => {
+        if (getActiveDocument()?.viewMode === 'continuous') renderContinuous();
+        // For single-page mode a lightweight redraw suffices but we import
+        // the annotation renderer lazily to avoid circular deps
+        else import('../../annotations/rendering.js').then(m => m.redrawAnnotations());
+      }};
+      _wheelTool.onWheel(_wheelCtx, e);
+      if (e.defaultPrevented) return;
+    }
 
     // Check if Ctrl key is pressed for zoom functionality
     if (e.ctrlKey || e.metaKey) {
@@ -84,31 +98,25 @@ export function setupWheelZoom() {
         _zoomRenderTimer = null;
         _zoomBaseScale = null;
 
-        // Show loading indicator for slow renders at high zoom
-        let loadingShown = false;
-        const loadingDelay = setTimeout(() => {
-          loadingShown = true;
-          showLoading('Rendering...');
-        }, 200);
-
-        // Render at full quality — renderPage uses double-buffering so the
-        // old CSS-scaled content stays visible until new pixels are ready.
-        // CSS overrides are cleared after render since setupCanvasHiDPI /
-        // the atomic swap sets the correct style values.
-        try {
-          if (isContinuous) {
-            document.querySelectorAll(canvasSelector).forEach(c => {
-              c.style.width = '';
-              c.style.height = '';
-            });
-            await renderContinuous();
+        // Keep CSS scaling visible while rendering in background.
+        // No loading indicator — the CSS-scaled canvas serves as a seamless placeholder.
+        // Only reset CSS + swap canvases AFTER the new render is done.
+        if (isContinuous) {
+          // Continuous mode: reset CSS first then render (pages lazy-render independently)
+          document.querySelectorAll(canvasSelector).forEach(c => {
+            c.style.width = '';
+            c.style.height = '';
+          });
+          await renderContinuous();
+        } else {
+          // Single page: render offscreen, then swap atomically to avoid flicker
+          const curDoc = state.documents[state.activeDocumentIndex];
+          const pageNum = curDoc ? curDoc.currentPage : 1;
+          if (typeof renderPageOffscreen === 'function') {
+            await renderPageOffscreen(pageNum);
           } else {
-            const curDoc = state.documents[state.activeDocumentIndex];
-            await renderPage(curDoc ? curDoc.currentPage : 1);
+            await renderPage(pageNum);
           }
-        } finally {
-          clearTimeout(loadingDelay);
-          if (loadingShown) hideLoading();
         }
       }, 150);
 

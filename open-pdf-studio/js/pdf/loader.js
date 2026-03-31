@@ -236,6 +236,31 @@ export async function loadPDF(filePath, docIndex, preloadedData = null) {
       loadDocumentScale(doc);
     }
 
+    // Auto-detect scale from title block text if no scale is already set (fire-and-forget)
+    if (!doc.measureScale) {
+      import('../annotations/scale-bar.js').then(async ({ detectScaleFromPdf }) => {
+        if (isClosed() || doc.measureScale) return;
+        try {
+          const result = await detectScaleFromPdf(1);
+          if (isClosed() || doc.measureScale) return;
+          if (result && result.ratio > 0) {
+            const pixelsPerUnit = 72 / (25.4 * result.ratio);
+            doc.measureScale = {
+              pixelsPerUnit,
+              unit: 'mm',
+              method: 'auto-detect',
+              scaleRatio: `1:${result.ratio}`,
+            };
+            const { saveDocumentScale } = await import('../annotations/measurement.js');
+            saveDocumentScale();
+            console.log(`Auto-detected scale: 1:${result.ratio} from "${result.scaleText}"`);
+          }
+        } catch (e) {
+          // Non-critical — ignore auto-detect failures
+        }
+      });
+    }
+
     // UI updates — only if active
     if (isActive()) {
       // Notify that a PDF has been loaded (listeners can reset tool, update UI, etc.)

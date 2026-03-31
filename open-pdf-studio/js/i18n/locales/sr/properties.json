@@ -158,7 +158,8 @@
     "measureDistance": "Растојање",
     "measureArea": "Површина",
     "measurePerimeter": "Обим",
-    "redaction": "Редакција"
+    "redaction": "Редакција",
+    "scaleBar": "Scale Bar"
   },
   "leftPanel": {
     "togglePanel": "Прикажи/сакриј панел",
@@ -225,5 +226,20 @@
     "importComments": "Увези коментаре...",
     "exportComments": "Извези коментаре у датотеку података...",
     "exportSelectedComments": "Извези изабране коментаре у датотеку података..."
+  },
+  "scaleBar": {
+    "title": "Scale Bar",
+    "unit": "Unit",
+    "totalLength": "Total Length",
+    "divisions": "Divisions",
+    "barHeight": "Bar Height"
+  },
+  "measurement": {
+    "title": "Measurement",
+    "name": "Name",
+    "namePlaceholder": "Area name (optional)",
+    "scale": "Scale",
+    "unit": "Unit",
+    "precision": "Precision (Decimals)"
   }
 }

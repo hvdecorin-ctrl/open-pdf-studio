@@ -10,6 +10,17 @@ export default function MeasurementSection() {
   return (
     <Show when={sectionVis.measurement}>
       <CollapsibleSection title={t('measurement.title')} name="measurement" id="prop-measurement-section">
+        <Show when={annotProps.type === 'measureArea'}>
+          <div class="property-group">
+            <label>{t('measurement.name')}</label>
+            <input type="text" value={annotProps.measureName}
+              placeholder={t('measurement.namePlaceholder')}
+              disabled={isLocked()}
+              onInput={(e) => updateAnnotProp('measureName', e.target.value)}
+            />
+          </div>
+        </Show>
+
         <div class="property-group">
           <label>{t('measurement.scale')}</label>
           <input type="number" step="0.001" min="0"

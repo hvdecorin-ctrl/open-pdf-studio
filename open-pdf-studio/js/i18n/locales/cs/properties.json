@@ -158,7 +158,8 @@
     "measureDistance": "Vzdálenost",
     "measureArea": "Plocha",
     "measurePerimeter": "Obvod",
-    "redaction": "Redigování"
+    "redaction": "Redigování",
+    "scaleBar": "Scale Bar"
   },
   "leftPanel": {
     "togglePanel": "Přepnout panel",
@@ -225,5 +226,20 @@
     "importComments": "Importovat komentáře...",
     "exportComments": "Exportovat komentáře do datového souboru...",
     "exportSelectedComments": "Exportovat vybrané komentáře do datového souboru..."
+  },
+  "scaleBar": {
+    "title": "Scale Bar",
+    "unit": "Unit",
+    "totalLength": "Total Length",
+    "divisions": "Divisions",
+    "barHeight": "Bar Height"
+  },
+  "measurement": {
+    "title": "Measurement",
+    "name": "Name",
+    "namePlaceholder": "Area name (optional)",
+    "scale": "Scale",
+    "unit": "Unit",
+    "precision": "Precision (Decimals)"
   }
 }

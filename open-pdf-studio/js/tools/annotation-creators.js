@@ -217,10 +217,11 @@ export function buildAnnotationProps(tool, startX, startY, endX, endY, e) {
     case 'measureDistance': {
       let end = snap(startX, startY, endX, endY);
       if (e?.ctrlKey) end = snapDistanceTo10(startX, startY, end.x, end.y);
-      const dist = calculateDistance(startX, startY, end.x, end.y);
+      const currentPage = getActiveDocument()?.currentPage || 1;
+      const dist = calculateDistance(startX, startY, end.x, end.y, currentPage);
       return {
         type: 'measureDistance',
-        page: getActiveDocument()?.currentPage || 1,
+        page: currentPage,
         startX, startY,
         endX: end.x, endY: end.y,
         color: prefs.measureDistStrokeColor,
@@ -271,7 +272,7 @@ export function createContinuousAnnotation(tool, pageNum, startX, startY, endX, 
   return finalizeAnnotation(tool, props);
 }
 
-export function createMeasureAreaAnnotation(points) {
+export function createMeasureAreaAnnotation(points, holes) {
   const mPrefs = state.preferences;
   const annProps = {
     type: 'measureArea',
@@ -283,23 +284,23 @@ export function createMeasureAreaAnnotation(points) {
     opacity: (mPrefs.measureAreaOpacity || 100) / 100,
     fillColor: mPrefs.measureAreaFillNone ? null : (mPrefs.measureAreaFillColor || null),
     borderStyle: mPrefs.measureAreaBorderStyle || 'dashed',
+    hatchPattern: mPrefs.measureAreaHatchPattern || 'diagonal-left',
+    hatchColor: mPrefs.measureAreaHatchColor || '#ff0000',
+    hatchScale: mPrefs.measureAreaHatchScale ?? 100,
   };
-  if (mPrefs.measureAreaDimScale && typeof mPrefs.measureAreaDimScale === 'number') {
-    annProps.measureScale = mPrefs.measureAreaDimScale;
-    annProps.measureUnit = mPrefs.measureAreaDimUnit || 'mm';
-    annProps.measurePrecision = mPrefs.measureAreaDimPrecision ?? 2;
-    const pixelArea = calculateArea(points).pixels;
-    const scaledArea = pixelArea * mPrefs.measureAreaDimScale * mPrefs.measureAreaDimScale;
-    const unit = (mPrefs.measureAreaDimUnit || 'mm') + '\u00B2';
-    const prec = mPrefs.measureAreaDimPrecision ?? 2;
-    annProps.measureText = `${scaledArea.toFixed(prec)} ${unit}`;
-    annProps.measureValue = scaledArea;
-    annProps.measureUnit = unit;
-  } else {
-    const area = calculateArea(points);
-    annProps.measureText = formatMeasurement(area);
-    annProps.measureValue = area.value;
-    annProps.measureUnit = area.unit;
+  // Store holes if provided
+  if (holes && holes.length > 0) {
+    annProps.holes = holes;
+  }
+  // Always use calculateArea (which resolves scale from scaleBar / document / prefs)
+  // followed by formatMeasurement (which auto-converts mm² → m²).
+  const currentPage = getActiveDocument()?.currentPage || 1;
+  const area = calculateArea(points, holes, currentPage);
+  annProps.measureText = formatMeasurement(area);
+  annProps.measureValue = area.value;
+  annProps.measureUnit = area.unit;
+  if (mPrefs.measureAreaDimPrecision != null) {
+    annProps.measurePrecision = mPrefs.measureAreaDimPrecision;
   }
   return createAnnotation(annProps);
 }
@@ -319,11 +320,12 @@ export function createMeasurePerimeterAnnotation(points) {
     endHead: mPrefs.measurePerimEndHead || 'none',
     headSize: mPrefs.measurePerimHeadSize || 12,
   };
+  const currentPage = getActiveDocument()?.currentPage || 1;
   if (mPrefs.measurePerimDimScale && typeof mPrefs.measurePerimDimScale === 'number') {
     perimProps.measureScale = mPrefs.measurePerimDimScale;
     perimProps.measureUnit = mPrefs.measurePerimDimUnit || 'mm';
     perimProps.measurePrecision = mPrefs.measurePerimDimPrecision ?? 2;
-    const pixelPerim = calculatePerimeter(points).pixels;
+    const pixelPerim = calculatePerimeter(points, currentPage).pixels;
     const scaledPerim = pixelPerim * mPrefs.measurePerimDimScale;
     const unit = mPrefs.measurePerimDimUnit || 'mm';
     const prec = mPrefs.measurePerimDimPrecision ?? 2;
@@ -331,7 +333,7 @@ export function createMeasurePerimeterAnnotation(points) {
     perimProps.measureValue = scaledPerim;
     perimProps.measureUnit = unit;
   } else {
-    const perim = calculatePerimeter(points);
+    const perim = calculatePerimeter(points, currentPage);
     perimProps.measureText = formatMeasurement(perim);
     perimProps.measureValue = perim.value;
     perimProps.measureUnit = perim.unit;

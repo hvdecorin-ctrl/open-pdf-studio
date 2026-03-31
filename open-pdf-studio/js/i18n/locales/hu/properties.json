@@ -158,7 +158,8 @@
     "measureDistance": "Távolság",
     "measureArea": "Terület",
     "measurePerimeter": "Kerület",
-    "redaction": "Kitörlés"
+    "redaction": "Kitörlés",
+    "scaleBar": "Scale Bar"
   },
   "leftPanel": {
     "togglePanel": "Panel váltása",
@@ -225,5 +226,20 @@
     "importComments": "Megjegyzések importálása...",
     "exportComments": "Megjegyzések exportálása adatfájlba...",
     "exportSelectedComments": "Kijelölt megjegyzések exportálása adatfájlba..."
+  },
+  "scaleBar": {
+    "title": "Scale Bar",
+    "unit": "Unit",
+    "totalLength": "Total Length",
+    "divisions": "Divisions",
+    "barHeight": "Bar Height"
+  },
+  "measurement": {
+    "title": "Measurement",
+    "name": "Name",
+    "namePlaceholder": "Area name (optional)",
+    "scale": "Scale",
+    "unit": "Unit",
+    "precision": "Precision (Decimals)"
   }
 }

@@ -36,6 +36,7 @@
     "applyDefaultStyle": "ใช้รูปแบบเริ่มต้น",
     "exportSubmenu": "ส่งออก",
     "exportAsImage": "ส่งออกเป็นรูปภาพ...",
+    "addHole": "เพิ่มช่อง",
     "properties": "คุณสมบัติ...",
     "calibrateFromLine": "Calibrate from this Line..."
   },

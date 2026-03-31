@@ -36,6 +36,7 @@
     "applyDefaultStyle": "应用默认样式",
     "exportSubmenu": "导出",
     "exportAsImage": "导出为图像...",
+    "addHole": "添加孔洞",
     "properties": "属性...",
     "calibrateFromLine": "Calibrate from this Line..."
   },

@@ -148,6 +148,9 @@ export async function placeOverrideStamp(x, y) {
   const imageId = 'stamp_' + Date.now();
   state.imageCache.set(imageId, img);
 
+  // Also store on a non-reactive property for rendering perf
+  const _imgRef = img;
+
   const ann = createAnnotation({
     type: 'stamp',
     page: getActiveDocument()?.currentPage || 1,
@@ -157,6 +160,7 @@ export async function placeOverrideStamp(x, y) {
     height: stampHeight,
     stampName: overrides.stampName || 'Custom',
     stampText: '',
+    stampSvg: overrides.stampSvg || null,
     stampSvgBuilder: overrides.stampSvgBuilder || null,
     imageId: imageId,
     imageData: dataUrl,
@@ -167,6 +171,9 @@ export async function placeOverrideStamp(x, y) {
     rotation: 0,
     lockAspectRatio: overrides.lockAspectRatio !== false
   });
+
+  // Store image reference directly on annotation for rendering
+  ann._cachedImg = _imgRef;
 
   // Copy custom fields (e.g., tb* for title blocks)
   for (const key of Object.keys(overrides)) {

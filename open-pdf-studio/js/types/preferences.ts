@@ -20,6 +20,9 @@ export interface Preferences {
   snapToMidpoints: boolean;
   snapToCenters: boolean;
   snapToEdges: boolean;
+  snapToIntersections: boolean;
+  snapToPerpendicular: boolean;
+  showSnapTypeLabel: boolean;
   objectSnapRadius: number;
   snapToPdfContent: boolean;
 
@@ -178,6 +181,17 @@ export interface Preferences {
 
   paletteLeftOrder: string[];
   paletteRightOrder: string[];
+
+  // Symbol palette
+  symbolPaletteVisible: boolean;
+  symbolPaletteMode: string;
+  symbolPaletteFloatX: number;
+  symbolPaletteFloatY: number;
+  customSymbolGroups: Array<{ id: string; name: string; symbols: Array<{ id: string; name: string; svg: string }> }>;
+  disabledSymbolGroups: string[];
+
+  // Schedule
+  scheduleTemplates: Array<{ name: string; groupBy: string; filterType: string; filterPage: number; created: number }>;
 
   // Feedback
   feedbackEmail: string;

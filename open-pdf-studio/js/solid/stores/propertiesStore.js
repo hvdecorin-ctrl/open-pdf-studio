@@ -7,6 +7,8 @@ import { computeTextboxContentHeight } from '../../annotations/rendering/shapes.
 import { formatDate, getTypeDisplayName } from '../../utils/helpers.js';
 import { getAnnotationType } from '../../plugins/annotation-type-registry.js';
 import i18next from '../../i18n/config.js';
+import { syncDocScale } from '../../annotations/scale-bar.js';
+import { recalculateAllMeasurements, calculateArea, calculatePerimeter, formatMeasurement } from '../../annotations/measurement.js';
 
 // Panel visibility and collapsed state
 const [panelVisible, setPanelVisible] = createSignal(true);
@@ -62,6 +64,11 @@ const [annotProps, setAnnotProps] = createStore({
   measureScale: 0,
   measureUnit: '',
   measurePrecision: 2,
+  measureName: '',
+  scaleBarUnit: 'mm',
+  scaleBarTotalUnits: 5000,
+  scaleBarDivisions: 5,
+  scaleBarHeight: 14,
   replies: [],
   multiCount: 0,
 });
@@ -77,6 +84,7 @@ const [sectionVis, setSectionVis] = createStore({
   paragraph: false,
   content: false,
   measurement: false,
+  scaleBar: false,
   image: false,
   actions: false,
   customFields: false,
@@ -136,9 +144,10 @@ function computeSectionVisibility(type) {
   const hasFillColor = ['highlight', 'box', 'circle', 'polygon', 'cloud', 'textbox', 'callout', 'arrow', 'line', 'measureArea'].includes(type);
   const hideColor = ['line', 'arrow', 'box', 'circle', 'draw', 'highlight', 'image', 'textbox', 'callout', 'polygon', 'cloud', 'measureDistance', 'measureArea', 'measurePerimeter'].includes(type);
   const hasBorderStyle = ['textbox', 'callout', 'arrow', 'line', 'box', 'circle', 'polygon', 'cloud', 'draw', 'polyline', 'measureDistance', 'measureArea', 'measurePerimeter'].includes(type);
-  const hasHatchPattern = ['box', 'circle', 'polygon', 'cloud'].includes(type);
+  const hasHatchPattern = ['box', 'circle', 'polygon', 'cloud', 'measureArea'].includes(type);
   const hasRotation = ['box', 'circle', 'polygon', 'cloud', 'highlight', 'redaction', 'comment', 'stamp', 'signature'].includes(type);
   const isMeasurement = ['measureDistance', 'measureArea', 'measurePerimeter'].includes(type);
+  const isScaleBar = type === 'scaleBar';
   const typeHandler = getAnnotationType(type);
   const hasCustomFields = !!(typeHandler && typeHandler.editableFields && typeHandler.editableFields.length > 0);
   if (hasCustomFields) {
@@ -149,11 +158,12 @@ function computeSectionVisibility(type) {
 
   setSectionVis({
     general: true,
-    replies: true,
-    appearance: true,
+    replies: !isScaleBar,
+    appearance: !isScaleBar,
     lineEndings: isArrow || type === 'measureDistance' || type === 'measurePerimeter',
     dimensions: isLineOrArrow,
     measurement: isMeasurement,
+    scaleBar: isScaleBar,
     textFormat: isTextbox,
     paragraph: isTextbox,
     content: isTextContent,
@@ -169,7 +179,7 @@ function computeSectionVisibility(type) {
     hatchPatternGroup: hasHatchPattern,
     textGroup: isTextContent,
     fontSizeGroup: type === 'text',
-    opacityGroup: true,
+    opacityGroup: !isScaleBar,
     rotationGroup: hasRotation,
   });
 }
@@ -200,8 +210,8 @@ export function storeShowProperties(annotation) {
     opacity: annotation.opacity !== undefined ? Math.round(annotation.opacity * 100) : 100,
     icon: annotation.icon || 'comment',
     borderStyle: annotation.borderStyle || 'solid',
-    hatchPattern: annotation.hatchPattern || 'none',
-    hatchColor: annotation.hatchColor || annotation.strokeColor || annotation.color || '#000000',
+    hatchPattern: annotation.hatchPattern || (type === 'measureArea' ? 'diagonal-left' : 'none'),
+    hatchColor: annotation.hatchColor || (type === 'measureArea' ? '#ff0000' : (annotation.strokeColor || annotation.color || '#000000')),
     hatchScale: annotation.hatchScale ?? 100,
     text: annotation.text || '',
     fontSize: annotation.fontSize || 16,
@@ -227,6 +237,11 @@ export function storeShowProperties(annotation) {
     measureScale: annotation.measureScale || 0,
     measureUnit: annotation.measureUnit || '',
     measurePrecision: annotation.measurePrecision !== undefined ? annotation.measurePrecision : 2,
+    measureName: annotation.measureName || '',
+    scaleBarUnit: annotation.unit || 'mm',
+    scaleBarTotalUnits: annotation.totalUnits || 5000,
+    scaleBarDivisions: annotation.divisions || 5,
+    scaleBarHeight: annotation.height || 14,
     replies: annotation.replies || [],
     multiCount: 0,
   });
@@ -249,6 +264,7 @@ export function storeHideProperties() {
     lineEndings: false,
     dimensions: false,
     measurement: false,
+    scaleBar: false,
     textFormat: false,
     paragraph: false,
     content: false,
@@ -306,8 +322,8 @@ export function storeShowMultiSelection(selected) {
   const sharedLineWidth = sharedValue(selected, a => a.lineWidth !== undefined ? a.lineWidth : 3, 'mixed');
   const sharedOpacity = sharedValue(selected, a => a.opacity !== undefined ? Math.round(a.opacity * 100) : 100, 'mixed');
   const sharedBorderStyle = sharedValue(selected, a => a.borderStyle || 'solid', 'mixed');
-  const sharedHatchPattern = sharedValue(selected, a => a.hatchPattern || 'none', 'mixed');
-  const sharedHatchColor = sharedValue(selected, a => a.hatchColor || a.strokeColor || a.color || '#000000', 'mixed');
+  const sharedHatchPattern = sharedValue(selected, a => a.hatchPattern || (a.type === 'measureArea' ? 'diagonal-left' : 'none'), 'mixed');
+  const sharedHatchColor = sharedValue(selected, a => a.hatchColor || (a.type === 'measureArea' ? '#ff0000' : (a.strokeColor || a.color || '#000000')), 'mixed');
   const sharedHatchScale = sharedValue(selected, a => a.hatchScale ?? 100, 'mixed');
   const sharedFontSize = sharedValue(selected, a => a.fontSize || 16, 'mixed');
   const sharedFontFamily = sharedValue(selected, a => a.fontFamily || 'Arial', 'mixed');
@@ -378,7 +394,7 @@ export function storeShowMultiSelection(selected) {
   const hideColorTypes = new Set(['line', 'arrow', 'box', 'circle', 'draw', 'highlight', 'image', 'textbox', 'callout', 'polygon', 'cloud']);
   const hideLineWidthTypes = new Set(['highlight', 'comment', 'image', 'textHighlight']);
   const borderStyleTypes = new Set(['textbox', 'callout', 'arrow', 'line', 'box', 'circle', 'polygon', 'cloud', 'draw', 'polyline']);
-  const hatchPatternTypes = new Set(['box', 'circle', 'polygon', 'cloud']);
+  const hatchPatternTypes = new Set(['box', 'circle', 'polygon', 'cloud', 'measureArea']);
   const rotationTypes = new Set(['box', 'circle', 'polygon', 'cloud', 'highlight', 'redaction', 'comment', 'stamp', 'signature']);
   const textboxTypes = new Set(['textbox', 'callout']);
   const textMarkupTypes = new Set(['textHighlight', 'textStrikethrough', 'textUnderline']);
@@ -603,6 +619,11 @@ function applyPropToAnnotation(ann, key, value) {
     case 'measureScale': ann.measureScale = parseFloat(value) || 0; break;
     case 'measureUnit': ann.measureUnit = value; break;
     case 'measurePrecision': ann.measurePrecision = parseInt(value); break;
+    case 'measureName': ann.measureName = value; break;
+    case 'scaleBarUnit': ann.unit = value; break;
+    case 'scaleBarTotalUnits': ann.totalUnits = parseFloat(value) || 1; break;
+    case 'scaleBarDivisions': ann.divisions = Math.max(1, Math.min(20, parseInt(value) || 5)); break;
+    case 'scaleBarHeight': ann.height = Math.max(4, parseInt(value) || 14); break;
     default: ann[key] = value; break;
   }
 }
@@ -610,16 +631,24 @@ function applyPropToAnnotation(ann, key, value) {
 // Recompute measurement text for a measurement annotation
 function recomputeMeasureText(ann) {
   if (!ann || !ann.type?.startsWith('measure')) return;
-  if (ann.measureScale) {
+  if (ann.type === 'measureDistance' && ann.measureScale) {
     const prec = ann.measurePrecision !== undefined ? ann.measurePrecision : 2;
     const unit = ann.measureUnit || 'mm';
-    if (ann.type === 'measureDistance') {
-      const dx = ann.endX - ann.startX;
-      const dy = ann.endY - ann.startY;
-      const pixelDist = Math.sqrt(dx * dx + dy * dy);
-      const scaledVal = pixelDist * ann.measureScale;
-      ann.measureText = `${scaledVal.toFixed(prec)} ${unit}`;
-    }
+    const dx = ann.endX - ann.startX;
+    const dy = ann.endY - ann.startY;
+    const pixelDist = Math.sqrt(dx * dx + dy * dy);
+    const scaledVal = pixelDist * ann.measureScale;
+    ann.measureText = `${scaledVal.toFixed(prec)} ${unit}`;
+  } else if (ann.type === 'measureArea' && ann.points && ann.points.length >= 3) {
+    const area = calculateArea(ann.points, ann.holes, ann.page);
+    ann.measureText = formatMeasurement(area);
+    ann.measureValue = area.value;
+    ann.measureUnit = area.unit;
+  } else if (ann.type === 'measurePerimeter' && ann.points && ann.points.length >= 2) {
+    const perim = calculatePerimeter(ann.points, ann.page);
+    ann.measureText = formatMeasurement(perim);
+    ann.measureValue = perim.value;
+    ann.measureUnit = perim.unit;
   }
 }
 
@@ -748,6 +777,54 @@ export function updateAnnotProp(key, value) {
     case 'measureScale': currentAnnotation.measureScale = parseFloat(value) || 0; recomputeMeasureText(currentAnnotation); break;
     case 'measureUnit': currentAnnotation.measureUnit = value; recomputeMeasureText(currentAnnotation); break;
     case 'measurePrecision': currentAnnotation.measurePrecision = parseInt(value); recomputeMeasureText(currentAnnotation); break;
+    case 'measureName': currentAnnotation.measureName = value; break;
+    case 'scaleBarUnit': {
+      // Unit conversion factors relative to mm
+      const unitToMm = { mm: 1, cm: 10, m: 1000, in: 25.4, ft: 304.8 };
+      const oldUnit = currentAnnotation.unit || 'mm';
+      const newUnit = value;
+      // Convert totalUnits to mm, then to new unit
+      const totalMm = currentAnnotation.totalUnits * (unitToMm[oldUnit] || 1);
+      const newTotal = totalMm / (unitToMm[newUnit] || 1);
+      currentAnnotation.unit = newUnit;
+      currentAnnotation.totalUnits = newTotal;
+      // pixelsPerUnit needs recalc: width stays the same, pixelsPerUnit = width / totalUnits
+      currentAnnotation.pixelsPerUnit = currentAnnotation.width / newTotal;
+      setAnnotProps('scaleBarTotalUnits', newTotal);
+      // Sync doc scale and recalculate all measurements
+      syncDocScale(currentAnnotation);
+      recalculateAllMeasurements();
+      break;
+    }
+    case 'scaleBarTotalUnits': {
+      const newTotal = parseFloat(value) || 1;
+      currentAnnotation.totalUnits = newTotal;
+      // pixelsPerUnit needs recalc: width stays the same, pixelsPerUnit = width / totalUnits
+      currentAnnotation.pixelsPerUnit = currentAnnotation.width / newTotal;
+      // Sync doc scale and recalculate all measurements
+      syncDocScale(currentAnnotation);
+      recalculateAllMeasurements();
+      break;
+    }
+    case 'scaleBarDivisions': {
+      currentAnnotation.divisions = Math.max(1, Math.min(20, parseInt(value) || 5));
+      break;
+    }
+    case 'scaleBarHeight': {
+      const newH = Math.max(4, parseInt(value) || 14);
+      currentAnnotation.height = newH;
+      break;
+    }
+    case 'scaleBarPixelsPerUnit': {
+      const ppu = parseFloat(value);
+      if (ppu > 0) {
+        currentAnnotation.pixelsPerUnit = ppu;
+        currentAnnotation.width = currentAnnotation.totalUnits * ppu;
+        syncDocScale(currentAnnotation);
+        recalculateAllMeasurements();
+      }
+      break;
+    }
     default: currentAnnotation[key] = value; break;
   }
 

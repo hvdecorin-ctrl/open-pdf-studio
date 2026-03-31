@@ -36,6 +36,7 @@
     "applyDefaultStyle": "기본 스타일 적용",
     "exportSubmenu": "내보내기",
     "exportAsImage": "이미지로 내보내기...",
+    "addHole": "구멍 추가",
     "properties": "속성...",
     "calibrateFromLine": "Calibrate from this Line..."
   },

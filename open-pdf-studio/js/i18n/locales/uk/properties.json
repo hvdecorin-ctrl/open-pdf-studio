@@ -158,7 +158,8 @@
     "measureDistance": "Відстань",
     "measureArea": "Площа",
     "measurePerimeter": "Периметр",
-    "redaction": "Редагування тексту"
+    "redaction": "Редагування тексту",
+    "scaleBar": "Scale Bar"
   },
   "leftPanel": {
     "togglePanel": "Перемкнути панель",
@@ -225,5 +226,20 @@
     "importComments": "Імпорт коментарів...",
     "exportComments": "Експорт коментарів у файл даних...",
     "exportSelectedComments": "Експорт вибраних коментарів у файл даних..."
+  },
+  "scaleBar": {
+    "title": "Scale Bar",
+    "unit": "Unit",
+    "totalLength": "Total Length",
+    "divisions": "Divisions",
+    "barHeight": "Bar Height"
+  },
+  "measurement": {
+    "title": "Measurement",
+    "name": "Name",
+    "namePlaceholder": "Area name (optional)",
+    "scale": "Scale",
+    "unit": "Unit",
+    "precision": "Precision (Decimals)"
   }
 }

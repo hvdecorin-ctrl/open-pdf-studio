@@ -1,0 +1,207 @@
+/* ===== Schedule / Takeoff Panel ===== */
+
+.schedule-panel {
+  position: fixed;
+  right: 0;
+  bottom: 32px; /* above status bar */
+  width: 420px;
+  max-height: 50vh;
+  background: #fff;
+  border: 1px solid #ccc;
+  border-right: none;
+  box-shadow: -2px 0 12px rgba(0,0,0,0.15);
+  z-index: 900;
+  display: flex;
+  flex-direction: column;
+  font-size: 11px;
+  color: #333;
+}
+
+.schedule-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px;
+  background: #f5f5f5;
+  border-bottom: 1px solid #ddd;
+  flex-shrink: 0;
+}
+
+.schedule-title {
+  font-weight: 600;
+  font-size: 12px;
+}
+
+.schedule-close {
+  width: 18px; height: 18px;
+  border: none; background: transparent;
+  cursor: pointer; display: flex;
+  align-items: center; justify-content: center;
+  color: #666;
+}
+.schedule-close:hover { background: #e81123; color: #fff; }
+
+.schedule-btn-sm {
+  height: 20px;
+  padding: 0 8px;
+  font-size: 10px;
+  background: #e8e8e8;
+  color: #333;
+  border: 1px solid #ccc;
+  border-radius: 3px;
+  cursor: pointer;
+}
+.schedule-btn-sm:hover { background: #ddd; }
+.schedule-btn-sm:disabled { opacity: 0.4; cursor: default; }
+
+.schedule-btn-xs {
+  width: 16px; height: 16px;
+  font-size: 10px;
+  background: transparent;
+  color: #999;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.schedule-btn-xs:hover { color: #e81123; }
+
+/* Templates */
+.schedule-templates {
+  padding: 6px 10px;
+  border-bottom: 1px solid #ddd;
+  background: #fafafa;
+}
+.schedule-template-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 2px 0;
+}
+.schedule-template-name {
+  cursor: pointer;
+  color: #0066cc;
+}
+.schedule-template-name:hover { text-decoration: underline; }
+
+/* Filters */
+.schedule-filters {
+  display: flex;
+  gap: 4px;
+  padding: 6px 10px;
+  border-bottom: 1px solid #ddd;
+  flex-shrink: 0;
+}
+
+.schedule-select {
+  height: 22px;
+  font-size: 10px;
+  background: #fff;
+  color: #333;
+  border: 1px solid #ccc;
+  border-radius: 3px;
+  padding: 0 4px;
+}
+
+.schedule-input {
+  height: 22px;
+  font-size: 10px;
+  background: #fff;
+  color: #333;
+  border: 1px solid #ccc;
+  border-radius: 3px;
+  padding: 0 6px;
+  outline: none;
+  min-width: 0;
+}
+.schedule-input:focus { border-color: #a82d6e; }
+
+/* Body */
+.schedule-body {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.schedule-empty {
+  padding: 20px;
+  text-align: center;
+  color: #999;
+}
+
+/* Groups */
+.schedule-group {
+  border-bottom: 1px solid #eee;
+}
+
+.schedule-group-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 10px;
+  background: #f8f8f8;
+  font-weight: 600;
+  font-size: 10px;
+  color: #555;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.schedule-group-count {
+  font-weight: 400;
+  color: #999;
+}
+
+/* Table */
+.schedule-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.schedule-table th {
+  text-align: left;
+  padding: 3px 8px;
+  font-size: 9px;
+  font-weight: 600;
+  color: #888;
+  text-transform: uppercase;
+  border-bottom: 1px solid #eee;
+  background: #fcfcfc;
+}
+
+.schedule-table td {
+  padding: 3px 8px;
+  border-bottom: 1px solid #f5f5f5;
+}
+
+.schedule-table tr:hover td {
+  background: #f0f7ff;
+}
+
+.schedule-val {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.schedule-total-row td {
+  font-weight: 600;
+  border-top: 1px solid #ddd;
+  background: #f8f8f8;
+}
+
+/* Footer */
+.schedule-footer {
+  padding: 4px 10px;
+  border-top: 1px solid #ddd;
+  background: #f5f5f5;
+  font-size: 10px;
+  color: #888;
+  flex-shrink: 0;
+}
+
+/* Scrollbar */
+.schedule-body::-webkit-scrollbar { width: 6px; }
+.schedule-body::-webkit-scrollbar-track { background: transparent; }
+.schedule-body::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.15); border-radius: 3px; }
+.schedule-body::-webkit-scrollbar-thumb:hover { background: rgba(0,0,0,0.25); }

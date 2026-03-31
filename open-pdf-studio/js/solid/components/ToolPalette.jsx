@@ -317,6 +317,12 @@ export function DockedToolPalette(props) {
         <div class={`tp-docked-tools${twoCol() ? ' two-col' : ''}`}>
           <ToolList />
         </div>
+        <button class="tp-close" title="Settings" style={{ color: 'var(--theme-text-secondary)' }}
+          onClick={(e) => showPaletteCtxMenu({ preventDefault: () => {}, clientX: e.clientX, clientY: e.clientY })}>
+          <svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+            <circle cx="8" cy="8" r="2"/><path d="M8 1v2m0 10v2M1 8h2m10 0h2M3 3l1.5 1.5m7 7L13 13M3 13l1.5-1.5m7-7L13 3"/>
+          </svg>
+        </button>
         <button class="tp-close" onClick={() => { setPaletteVisible(false); unregisterPaletteDock('tool'); savePaletteState(); }}>
           <svg width="8" height="8" viewBox="0 0 10 10">
             <line x1="2" y1="2" x2="8" y2="8" stroke="currentColor" stroke-width="1.5"/>

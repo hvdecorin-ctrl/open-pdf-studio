@@ -67,9 +67,18 @@
   },
   "measurement": {
     "title": "Measurement",
+    "name": "Name",
+    "namePlaceholder": "Area name (optional)",
     "scale": "Scale",
     "unit": "Unit",
     "precision": "Precision (Decimals)"
+  },
+  "scaleBar": {
+    "title": "Scale Bar",
+    "unit": "Unit",
+    "totalLength": "Total Length",
+    "divisions": "Divisions",
+    "barHeight": "Bar Height"
   },
   "lineEndings": {
     "title": "Line Endings",
@@ -167,7 +176,8 @@
     "measureDistance": "Distance",
     "measureArea": "Area",
     "measurePerimeter": "Perimeter",
-    "redaction": "Redaction"
+    "redaction": "Redaction",
+    "scaleBar": "Scale Bar"
   },
   "leftPanel": {
     "togglePanel": "Toggle Panel",

@@ -116,6 +116,35 @@ function extractSnapPoints(ann, points, prefs) {
           annotation: ann
         });
       }
+      // Snap points for holes (cutouts) in measureArea
+      if (ann.type === 'measureArea' && ann.holes && ann.holes.length > 0) {
+        for (const hole of ann.holes) {
+          if (!hole || hole.length === 0) continue;
+          for (let i = 0; i < hole.length; i++) {
+            if (doEndpoints) {
+              points.push({ x: hole[i].x, y: hole[i].y, type: 'endpoint', annotation: ann });
+            }
+            if (doMidpoints && i < hole.length - 1) {
+              points.push({
+                x: (hole[i].x + hole[i + 1].x) / 2,
+                y: (hole[i].y + hole[i + 1].y) / 2,
+                type: 'midpoint',
+                annotation: ann
+              });
+            }
+          }
+          // Close the loop for each hole
+          if (doMidpoints && hole.length > 2) {
+            const hFirst = hole[0], hLast = hole[hole.length - 1];
+            points.push({
+              x: (hFirst.x + hLast.x) / 2,
+              y: (hFirst.y + hLast.y) / 2,
+              type: 'midpoint',
+              annotation: ann
+            });
+          }
+        }
+      }
       // Center of bounding box
       if (doCenters && pts.length > 0) {
         let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
@@ -269,6 +298,18 @@ function getEdgeSegments(ann) {
       if (ann.type === 'measureArea' && pts.length > 2) {
         segments.push({ x1: pts[pts.length - 1].x, y1: pts[pts.length - 1].y, x2: pts[0].x, y2: pts[0].y });
       }
+      // Add edge segments for holes in measureArea
+      if (ann.type === 'measureArea' && ann.holes && ann.holes.length > 0) {
+        for (const hole of ann.holes) {
+          if (!hole || hole.length < 2) continue;
+          for (let i = 0; i < hole.length - 1; i++) {
+            segments.push({ x1: hole[i].x, y1: hole[i].y, x2: hole[i + 1].x, y2: hole[i + 1].y });
+          }
+          if (hole.length > 2) {
+            segments.push({ x1: hole[hole.length - 1].x, y1: hole[hole.length - 1].y, x2: hole[0].x, y2: hole[0].y });
+          }
+        }
+      }
       break;
     }
   }
@@ -368,6 +409,53 @@ export function drawSnapIndicator(ctx, snapResult, scale) {
       ctx.stroke();
       break;
     }
+    case 'intersection': {
+      // X shape (two crossing lines)
+      ctx.beginPath();
+      ctx.moveTo(x - size / 2, y - size / 2);
+      ctx.lineTo(x + size / 2, y + size / 2);
+      ctx.moveTo(x + size / 2, y - size / 2);
+      ctx.lineTo(x - size / 2, y + size / 2);
+      ctx.stroke();
+      break;
+    }
+    case 'perpendicular': {
+      // Right-angle symbol
+      const s = size * 0.6;
+      ctx.beginPath();
+      ctx.moveTo(x - s, y);
+      ctx.lineTo(x, y);
+      ctx.lineTo(x, y - s);
+      ctx.stroke();
+      // Small square at the corner
+      ctx.fillRect(x - lineWidth, y - lineWidth, lineWidth * 3, lineWidth * 3);
+      break;
+    }
+  }
+
+  // Draw snap type label
+  if (state.preferences.showSnapTypeLabel !== false) {
+    const labels = {
+      endpoint: 'Endpoint', corner: 'Corner', midpoint: 'Midpoint',
+      center: 'Center', edge: 'Edge',
+      intersection: 'Intersection', perpendicular: 'Perpendicular'
+    };
+    const label = labels[snapResult.type];
+    if (label) {
+      const fontSize = 9 / scale;
+      ctx.font = `${fontSize}px Arial`;
+      const textWidth = ctx.measureText(label).width;
+      const labelX = x + size + 4 / scale;
+      const labelY = y - 2 / scale;
+      // Background
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+      ctx.fillRect(labelX - 1 / scale, labelY - fontSize, textWidth + 2 / scale, fontSize + 2 / scale);
+      // Text
+      ctx.fillStyle = '#FF00FF';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'bottom';
+      ctx.fillText(label, labelX, labelY);
+    }
   }
 
   ctx.restore();
@@ -440,5 +528,114 @@ export function performSnap(cursorX, cursorY, annotations, currentPage, scale, e
     if (pdfEdgeResult) return pdfEdgeResult;
   }
 
+  // 7. Intersection snap (where edges from different annotations cross)
+  if (prefs.snapToIntersections !== false) {
+    const intersectionResult = findIntersectionSnap(cursorX, cursorY, annotations, currentPage, snapRadius, excludeId);
+    if (intersectionResult) return intersectionResult;
+  }
+
+  // 8. Perpendicular snap (point on edge perpendicular from last placed point)
+  if (prefs.snapToPerpendicular && inProgressPoints && inProgressPoints.length > 0) {
+    const lastPt = inProgressPoints[inProgressPoints.length - 1];
+    const perpResult = findPerpendicularSnap(cursorX, cursorY, lastPt, annotations, currentPage, snapRadius, excludeId);
+    if (perpResult) return perpResult;
+  }
+
   return { x: cursorX, y: cursorY, snapped: false };
+}
+
+// Find intersection point of edge segments from different annotations near cursor
+function findIntersectionSnap(cursorX, cursorY, annotations, currentPage, snapRadius, excludeId) {
+  const allSegments = [];
+  for (const ann of annotations) {
+    if (ann.page !== currentPage) continue;
+    if (excludeId && ann.id === excludeId) continue;
+    if (ann.type === 'draw') continue;
+    const segs = getEdgeSegments(ann);
+    for (const seg of segs) {
+      allSegments.push({ ...seg, annId: ann.id });
+    }
+  }
+
+  let bestDist = Infinity;
+  let bestPoint = null;
+
+  for (let i = 0; i < allSegments.length; i++) {
+    const a = allSegments[i];
+    // Pre-filter: skip if segment bounding box is far from cursor
+    const aMinX = Math.min(a.x1, a.x2) - snapRadius;
+    const aMaxX = Math.max(a.x1, a.x2) + snapRadius;
+    const aMinY = Math.min(a.y1, a.y2) - snapRadius;
+    const aMaxY = Math.max(a.y1, a.y2) + snapRadius;
+    if (cursorX < aMinX || cursorX > aMaxX || cursorY < aMinY || cursorY > aMaxY) continue;
+
+    for (let j = i + 1; j < allSegments.length; j++) {
+      const b = allSegments[j];
+      if (a.annId === b.annId) continue;
+
+      const inter = segmentIntersection(a.x1, a.y1, a.x2, a.y2, b.x1, b.y1, b.x2, b.y2);
+      if (!inter) continue;
+
+      const dx = cursorX - inter.x;
+      const dy = cursorY - inter.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist < bestDist && dist <= snapRadius) {
+        bestDist = dist;
+        bestPoint = { x: inter.x, y: inter.y, type: 'intersection', snapped: true };
+      }
+    }
+  }
+
+  return bestPoint;
+}
+
+// Line segment intersection: returns {x, y} or null
+function segmentIntersection(x1, y1, x2, y2, x3, y3, x4, y4) {
+  const dx1 = x2 - x1, dy1 = y2 - y1;
+  const dx2 = x4 - x3, dy2 = y4 - y3;
+  const denom = dx1 * dy2 - dy1 * dx2;
+  if (Math.abs(denom) < 1e-10) return null;
+
+  const t = ((x3 - x1) * dy2 - (y3 - y1) * dx2) / denom;
+  const u = ((x3 - x1) * dy1 - (y3 - y1) * dx1) / denom;
+
+  if (t >= 0 && t <= 1 && u >= 0 && u <= 1) {
+    return { x: x1 + t * dx1, y: y1 + t * dy1 };
+  }
+  return null;
+}
+
+// Perpendicular snap: find point on an edge where line from lastPoint is perpendicular
+function findPerpendicularSnap(cursorX, cursorY, lastPoint, annotations, currentPage, snapRadius, excludeId) {
+  let bestDist = Infinity;
+  let bestPoint = null;
+
+  for (const ann of annotations) {
+    if (ann.page !== currentPage) continue;
+    if (excludeId && ann.id === excludeId) continue;
+    if (ann.type === 'draw') continue;
+
+    const segs = getEdgeSegments(ann);
+    for (const seg of segs) {
+      const dx = seg.x2 - seg.x1, dy = seg.y2 - seg.y1;
+      const lenSq = dx * dx + dy * dy;
+      if (lenSq < 1e-10) continue;
+
+      const t = ((lastPoint.x - seg.x1) * dx + (lastPoint.y - seg.y1) * dy) / lenSq;
+      if (t < 0 || t > 1) continue;
+
+      const footX = seg.x1 + t * dx;
+      const footY = seg.y1 + t * dy;
+
+      const cdx = cursorX - footX;
+      const cdy = cursorY - footY;
+      const dist = Math.sqrt(cdx * cdx + cdy * cdy);
+      if (dist < bestDist && dist <= snapRadius) {
+        bestDist = dist;
+        bestPoint = { x: footX, y: footY, type: 'perpendicular', snapped: true };
+      }
+    }
+  }
+
+  return bestPoint;
 }

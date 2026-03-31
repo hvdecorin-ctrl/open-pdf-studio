@@ -158,7 +158,8 @@
     "measureDistance": "Расстояние",
     "measureArea": "Площадь",
     "measurePerimeter": "Периметр",
-    "redaction": "Затирание"
+    "redaction": "Затирание",
+    "scaleBar": "Scale Bar"
   },
   "leftPanel": {
     "togglePanel": "Переключить панель",
@@ -225,5 +226,20 @@
     "importComments": "Импорт комментариев...",
     "exportComments": "Экспорт комментариев в файл данных...",
     "exportSelectedComments": "Экспорт выбранных комментариев в файл данных..."
+  },
+  "scaleBar": {
+    "title": "Scale Bar",
+    "unit": "Unit",
+    "totalLength": "Total Length",
+    "divisions": "Divisions",
+    "barHeight": "Bar Height"
+  },
+  "measurement": {
+    "title": "Measurement",
+    "name": "Name",
+    "namePlaceholder": "Area name (optional)",
+    "scale": "Scale",
+    "unit": "Unit",
+    "precision": "Precision (Decimals)"
   }
 }

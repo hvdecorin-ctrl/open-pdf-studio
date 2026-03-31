@@ -87,6 +87,30 @@ export async function extractAnnotationColors(pageNum, pdfDoc) {
         }
       }
 
+      // Read /OPS_Holes (our custom holes data for measureArea with cutouts)
+      const opsHolesRaw = annotDict.get(PDFName.of('OPS_Holes'));
+      if (opsHolesRaw) {
+        const holesArr = context.lookup(opsHolesRaw) || opsHolesRaw;
+        if (holesArr && typeof holesArr.size === 'function') {
+          const holes = [];
+          for (let hi = 0; hi < holesArr.size(); hi++) {
+            const holeRaw = context.lookup(holesArr.get(hi)) || holesArr.get(hi);
+            if (holeRaw && typeof holeRaw.size === 'function') {
+              const holePoints = [];
+              for (let pi = 0; pi + 1 < holeRaw.size(); pi += 2) {
+                const hx = pdfNum(context.lookup(holeRaw.get(pi)) || holeRaw.get(pi));
+                const hy = pdfNum(context.lookup(holeRaw.get(pi + 1)) || holeRaw.get(pi + 1));
+                if (hx !== null && hy !== null) {
+                  holePoints.push({ x: hx, y: hy });
+                }
+              }
+              if (holePoints.length >= 3) holes.push(holePoints);
+            }
+          }
+          if (holes.length > 0) colors.holes = holes;
+        }
+      }
+
       // Read /IT (Intent) for measurement annotations
       const itRaw = annotDict.get(PDFName.of('IT'));
       if (itRaw) {
