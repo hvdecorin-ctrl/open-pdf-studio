@@ -357,9 +357,9 @@ export default function AIPanel() {
             {/* Context selector */}
             <select class="ai-context-select" value={context()}
               onChange={(e) => { setContext(e.target.value); persist(); }}>
-              <option value="page">This page</option>
-              <option value="all">All pages</option>
-              <option value="selection">Selection</option>
+              <option value="page">{t('ai.thisPage') || 'This page'}</option>
+              <option value="all">{t('ai.allPages') || 'All pages'}</option>
+              <option value="selection">{t('ai.selection') || 'Selection'}</option>
             </select>
           </div>
 

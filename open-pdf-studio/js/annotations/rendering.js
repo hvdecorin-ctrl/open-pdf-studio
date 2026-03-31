@@ -862,7 +862,6 @@ export function drawAnnotation(ctx, annotation) {
     }
 
     case 'scaleBar': {
-      // Scale bar: alternating black/white blocks with labels
       const sbX = annotation.x;
       const sbY = annotation.y;
       const sbW = annotation.width;
@@ -871,10 +870,11 @@ export function drawAnnotation(ctx, annotation) {
       const totalUnits = annotation.totalUnits || divisions;
       const unit = annotation.unit || 'mm';
       const divWidth = sbW / divisions;
+      const barColor = annotation.color || '#000000';
+      const barLW = annotation.lineWidth || 1;
 
       ctx.save();
 
-      // Handle rotation
       if (annotation.rotation) {
         const cx = sbX + sbW / 2;
         const cy = sbY + sbH / 2;
@@ -883,64 +883,97 @@ export function drawAnnotation(ctx, annotation) {
         ctx.translate(-cx, -cy);
       }
 
-      // Draw alternating blocks
+      // Scale ratio label above the bar (e.g., "1:100")
+      const _sbDoc = getActiveDocument();
+      const _sbMs = _sbDoc?.measureScale;
+      if (_sbMs?.scaleRatio) {
+        ctx.fillStyle = barColor;
+        ctx.font = `bold ${Math.max(8, sbH * 0.65)}px sans-serif`;
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'bottom';
+        ctx.fillText(String(_sbMs.scaleRatio), sbX, sbY - 2);
+      }
+
+      // Alternating blocks
       for (let i = 0; i < divisions; i++) {
         const bx = sbX + i * divWidth;
         if (i % 2 === 0) {
-          ctx.fillStyle = '#000000';
+          ctx.fillStyle = barColor;
           ctx.fillRect(bx, sbY, divWidth, sbH);
         } else {
           ctx.fillStyle = '#ffffff';
           ctx.fillRect(bx, sbY, divWidth, sbH);
-          ctx.strokeStyle = '#000000';
+          ctx.strokeStyle = barColor;
           ctx.lineWidth = 0.5;
           ctx.strokeRect(bx, sbY, divWidth, sbH);
         }
       }
 
       // Outer border
-      ctx.strokeStyle = '#000000';
-      ctx.lineWidth = 1;
+      ctx.strokeStyle = barColor;
+      ctx.lineWidth = barLW;
       ctx.strokeRect(sbX, sbY, sbW, sbH);
 
       // Tick marks and labels below
-      ctx.fillStyle = '#000000';
-      ctx.font = '8px sans-serif';
+      ctx.fillStyle = barColor;
+      ctx.strokeStyle = barColor;
+      const sbFontSize = Math.max(7, Math.min(10, sbH * 0.7));
+      ctx.font = `${sbFontSize}px sans-serif`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'top';
       const unitsPerDiv = totalUnits / divisions;
+
       for (let i = 0; i <= divisions; i++) {
         const tx = sbX + i * divWidth;
-        // Tick mark
         ctx.beginPath();
         ctx.moveTo(tx, sbY + sbH);
         ctx.lineTo(tx, sbY + sbH + 4);
+        ctx.lineWidth = barLW;
         ctx.stroke();
-        // Smart label: show meters if mm and large values
+
         const rawVal = Math.round(i * unitsPerDiv * 100) / 100;
         let labelStr;
-        if (unit === 'mm' && totalUnits >= 1000) {
-          labelStr = String(rawVal / 1000);
-        } else {
-          labelStr = String(rawVal);
-        }
+        if (unit === 'mm' && totalUnits >= 1000) labelStr = String(rawVal / 1000);
+        else if (unit === 'cm' && totalUnits >= 100) labelStr = String(rawVal / 100);
+        else labelStr = String(rawVal);
         ctx.fillText(labelStr, tx, sbY + sbH + 5);
       }
 
-      // Unit label
-      const displayUnit = (unit === 'mm' && totalUnits >= 1000) ? 'm' : unit;
+      // Unit label (right of bar)
+      let _sbDisplayUnit = unit;
+      if (unit === 'mm' && totalUnits >= 1000) _sbDisplayUnit = 'm';
+      else if (unit === 'cm' && totalUnits >= 100) _sbDisplayUnit = 'm';
       ctx.textAlign = 'left';
-      ctx.fillText(displayUnit, sbX + sbW + 4, sbY + sbH + 5);
+      ctx.fillText(_sbDisplayUnit, sbX + sbW + 4, sbY + sbH + 5);
 
-      // Draw dashed scale region rectangle (if region is defined and > 0)
+      // Viewport region rectangle (dashed blue border + label)
       if (annotation.regionWidth > 0 && annotation.regionHeight > 0) {
+        const rx = annotation.regionX, ry = annotation.regionY;
+        const rw = annotation.regionWidth, rh = annotation.regionHeight;
+
+        // Dashed border
         ctx.setLineDash([6, 3]);
         ctx.strokeStyle = '#0066cc';
-        ctx.lineWidth = 1;
-        ctx.globalAlpha = 0.5;
-        ctx.strokeRect(annotation.regionX, annotation.regionY, annotation.regionWidth, annotation.regionHeight);
-        ctx.globalAlpha = 1;
+        ctx.lineWidth = 1.5;
+        ctx.globalAlpha = 0.6;
+        ctx.strokeRect(rx, ry, rw, rh);
         ctx.setLineDash([]);
+
+        // Viewport label (top-left corner)
+        const vpLabel = annotation.viewportName || annotation.scaleRatio || '';
+        if (vpLabel) {
+          ctx.globalAlpha = 0.85;
+          ctx.font = 'bold 9px sans-serif';
+          const labelWidth = ctx.measureText(vpLabel).width + 8;
+          ctx.fillStyle = '#0066cc';
+          ctx.fillRect(rx, ry - 14, labelWidth, 14);
+          ctx.fillStyle = '#ffffff';
+          ctx.textAlign = 'left';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(vpLabel, rx + 4, ry - 7);
+        }
+
+        ctx.globalAlpha = 1;
       }
 
       ctx.restore();

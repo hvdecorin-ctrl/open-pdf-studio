@@ -14,6 +14,7 @@ import { commentTool, textTool, stampTool, signatureTool, editTextTool } from '.
 import { calibrationPickTool } from './calibration-pick-tool.js';
 import { pluginClickTool } from './plugin-tool.js';
 import { hoverTranslateTool } from './hover-translate-tool.js';
+import { viewportTool } from './viewport-tool.js';
 import { scaleBarTool } from './scalebar-tool.js';
 
 export function registerAllTools() {
@@ -62,6 +63,9 @@ export function registerAllTools() {
   registerTool('stamp', stampTool);
   registerTool('signature', signatureTool);
   registerTool('editText', editTextTool);
+
+  // Viewports
+  registerTool('viewport', viewportTool);
 
   // Plugin fallback
   registerTool('_plugin_click', pluginClickTool);

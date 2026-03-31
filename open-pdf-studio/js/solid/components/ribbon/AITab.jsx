@@ -2,6 +2,7 @@ import { createSignal } from 'solid-js';
 import RibbonGroup from './RibbonGroup.jsx';
 import RibbonButton from './RibbonButton.jsx';
 import RibbonButtonStack from './RibbonButtonStack.jsx';
+import PrefSelect from '../preferences/PrefSelect.jsx';
 import { getActiveDocument, noPdf } from '../../../core/state.js';
 import { aiPanelVisible, setAiPanelVisible, isAuthenticated, sendAction } from '../../stores/aiStore.js';
 import { openDialog } from '../../stores/dialogStore.js';
@@ -76,12 +77,6 @@ export default function AITab() {
     }
   }
 
-  function handleLangChange(e) {
-    const lang = e.target.value;
-    setHoverLang(lang);
-    setHoverTargetLang(lang);
-    clearHoverCache();
-  }
 
   return (
     <div class="ribbon-content active" id="tab-ai">
@@ -128,10 +123,12 @@ export default function AITab() {
             onClick={handleHoverToggle} />
           <div class="ai-lang-picker">
             <label class="ai-lang-label">{t('ai.targetLang') || 'To'}:</label>
-            <select class="ai-context-select" style="margin-left:0"
-              value={hoverLang()} onChange={handleLangChange}>
-              {LANGUAGES.map(lang => <option value={lang}>{lang}</option>)}
-            </select>
+            <PrefSelect
+              value={hoverLang}
+              setValue={(val) => { setHoverLang(val); setHoverTargetLang(val); clearHoverCache(); }}
+              options={LANGUAGES.map(lang => ({ value: lang, label: lang }))}
+              style={{ width: '90px' }}
+            />
           </div>
         </RibbonGroup>
 

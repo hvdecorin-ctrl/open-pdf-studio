@@ -4,6 +4,7 @@ import { createAnnotation } from '../annotations/factory.js';
 import { snapAngle } from '../utils/helpers.js';
 import { calculateDistance, calculateArea, calculatePerimeter, formatMeasurement, snapDistanceTo10 } from '../annotations/measurement.js';
 import { getAnnotationType } from '../plugins/annotation-type-registry.js';
+import { applyDynamicScaling } from '../annotations/dynamic-scaling.js';
 
 /**
  * Build raw annotation properties from tool + coordinates.
@@ -236,6 +237,29 @@ export function buildAnnotationProps(tool, startX, startY, endX, endY, e) {
       };
     }
 
+    case 'viewport': {
+      const b = bbox(startX, startY, endX, endY);
+      return {
+        type: 'scaleBar',
+        page: getActiveDocument()?.currentPage || 1,
+        x: b.x, y: b.y + b.height - 14,
+        width: Math.min(b.width * 0.6, 300),
+        height: 14,
+        divisions: 5,
+        totalUnits: 5000,
+        unit: 'mm',
+        pixelsPerUnit: 0.02835,
+        color: '#000000',
+        lineWidth: 1,
+        opacity: 1,
+        regionX: b.x,
+        regionY: b.y,
+        regionWidth: b.width,
+        regionHeight: b.height,
+        viewportName: 'Viewport',
+      };
+    }
+
     default: {
       const typeHandler = getAnnotationType(tool);
       if (typeHandler && typeHandler.create) {
@@ -258,6 +282,12 @@ function finalizeAnnotation(tool, props) {
   if (tool === 'draw') {
     state.currentPath = [];
   }
+
+  // Dynamic scaling: adjust line width, font size, etc. based on viewport
+  const pageNum = props.page || getActiveDocument()?.currentPage || 1;
+  const annX = props.x ?? props.startX ?? 0;
+  const annY = props.y ?? props.startY ?? 0;
+  applyDynamicScaling(props, pageNum, annX, annY);
 
   return createAnnotation(props);
 }
@@ -302,6 +332,7 @@ export function createMeasureAreaAnnotation(points, holes) {
   if (mPrefs.measureAreaDimPrecision != null) {
     annProps.measurePrecision = mPrefs.measureAreaDimPrecision;
   }
+  applyDynamicScaling(annProps, currentPage, points[0]?.x || 0, points[0]?.y || 0);
   return createAnnotation(annProps);
 }
 
@@ -338,5 +369,6 @@ export function createMeasurePerimeterAnnotation(points) {
     perimProps.measureValue = perim.value;
     perimProps.measureUnit = perim.unit;
   }
+  applyDynamicScaling(perimProps, currentPage, points[0]?.x || 0, points[0]?.y || 0);
   return createAnnotation(perimProps);
 }

@@ -808,6 +808,82 @@
   width: 45px;
 }
 
+/* ── Measure Tab ── */
+.measure-scale-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 4px;
+}
+
+.measure-calib-group {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: 160px;
+  flex-shrink: 0;
+}
+
+.measure-hint-text {
+  font-size: 10px;
+  height: 14px;
+  color: var(--theme-ribbon-text-secondary, var(--theme-text-secondary, #888));
+}
+
+.measure-label-text {
+  font-size: 9px;
+  color: var(--theme-ribbon-text-secondary, var(--theme-text-secondary, #888));
+}
+
+.measure-value-text {
+  font-size: 11px;
+  color: var(--theme-ribbon-text, var(--theme-text, #333));
+}
+
+.measure-section-divider {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-left: 8px;
+  border-left: 1px solid var(--theme-ribbon-separator, var(--theme-border, #d4d4d4));
+  padding-left: 8px;
+}
+
+.measure-apply-btn {
+  height: 22px;
+  font-size: 11px;
+  cursor: default;
+  background: var(--theme-accent, #0078d4);
+  color: #fff;
+  border: 1px solid var(--theme-accent, #006cc1);
+}
+
+.measure-apply-btn:hover {
+  filter: brightness(0.9);
+}
+
+.measure-apply-btn:disabled {
+  opacity: 0.4;
+  background: var(--theme-ribbon-btn-bg, var(--theme-bg, #e0e0e0));
+  color: var(--theme-text-secondary, #888);
+  border-color: var(--theme-border, #ccc);
+}
+
+.measure-status-success {
+  font-size: 9px;
+  color: #16a34a;
+}
+
+.measure-status-error {
+  font-size: 9px;
+  color: #dc2626;
+}
+
+.measure-status-warning {
+  font-size: 9px;
+  color: var(--theme-accent, #d97706);
+}
+
 /* Theme picker - custom dropdown with color swatches */
 .theme-picker {
   position: relative;

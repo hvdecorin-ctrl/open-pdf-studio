@@ -14,6 +14,8 @@ import {
 import { useTranslation } from '../../../i18n/useTranslation.js';
 import { toggleSchedule, scheduleVisible } from '../../stores/scheduleStore.js';
 import { detectScaleFromPdf } from '../../../annotations/scale-bar.js';
+import { isDynamicScalingEnabled, setDynamicScalingEnabled } from '../../../annotations/dynamic-scaling.js';
+import PrefSelect from '../preferences/PrefSelect.jsx';
 
 const selectPointsIcon = `<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="5" cy="19" r="2.5" stroke-width="2"/><circle cx="19" cy="5" r="2.5" stroke-width="2"/><path stroke-linecap="round" stroke-dasharray="4 3" stroke-width="1.5" d="M7 17L17 7"/></svg>`;
 
@@ -21,14 +23,39 @@ const autoDetectIcon = `<svg fill="none" stroke="currentColor" viewBox="0 0 24 2
 
 const scaleBarIcon = `<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><rect x="2" y="14" width="20" height="4" stroke-width="1.5" rx="0.5"/><rect x="2" y="14" width="4" height="4" fill="currentColor" stroke="none"/><rect x="10" y="14" width="4" height="4" fill="currentColor" stroke="none"/><rect x="18" y="14" width="4" height="4" fill="currentColor" stroke="none"/><path stroke-width="1" d="M2 20v-1M6 20v-1M10 20v-1M14 20v-1M18 20v-1M22 20v-1"/><text x="2" y="23" font-size="3" fill="currentColor">0</text></svg>`;
 
+const viewportIcon = `<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><rect x="2" y="2" width="20" height="20" rx="1" stroke-width="1.5" stroke-dasharray="4 2"/><rect x="6" y="6" width="12" height="12" rx="0.5" stroke-width="1.5"/><text x="12" y="14" font-size="7" fill="currentColor" stroke="none" text-anchor="middle" font-weight="bold">S</text></svg>`;
+
 const scheduleIcon = `<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="1.5" stroke-width="1.5"/><line x1="3" y1="8" x2="21" y2="8" stroke-width="1.5"/><line x1="3" y1="13" x2="21" y2="13" stroke-width="1"/><line x1="3" y1="18" x2="21" y2="18" stroke-width="1"/><line x1="9" y1="8" x2="9" y2="21" stroke-width="1"/><line x1="15" y1="8" x2="15" y2="21" stroke-width="1"/></svg>`;
+
+const PRESET_SCALES = [
+  { label: '1:10', ratio: 10 },
+  { label: '1:20', ratio: 20 },
+  { label: '1:25', ratio: 25 },
+  { label: '1:50', ratio: 50 },
+  { label: '1:75', ratio: 75 },
+  { label: '1:100', ratio: 100 },
+  { label: '1:125', ratio: 125 },
+  { label: '1:150', ratio: 150 },
+  { label: '1:200', ratio: 200 },
+  { label: '1:250', ratio: 250 },
+  { label: '1:300', ratio: 300 },
+  { label: '1:400', ratio: 400 },
+  { label: '1:500', ratio: 500 },
+  { label: '1:750', ratio: 750 },
+  { label: '1:1000', ratio: 1000 },
+  { label: '1:1250', ratio: 1250 },
+  { label: '1:2000', ratio: 2000 },
+  { label: '1:2500', ratio: 2500 },
+  { label: '1:5000', ratio: 5000 },
+];
 
 export default function MeasureTab() {
   const { t } = useTranslation('ribbon');
 
   const [calibValue, setCalibValue] = createSignal('');
   const [calibUnit, setCalibUnit] = createSignal('mm');
-  const [autoDetectStatus, setAutoDetectStatus] = createSignal('');  // '', 'detecting', 'found', 'notfound'
+  const [autoDetectStatus, setAutoDetectStatus] = createSignal('');
+  const [presetScale, setPresetScale] = createSignal('');  // '', 'detecting', 'found', 'notfound'
 
   const currentScale = createMemo(() => {
     const doc = getActiveDocument();
@@ -74,6 +101,37 @@ export default function MeasureTab() {
     // Reset
     setCalibrationPixelDistance(null);
     setCalibValue('');
+  }
+
+  function applyPresetScale(val) {
+    const ratio = parseInt(val);
+    if (!ratio || ratio <= 0) return;
+
+    const doc = getActiveDocument();
+    if (!doc) return;
+
+    // At scale 1:ratio, 1 PDF unit (= 1/72 inch) represents (25.4/72 * ratio) mm
+    // pixelsPerUnit = PDF units per real-world mm = 72 / (25.4 * ratio)
+    const pixelsPerUnit = 72 / (25.4 * ratio);
+
+    doc.measureScale = {
+      pixelsPerUnit,
+      unit: 'mm',
+      method: 'preset',
+      scaleRatio: `1:${ratio}`,
+    };
+    saveDocumentScale();
+
+    const scaleVal = 1 / pixelsPerUnit;
+    state.preferences.measureDistDimScale = scaleVal;
+    state.preferences.measureDistDimUnit = 'mm';
+    state.preferences.measureAreaDimScale = scaleVal;
+    state.preferences.measureAreaDimUnit = 'mm';
+    state.preferences.measurePerimDimScale = scaleVal;
+    state.preferences.measurePerimDimUnit = 'mm';
+    savePreferences();
+
+    recalculateAllMeasurements();
   }
 
   async function handleAutoDetect() {
@@ -124,7 +182,7 @@ export default function MeasureTab() {
       <div class="ribbon-groups">
 
         <RibbonGroup label={t('measure.scale') || 'SCHAAL'}>
-          <div style={{ display: 'flex', 'align-items': 'center', gap: '8px', padding: '2px 4px' }}>
+          <div class="measure-scale-row">
             <RibbonButton id="btn-select-points"
               title={t('measure.selectPointsTitle') || 'Selecteer 2 referentiepunten op de tekening'}
               icon={selectPointsIcon}
@@ -133,81 +191,69 @@ export default function MeasureTab() {
               active={state.currentTool === 'calibrationPick'}
               onClick={handleSelectPoints} />
 
-            <div style={{ display: 'flex', 'flex-direction': 'column', gap: '3px', 'min-width': '160px' }}>
-              <Show when={calibrationPixelDistance()}>
-                <span style={{ 'font-size': '10px', color: '#aaa' }}>
-                  {t('measure.pixelDistance') || 'Pixelafstand'}: {calibrationPixelDistance()?.toFixed(1)} px
-                </span>
-              </Show>
-
+            <div class="measure-calib-group">
+              <span class="measure-hint-text" style={{ visibility: calibrationPixelDistance() ? 'visible' : 'hidden' }}>
+                {t('measure.pixelDistance') || 'Pixelafstand'}: {(calibrationPixelDistance() || 0).toFixed(1)} px
+              </span>
               <div style={{ display: 'flex', gap: '4px', 'align-items': 'center' }}>
                 <input
                   type="number"
+                  class="ribbon-input"
                   placeholder={t('measure.enterDistance') || 'Maat...'}
                   value={calibValue()}
                   onInput={(e) => setCalibValue(e.target.value)}
                   disabled={!calibrationPixelDistance()}
-                  style={{
-                    width: '70px', height: '22px', 'font-size': '11px',
-                    background: '#333', color: '#eee', border: '1px solid #555',
-                    'border-radius': '3px', padding: '0 4px'
-                  }}
+                  style={{ width: '70px' }}
                 />
-                <select
-                  value={calibUnit()}
-                  onChange={(e) => setCalibUnit(e.target.value)}
-                  disabled={!calibrationPixelDistance()}
-                  style={{
-                    height: '22px', 'font-size': '11px',
-                    background: '#333', color: '#eee', border: '1px solid #555',
-                    'border-radius': '3px'
-                  }}
-                >
-                  <option value="mm">mm</option>
-                  <option value="cm">cm</option>
-                  <option value="m">m</option>
-                  <option value="in">in</option>
-                  <option value="ft">ft</option>
-                </select>
+                <PrefSelect
+                  value={calibUnit}
+                  setValue={setCalibUnit}
+                  disabled={() => !calibrationPixelDistance()}
+                  options={[
+                    { value: 'mm', label: 'mm' },
+                    { value: 'cm', label: 'cm' },
+                    { value: 'm', label: 'm' },
+                    { value: 'in', label: 'in' },
+                    { value: 'ft', label: 'ft' },
+                  ]}
+                  style={{ width: '55px' }}
+                />
               </div>
-
               <button
+                class="measure-apply-btn"
                 onClick={handleApply}
                 disabled={!calibrationPixelDistance() || !calibValue() || parseFloat(calibValue()) <= 0}
-                style={{
-                  height: '22px', 'font-size': '11px', cursor: 'pointer',
-                  background: calibrationPixelDistance() && calibValue() ? '#e67e22' : '#444',
-                  color: '#fff', border: 'none', 'border-radius': '3px',
-                  opacity: (!calibrationPixelDistance() || !calibValue()) ? 0.5 : 1
-                }}
               >
                 {t('measure.apply') || 'Toepassen'}
               </button>
             </div>
 
-            <Show when={currentScale()}>
-              <div style={{ display: 'flex', 'flex-direction': 'column', gap: '2px', 'margin-left': '8px', 'border-left': '1px solid #555', 'padding-left': '8px' }}>
-                <span style={{ 'font-size': '9px', color: '#888' }}>{t('measure.currentScale') || 'Huidige schaal'}</span>
-                <span style={{ 'font-size': '11px', color: '#ccc' }}>{currentScale()}</span>
-              </div>
-            </Show>
+            <div class="measure-section-divider" style={{ width: '90px' }}>
+              <span class="measure-label-text">{t('measure.currentScale') || 'Huidige schaal'}</span>
+              <span class="measure-value-text">{currentScale() || t('measure.notSet') || 'Not set'}</span>
+            </div>
 
-            <div style={{ display: 'flex', 'flex-direction': 'column', 'align-items': 'center', gap: '2px', 'margin-left': '8px', 'border-left': '1px solid #555', 'padding-left': '8px' }}>
+            <div class="measure-section-divider" style={{ width: '80px' }}>
+              <span class="measure-label-text">{t('measure.presetScale') || 'Preset'}</span>
+              <PrefSelect
+                value={presetScale}
+                setValue={(val) => { setPresetScale(val); applyPresetScale(val); }}
+                disabled={noPdf}
+                options={PRESET_SCALES.map(s => ({ value: String(s.ratio), label: s.label }))}
+                style={{ width: '80px' }}
+              />
+            </div>
+
+            <div class="measure-section-divider">
               <RibbonButton id="btn-auto-detect-scale"
-                title={t('measure.autoDetectTitle') || 'Detect scale from title block text'}
+                title={autoDetectStatus() === 'found' ? (t('measure.scaleDetected') || 'Scale detected') :
+                       autoDetectStatus() === 'notfound' ? (t('measure.noScaleFound') || 'No scale found') :
+                       (t('measure.autoDetectTitle') || 'Detect scale from title block text')}
                 icon={autoDetectIcon}
-                label={t('measure.autoDetect') || 'Auto-detect'}
+                label={autoDetectStatus() === 'detecting' ? (t('measure.detecting') || '...') :
+                       (t('measure.autoDetect') || 'Auto-detect')}
                 disabled={noPdf() || autoDetectStatus() === 'detecting'}
                 onClick={handleAutoDetect} />
-              <Show when={autoDetectStatus() === 'found'}>
-                <span style={{ 'font-size': '9px', color: '#2ecc71' }}>{t('measure.scaleDetected') || 'Scale detected'}</span>
-              </Show>
-              <Show when={autoDetectStatus() === 'notfound'}>
-                <span style={{ 'font-size': '9px', color: '#e74c3c' }}>{t('measure.noScaleFound') || 'No scale found'}</span>
-              </Show>
-              <Show when={autoDetectStatus() === 'detecting'}>
-                <span style={{ 'font-size': '9px', color: '#f39c12' }}>{t('measure.detecting') || 'Detecting...'}</span>
-              </Show>
             </div>
           </div>
         </RibbonGroup>
@@ -233,6 +279,22 @@ export default function MeasureTab() {
             disabled={noPdf() || isPdfAReadOnly()}
             active={state.currentTool === 'scaleBar'}
             onClick={() => setTool('scaleBar')} />
+          <RibbonButton id="btn-create-viewport"
+            title={t('measure.createViewport') || 'Draw a viewport region with its own scale'}
+            icon={viewportIcon}
+            label={t('measure.viewport') || 'Viewport'}
+            disabled={noPdf() || isPdfAReadOnly()}
+            active={state.currentTool === 'viewport'}
+            onClick={() => setTool('viewport')} />
+          <RibbonButtonStack>
+            <label style={{ display: 'flex', 'align-items': 'center', gap: '4px', 'font-size': '10px', color: 'var(--theme-text-secondary, #888)', padding: '2px 4px', cursor: 'default' }}>
+              <input type="checkbox"
+                checked={isDynamicScalingEnabled()}
+                onChange={(e) => { setDynamicScalingEnabled(e.target.checked); savePreferences(); }}
+                style={{ margin: 0 }} />
+              {t('measure.dynamicScaling') || 'Auto-scale markups'}
+            </label>
+          </RibbonButtonStack>
         </RibbonGroup>
 
         <RibbonGroup label={t('measure.schedule') || 'TAKE-OFF'}>

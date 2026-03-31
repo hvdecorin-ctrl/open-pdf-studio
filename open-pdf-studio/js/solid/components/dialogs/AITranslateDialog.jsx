@@ -1,5 +1,6 @@
 import { createSignal, Show } from 'solid-js';
 import Dialog from '../Dialog.jsx';
+import PrefSelect from '../preferences/PrefSelect.jsx';
 import { closeDialog } from '../../stores/dialogStore.js';
 import { getActiveDocument } from '../../../core/state.js';
 import { translatePage, translateDocument, undoTranslations } from '../../../services/ai-translate.js';
@@ -97,10 +98,12 @@ export default function AITranslateDialog(props) {
       <div style="min-width:320px">
         <div class="ai-login-field">
           <label>Target Language</label>
-          <select class="ai-context-select" style="width:100%;height:24px;margin-left:0"
-            value={language()} onChange={e => setLanguage(e.target.value)}>
-            {LANGUAGES.map(lang => <option value={lang}>{lang}</option>)}
-          </select>
+          <PrefSelect
+            value={language}
+            setValue={setLanguage}
+            options={LANGUAGES.map(lang => ({ value: lang, label: lang }))}
+            style={{ width: '100%' }}
+          />
         </div>
 
         <div class="ai-login-field">

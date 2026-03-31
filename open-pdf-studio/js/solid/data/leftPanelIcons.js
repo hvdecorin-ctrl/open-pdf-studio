@@ -49,6 +49,14 @@ export const linksIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="currentCo
   <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
 </svg>`;
 
+export const measurementsIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+  <path d="M2 12h20"/>
+  <path d="M6 8v8"/>
+  <path d="M18 8v8"/>
+  <path d="M10 10v4"/>
+  <path d="M14 10v4"/>
+</svg>`;
+
 export const toggleIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
   <polyline points="15 18 9 12 15 6"/>
 </svg>`;

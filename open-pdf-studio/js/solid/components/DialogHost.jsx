@@ -31,6 +31,7 @@ import ConfirmDialog from './dialogs/ConfirmDialog.jsx';
 import AILoginDialog from './dialogs/AILoginDialog.jsx';
 import AIPlanDialog from './dialogs/AIPlanDialog.jsx';
 import AITranslateDialog from './dialogs/AITranslateDialog.jsx';
+import ViewportScaleDialog from './dialogs/ViewportScaleDialog.jsx';
 import TitleBlockDialog from './dialogs/TitleBlockDialog.jsx';
 import TextEditOverlay from './TextEditOverlay.jsx';
 import PdfTextEditOverlay from './PdfTextEditOverlay.jsx';
@@ -69,6 +70,7 @@ const DIALOG_MAP = {
   'ai-login': AILoginDialog,
   'ai-plan': AIPlanDialog,
   'ai-translate': AITranslateDialog,
+  'viewport-scale': ViewportScaleDialog,
 };
 
 export default function DialogHost() {

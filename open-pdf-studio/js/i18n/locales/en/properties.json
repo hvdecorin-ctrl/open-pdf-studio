@@ -80,6 +80,14 @@
     "divisions": "Divisions",
     "barHeight": "Bar Height"
   },
+  "measurements": {
+    "scale": "Scale",
+    "noScale": "No scale set",
+    "viewports": "Viewports",
+    "noViewports": "No viewports defined",
+    "measurements": "Measurements",
+    "noMeasurements": "No measurements yet"
+  },
   "lineEndings": {
     "title": "Line Endings",
     "start": "Start",
@@ -191,6 +199,7 @@
     "destinations": "Destinations",
     "tags": "Tags",
     "links": "Links",
+    "measurements": "Measurements",
     "allPages": "All Pages",
     "currentPage": "Current Page",
     "externalOnly": "External Only",
