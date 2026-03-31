@@ -21,7 +21,7 @@ jobs:
       version: ${{ steps.get-version.outputs.version }}
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Get version
         id: get-version
@@ -79,10 +79,10 @@ jobs:
         working-directory: open-pdf-studio
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: 20
 
@@ -239,10 +239,10 @@ jobs:
         working-directory: open-pdf-studio
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Setup Java JDK 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: 'temurin'
           java-version: '17'
@@ -254,7 +254,7 @@ jobs:
         run: sdkmanager --install "ndk;27.0.12077973"
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: 20
           cache: 'npm'
@@ -266,7 +266,7 @@ jobs:
           targets: aarch64-linux-android
 
       - name: Cache Rust build artifacts
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ~/.cargo/registry
@@ -333,7 +333,7 @@ jobs:
           echo "Signed APK: $SIGNED_APK"
 
       - name: Upload signed APK artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: android-apk
           path: open-pdf-studio/src-tauri/gen/android/**/open-pdf-studio-release.apk

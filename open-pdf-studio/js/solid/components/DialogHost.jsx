@@ -28,6 +28,9 @@ import AboutDialog from './dialogs/AboutDialog.jsx';
 import ShortcutsDialog from './dialogs/ShortcutsDialog.jsx';
 import ExtensionsDialog from './dialogs/ExtensionsDialog.jsx';
 import ConfirmDialog from './dialogs/ConfirmDialog.jsx';
+import AILoginDialog from './dialogs/AILoginDialog.jsx';
+import AIPlanDialog from './dialogs/AIPlanDialog.jsx';
+import AITranslateDialog from './dialogs/AITranslateDialog.jsx';
 import TitleBlockDialog from './dialogs/TitleBlockDialog.jsx';
 import TextEditOverlay from './TextEditOverlay.jsx';
 import PdfTextEditOverlay from './PdfTextEditOverlay.jsx';
@@ -63,6 +66,9 @@ const DIALOG_MAP = {
   'extensions': ExtensionsDialog,
   'confirm': ConfirmDialog,
   'title-block-edit': TitleBlockDialog,
+  'ai-login': AILoginDialog,
+  'ai-plan': AIPlanDialog,
+  'ai-translate': AITranslateDialog,
 };
 
 export default function DialogHost() {

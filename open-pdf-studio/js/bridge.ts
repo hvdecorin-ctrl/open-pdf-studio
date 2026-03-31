@@ -243,3 +243,21 @@ export {
   setCountText as setTagCountText,
   setEmptyMessage as setTagEmptyMessage,
 } from './solid/stores/panels/tagsStore.js';
+
+// ============= AI ASSISTANT =============
+export {
+  aiPanelVisible,
+  setAiPanelVisible,
+  isAuthenticated as aiIsAuthenticated,
+  user as aiUser,
+  usage as aiUsage,
+  subscription as aiSubscription,
+  messages as aiMessages,
+  isLoading as aiIsLoading,
+  sendAction as aiSendAction,
+  sendChat as aiSendChat,
+  clearChat as aiClearChat,
+  login as aiLogin,
+  register as aiRegister,
+  logout as aiLogout,
+} from './solid/stores/aiStore.js';

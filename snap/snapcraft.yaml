@@ -1,5 +1,5 @@
 name: open-pdf-studio
-base: core22
+base: core24
 version: '1.16.0'
 summary: Free, open-source PDF annotation editor
 description: |

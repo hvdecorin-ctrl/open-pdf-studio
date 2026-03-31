@@ -18,10 +18,11 @@ import { DockedToolPalette, FloatingToolPalette, DockTargets, PaletteContextMenu
 import { DockedExtPalette, FloatingExtPalette, ExtDockTargets } from './components/ExtensionToolPalette.jsx';
 import { DockedSymbolPalette, FloatingSymbolPalette, SymbolSettingsDialog } from './components/SymbolPalette.jsx';
 import SchedulePanel from './components/SchedulePanel.jsx';
+import AIPanel from './components/AIPanel.jsx';
 import { getRegisteredPalettes } from '../plugins/palette-registry.js';
 import { leftOrder, rightOrder } from './stores/paletteOrder.js';
 import { useTranslation } from '../i18n/useTranslation.js';
-import { For } from 'solid-js';
+import { For, ErrorBoundary } from 'solid-js';
 
 function OrderedDockedPalettes(props) {
   const order = () => props.side === 'left' ? leftOrder() : rightOrder();
@@ -120,6 +121,7 @@ function DesktopApp() {
       <PaletteContextMenu />
       <SymbolSettingsDialog />
       <SchedulePanel />
+      <ErrorBoundary fallback={null}><AIPanel /></ErrorBoundary>
       <LoadingOverlay />
     </>
   );

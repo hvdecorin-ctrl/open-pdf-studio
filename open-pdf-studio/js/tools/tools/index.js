@@ -13,6 +13,7 @@ import { measureAngleTool } from './angle-tool.js';
 import { commentTool, textTool, stampTool, signatureTool, editTextTool } from './text-tool.js';
 import { calibrationPickTool } from './calibration-pick-tool.js';
 import { pluginClickTool } from './plugin-tool.js';
+import { hoverTranslateTool } from './hover-translate-tool.js';
 import { scaleBarTool } from './scalebar-tool.js';
 
 export function registerAllTools() {
@@ -64,4 +65,7 @@ export function registerAllTools() {
 
   // Plugin fallback
   registerTool('_plugin_click', pluginClickTool);
+
+  // AI
+  registerTool('hoverTranslate', hoverTranslateTool);
 }
