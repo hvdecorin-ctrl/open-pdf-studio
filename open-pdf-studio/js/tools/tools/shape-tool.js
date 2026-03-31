@@ -6,7 +6,8 @@ export const shapeTool = {
   name: 'shape',
   cursor: 'crosshair',
 
-  onPointerDown(ctx) {
+  onPointerDown(ctx, e) {
+    if (e.button !== 0) return;
     const { state } = ctx;
     state.isDrawing = true;
   },
@@ -33,12 +34,33 @@ export const shapeTool = {
 
     const rawX = ctx.x, rawY = ctx.y;
     const endSnap = ctx.snap(rawX, rawY);
-    const endX = endSnap.snapped ? endSnap.x : ctx.snapToGrid(rawX);
-    const endY = endSnap.snapped ? endSnap.y : ctx.snapToGrid(rawY);
+    let endX = endSnap.snapped ? endSnap.x : ctx.snapToGrid(rawX);
+    let endY = endSnap.snapped ? endSnap.y : ctx.snapToGrid(rawY);
     state.lastSnapResult = null;
     state.isDrawing = false;
 
     const tool = state.currentTool;
+
+    // Single-click detection: if barely dragged, use default size
+    const dx = Math.abs(endX - state.startX);
+    const dy = Math.abs(endY - state.startY);
+    const isClick = dx < 5 && dy < 5;
+
+    if (isClick && tool === 'textbox') {
+      endX = state.startX + 150;
+      endY = state.startY + 30;
+    } else if (isClick && tool === 'callout') {
+      // Click places arrow tip; box appears offset above-right
+      endX = state.startX + 80;
+      endY = state.startY - 40;
+    } else if (isClick && (tool === 'comment' || tool === 'stamp' || tool === 'signature')) {
+      // These already handle single click
+    } else if (isClick) {
+      // Other shapes: too small to be useful, skip creation
+      ctx.redraw();
+      return false;
+    }
+
     const ann = ctx.createAnnotationFromTool(tool, state.startX, state.startY, endX, endY, e);
     if (ann) {
       const doc = state.documents[state.activeDocumentIndex];

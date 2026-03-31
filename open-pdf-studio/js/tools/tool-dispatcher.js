@@ -14,6 +14,7 @@ import { recordAdd, recordModify, recordBulkModify } from '../core/undo-manager.
 import { markDocumentModified } from '../ui/chrome/tabs.js';
 import { isPdfAReadOnly } from '../pdf/loader.js';
 import { getAnnotationType } from '../plugins/annotation-type-registry.js';
+import { hideMenu } from '../bridge.js';
 import { syncDocScale } from '../annotations/scale-bar.js';
 import { recalculateAllMeasurements } from '../annotations/measurement.js';
 
@@ -28,6 +29,9 @@ function redraw() {
 export function handlePointerDown(e) {
   if (!getActiveDocument()?.pdfDoc) return;
   if (isModalOpen()) return;
+
+  // Dismiss context menu on any canvas click (left or right)
+  hideMenu();
 
   // Safety: reset stuck drag/resize state
   if (state.isDragging || state.isResizing) {

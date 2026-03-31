@@ -754,6 +754,7 @@ function TextSelectionMenuContent() {
 export default function ContextMenu() {
   let menuRef;
 
+  // Position the menu when it becomes visible
   createEffect(() => {
     if (visible()) {
       const pos = position();
@@ -773,26 +774,35 @@ export default function ContextMenu() {
     }
   });
 
-  const handleOutsideClick = (e) => {
-    if (visible() && menuRef && !menuRef.contains(e.target)) {
-      hideMenu();
-    }
-  };
+  // Dismiss when clicking outside the menu.
+  // mousedown on document handles clicks on ribbon, panels, title bar, etc.
+  // Canvas clicks are handled by the tool dispatcher (which calls hideMenu).
+  function handleOutsideClick(e) {
+    if (!visible()) return;
+    if (menuRef && menuRef.contains(e.target)) return;
+    hideMenu();
+  }
 
-  const handleEscape = (e) => {
+  function handleEscape(e) {
     if (e.key === 'Escape' && visible()) {
       hideMenu();
     }
-  };
+  }
+
+  function handleWindowBlur() {
+    if (visible()) hideMenu();
+  }
 
   onMount(() => {
     document.addEventListener('mousedown', handleOutsideClick);
     document.addEventListener('keydown', handleEscape);
+    window.addEventListener('blur', handleWindowBlur);
   });
 
   onCleanup(() => {
     document.removeEventListener('mousedown', handleOutsideClick);
     document.removeEventListener('keydown', handleEscape);
+    window.removeEventListener('blur', handleWindowBlur);
   });
 
   return (
