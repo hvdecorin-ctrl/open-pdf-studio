@@ -141,7 +141,7 @@ export function fitToViewport() {
   const scaledW = viewport.pageW * viewport.zoom;
   const scaledH = viewport.pageH * viewport.zoom;
   viewport.offsetX = (_canvas.width - scaledW) / 2;
-  viewport.offsetY = (_canvas.height + scaledH) / 2; // +scaledH because Y-flip
+  viewport.offsetY = (_canvas.height - scaledH) / 2;
   viewport.dirty = true;
 }
 
