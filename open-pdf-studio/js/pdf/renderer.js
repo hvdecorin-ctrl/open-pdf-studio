@@ -178,8 +178,49 @@ export async function renderPage(pageNum) {
   const _t0 = performance.now();
   const _canUseTauri = isTauri();
   const _hasFilePath = !!doc.filePath;
+  let _skipBitmapRender = false;
 
+  // Vector mode: instant rendering via Canvas2D command replay
   if (_canUseTauri && _hasFilePath) {
+    try {
+      const vr = await import('./vector-renderer.js');
+      if (!vr.hasCachedCommands(doc.filePath, pageNum)) {
+        const pageType = await invoke('analyze_page_type', { path: doc.filePath, pageIndex: pageNum - 1 });
+        if (pageType === 'vector') {
+          const cmdData = await invoke('extract_draw_commands', { path: doc.filePath, pageIndex: pageNum - 1 });
+          const cmdBytes = cmdData instanceof Uint8Array ? cmdData : new Uint8Array(cmdData);
+          vr.cacheCommands(doc.filePath, pageNum, cmdBytes);
+        }
+      }
+
+      if (vr.hasCachedCommands(doc.filePath, pageNum)) {
+        const t0v = performance.now();
+        const dims = vr.getCachedPageDimensions(doc.filePath, pageNum);
+        pdfCanvas.width = Math.ceil(dims.w * scale * dpr);
+        pdfCanvas.height = Math.ceil(dims.h * scale * dpr);
+        pdfCanvas.style.width = Math.floor(dims.w * scale) + 'px';
+        pdfCanvas.style.height = Math.floor(dims.h * scale) + 'px';
+
+        const ctx = pdfCanvas.getContext('2d');
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, pdfCanvas.width, pdfCanvas.height);
+
+        const transform = { a: scale * dpr, b: 0, c: 0, d: scale * dpr, e: 0, f: 0 };
+        vr.renderVectorPage(ctx, doc.filePath, pageNum, transform);
+
+        const elapsed = Math.round(performance.now() - t0v);
+        state.renderEngine = 'Vector';
+        state.renderTiming = elapsed + 'ms';
+        console.log(`[render] Vector: ${pdfCanvas.width}x${pdfCanvas.height}, ${elapsed}ms`);
+
+        _skipBitmapRender = true;
+      }
+    } catch (e) {
+      console.warn('[render] Vector mode failed:', e);
+    }
+  }
+
+  if (!_skipBitmapRender && _canUseTauri && _hasFilePath) {
     console.log(`[render] Rust render: page=${pageNum}, scale=${scale}, dpr=${dpr}, path=${doc.filePath}`);
     try {
       // Rust returns RGBA bytes directly as Uint8Array with 8-byte header (width u32 LE + height u32 LE)
@@ -229,8 +270,8 @@ export async function renderPage(pageNum) {
       await _renderPageWithPdfJs(page, viewport, pdfCanvas, bufferW, bufferH, dpr);
       console.log(`[render] PDF.js fallback: ${Math.round(performance.now() - _t0)}ms`);
     }
-  } else {
-    console.log(`[render] 📄 PDF.js render: page=${pageNum}, tauri=${_canUseTauri}, filePath=${_hasFilePath}`);
+  } else if (!_skipBitmapRender) {
+    console.log(`[render] PDF.js render: page=${pageNum}, tauri=${_canUseTauri}, filePath=${_hasFilePath}`);
     await _renderPageWithPdfJs(page, viewport, pdfCanvas, bufferW, bufferH, dpr);
     const _pjsMs = Math.round(performance.now() - _t0);
     state.renderEngine = 'PDF.js';

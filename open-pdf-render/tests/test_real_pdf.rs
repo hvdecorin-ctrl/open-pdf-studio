@@ -39,3 +39,29 @@ fn test_real_bouwtekening() {
 
     assert!(non_white_pixels > 0, "Page is entirely white - no content rendered!");
 }
+
+#[test]
+fn test_analyze_page_type() {
+    let path = r"C:\3BM\50_projecten\3_3BM_bouwtechniek\3059 Woonhuis Benedenkerkseweg 87 Stolwijk\20_post_IN\01 27-03-2026 beginstukken\begane grond do 3 constructie verwerkt_50.pdf";
+    let bytes = std::fs::read(path).unwrap();
+    let renderer = open_pdf_render::PdfRenderer::new();
+    let doc = renderer.load_document(&bytes).unwrap();
+    let page_type = doc.analyze_page_type(0).unwrap();
+    println!("Page type: {:?}", page_type);
+}
+
+#[test]
+fn test_extract_draw_commands() {
+    let path = r"C:\3BM\50_projecten\3_3BM_bouwtechniek\3059 Woonhuis Benedenkerkseweg 87 Stolwijk\20_post_IN\01 27-03-2026 beginstukken\begane grond do 3 constructie verwerkt_50.pdf";
+    let bytes = std::fs::read(path).unwrap();
+    let renderer = open_pdf_render::PdfRenderer::new();
+    let doc = renderer.load_document(&bytes).unwrap();
+
+    let t0 = std::time::Instant::now();
+    let cmds = doc.extract_draw_commands(0).unwrap();
+    let elapsed = t0.elapsed();
+
+    let data = cmds.into_bytes();
+    println!("Draw commands: {} bytes ({} KB) in {:?}", data.len(), data.len() / 1024, elapsed);
+    assert!(data.len() > 8, "Should have commands beyond header");
+}

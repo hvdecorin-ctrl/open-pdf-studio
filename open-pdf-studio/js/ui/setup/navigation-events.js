@@ -94,6 +94,22 @@ export function setupWheelZoom() {
       scrollContainer.scrollLeft += newPointViewportX - e.clientX;
       scrollContainer.scrollTop += newPointViewportY - e.clientY;
 
+      // Vector mode: instant redraw, no debounce needed
+      if (!isContinuous) {
+        try {
+          const vr = await import('../../pdf/vector-renderer.js');
+          if (vr.hasCachedCommands(doc.filePath, doc.currentPage)) {
+            if (_zoomRenderTimer) clearTimeout(_zoomRenderTimer);
+            _zoomRenderTimer = null;
+            _zoomBaseScale = null;
+            document.querySelectorAll(canvasSelector).forEach(c => { c.style.width = ''; c.style.height = ''; });
+            const { renderPage } = await import('../../pdf/renderer.js');
+            renderPage(doc.currentPage);
+            return;
+          }
+        } catch (_e) { /* vector-renderer not available, fall through to debounce */ }
+      }
+
       // Debounce: only re-render after user STOPS zooming (500ms idle).
       // The CSS-scaled canvas stays visible — no freeze, no flicker.
       if (_zoomRenderTimer) clearTimeout(_zoomRenderTimer);

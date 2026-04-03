@@ -124,4 +124,48 @@ impl DocumentHandle {
             _ => Err(RenderError::ParseError("Expected number".into())),
         }
     }
+
+    /// Analyze whether a page is pure vector or contains raster content (images/shading)
+    pub fn analyze_page_type(&self, page: usize) -> Result<crate::PageType, RenderError> {
+        let page_id = self.get_page_id(page)?;
+        let content_bytes = self.get_content_stream(page_id)?;
+        let content = lopdf::content::Content::decode(&content_bytes)
+            .map_err(|e| RenderError::ParseError(format!("{}", e)))?;
+
+        let mut has_raster_images = false;
+        for op in &content.operations {
+            match op.operator.as_str() {
+                // Only classify as Tile if there are shading patterns
+                // Do (XObjects) can be Form XObjects (vector) — we try vector mode first
+                "sh" => has_raster_images = true,
+                _ => {}
+            }
+        }
+        if has_raster_images {
+            Ok(crate::PageType::Tile)
+        } else {
+            Ok(crate::PageType::Vector)
+        }
+    }
+
+    /// Extract draw commands without rendering to bitmap.
+    /// Returns binary buffer with 8-byte header (f32 LE pageW + f32 LE pageH) + commands.
+    pub fn extract_draw_commands(&self, page: usize) -> Result<crate::DrawCommandBuffer, RenderError> {
+        let page_id = self.get_page_id(page)?;
+        let (w_pt, h_pt) = self.extract_media_box(page_id)?;
+        let content_bytes = self.get_content_stream(page_id)?;
+
+        let mut state = crate::graphics_state::GraphicsStateStack::new();
+        let mut cmds = crate::draw_commands::DrawCommandBuffer::new();
+        crate::interpreter::Interpreter::extract_commands(&content_bytes, &mut cmds, &mut state)?;
+
+        // Prepend page dimensions header
+        let cmd_bytes = cmds.into_bytes();
+        let mut result = Vec::with_capacity(8 + cmd_bytes.len());
+        result.extend_from_slice(&w_pt.to_le_bytes());
+        result.extend_from_slice(&h_pt.to_le_bytes());
+        result.extend(cmd_bytes);
+
+        Ok(crate::DrawCommandBuffer::from_vec(result))
+    }
 }

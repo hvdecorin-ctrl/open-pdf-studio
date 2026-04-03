@@ -853,6 +853,34 @@ fn render_pdf_page(path: String, page_index: u32, scale: f32, cache: tauri::Stat
     Ok(format!("{}|{}|{}", temp_path.to_string_lossy(), page.width, page.height))
 }
 
+#[tauri::command]
+fn analyze_page_type(path: String, page_index: u32, cache: tauri::State<PdfBytesCache>) -> Result<String, String> {
+    let bytes = {
+        let mut c = cache.0.lock().map_err(|e| format!("{}", e))?;
+        if let Some(b) = c.get(&path) { b.clone() }
+        else { let b = fs::read(&path).map_err(|e| format!("{}", e))?; c.insert(path.clone(), b.clone()); b }
+    };
+    let renderer = PdfRenderer::new();
+    let doc = renderer.load_document(&bytes).map_err(|e| format!("{}", e))?;
+    match doc.analyze_page_type(page_index as usize).map_err(|e| format!("{}", e))? {
+        open_pdf_render::PageType::Vector => Ok("vector".into()),
+        open_pdf_render::PageType::Tile => Ok("tile".into()),
+    }
+}
+
+#[tauri::command]
+fn extract_draw_commands(path: String, page_index: u32, cache: tauri::State<PdfBytesCache>) -> Result<Vec<u8>, String> {
+    let bytes = {
+        let mut c = cache.0.lock().map_err(|e| format!("{}", e))?;
+        if let Some(b) = c.get(&path) { b.clone() }
+        else { let b = fs::read(&path).map_err(|e| format!("{}", e))?; c.insert(path.clone(), b.clone()); b }
+    };
+    let renderer = PdfRenderer::new();
+    let doc = renderer.load_document(&bytes).map_err(|e| format!("{}", e))?;
+    let cmds = doc.extract_draw_commands(page_index as usize).map_err(|e| format!("{}", e))?;
+    Ok(cmds.into_bytes())
+}
+
 /// Invalidate the PDF bytes cache for a specific file (call after save/modify)
 #[tauri::command]
 fn invalidate_pdf_cache(path: String, cache: tauri::State<PdfBytesCache>) -> Result<bool, String> {
@@ -988,6 +1016,8 @@ pub fn run() {
             get_page_dimensions,
             invalidate_pdf_cache,
             clear_pdf_cache,
+            analyze_page_type,
+            extract_draw_commands,
             allow_fs_scope
         ])
         .run(tauri::generate_context!())
