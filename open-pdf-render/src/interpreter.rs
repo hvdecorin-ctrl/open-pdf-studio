@@ -1,5 +1,5 @@
 use lopdf::content::Content;
-use lopdf::Object;
+use lopdf::{Document, Dictionary, Object};
 use crate::graphics_state::GraphicsStateStack;
 use crate::renderer::SkiaRenderer;
 use crate::draw_commands::DrawCommandBuffer;
@@ -56,6 +56,8 @@ impl Interpreter {
         content_bytes: &[u8],
         renderer: &mut SkiaRenderer,
         state: &mut GraphicsStateStack,
+        doc: &Document,
+        resources: &Dictionary,
     ) -> Result<(), RenderError> {
         let content = Content::decode(content_bytes)
             .map_err(|e| RenderError::ParseError(format!("Content decode: {}", e)))?;
@@ -136,7 +138,9 @@ impl Interpreter {
                 // Clipping, text, XObjects -- skip for now
                 "W" | "W*" => {}
                 "BT" | "ET" | "Tf" | "Td" | "TD" | "Tm" | "Tj" | "TJ" | "T*" | "'" | "\"" | "Tc" | "Tw" | "Tz" | "TL" | "Ts" | "Tr" => {}
-                "Do" => {}
+                "Do" => {
+                    Self::handle_do_execute(&op.operands, renderer, state, doc, resources);
+                }
                 "gs" | "ri" | "i" => {}
                 _ => {}
             }
@@ -144,10 +148,67 @@ impl Interpreter {
         Ok(())
     }
 
+    fn handle_do_execute(
+        operands: &[Object],
+        renderer: &mut SkiaRenderer,
+        state: &mut GraphicsStateStack,
+        doc: &Document,
+        resources: &Dictionary,
+    ) {
+        let name = match operands.first() {
+            Some(Object::Name(n)) => n,
+            _ => return,
+        };
+        let xobj_dict = match resources.get(b"XObject").and_then(|o| Self::resolve_dict(o, doc)) {
+            Ok(d) => d,
+            _ => return,
+        };
+        let obj_ref = match xobj_dict.get(name.as_slice()) {
+            Ok(o) => o,
+            _ => return,
+        };
+        let resolved_id = match obj_ref {
+            Object::Reference(id) => *id,
+            _ => return,
+        };
+        let obj = match doc.get_object(resolved_id) {
+            Ok(o) => o,
+            _ => return,
+        };
+        let stream = match obj {
+            Object::Stream(ref s) => s,
+            _ => return,
+        };
+        let subtype = stream.dict.get(b"Subtype").ok().and_then(|s| s.as_name().ok());
+        if subtype != Some(b"Form" as &[u8]) {
+            return;
+        }
+        state.save();
+        if let Ok(matrix) = stream.dict.get(b"Matrix") {
+            if let Ok(arr) = matrix.as_array() {
+                if arr.len() >= 6 {
+                    state.concat_matrix(
+                        Self::f(&arr[0]), Self::f(&arr[1]),
+                        Self::f(&arr[2]), Self::f(&arr[3]),
+                        Self::f(&arr[4]), Self::f(&arr[5]),
+                    );
+                }
+            }
+        }
+        let form_resources = Self::extract_form_resources(&stream.dict, doc);
+        let res = form_resources.as_ref().unwrap_or(resources);
+        if let Ok(content_bytes) = stream.decompressed_content() {
+            let _ = Self::execute(&content_bytes, renderer, state, doc, res);
+        }
+        state.restore();
+    }
+
     pub fn extract_commands(
         content_bytes: &[u8],
         buf: &mut DrawCommandBuffer,
         state: &mut GraphicsStateStack,
+        doc: &Document,
+        resources: &Dictionary,
     ) -> Result<(), RenderError> {
         let content = Content::decode(content_bytes)
             .map_err(|e| RenderError::ParseError(format!("Content decode: {}", e)))?;
@@ -612,7 +673,9 @@ impl Interpreter {
                     }
                 }
                 "Tc" | "Tw" | "Tz" | "Ts" | "Tr" => {}
-                "Do" => {}
+                "Do" => {
+                    Self::handle_do_extract(&op.operands, buf, state, doc, resources);
+                }
                 "gs" | "ri" | "i" => {}
                 _ => {}
             }
@@ -644,6 +707,88 @@ impl Interpreter {
             Object::Integer(i) => *i as i32,
             Object::Real(r) => *r as i32,
             _ => 0,
+        }
+    }
+
+    fn handle_do_extract(
+        operands: &[Object],
+        buf: &mut DrawCommandBuffer,
+        state: &mut GraphicsStateStack,
+        doc: &Document,
+        resources: &Dictionary,
+    ) {
+        let name = match operands.first() {
+            Some(Object::Name(n)) => n,
+            _ => return,
+        };
+        let xobj_dict = match resources.get(b"XObject").and_then(|o| Self::resolve_dict(o, doc)) {
+            Ok(d) => d,
+            _ => return,
+        };
+        let obj_ref = match xobj_dict.get(name.as_slice()) {
+            Ok(o) => o,
+            _ => return,
+        };
+        let resolved_id = match obj_ref {
+            Object::Reference(id) => *id,
+            _ => return,
+        };
+        let obj = match doc.get_object(resolved_id) {
+            Ok(o) => o,
+            _ => return,
+        };
+        let stream = match obj {
+            Object::Stream(ref s) => s,
+            _ => return,
+        };
+        let subtype = stream.dict.get(b"Subtype").ok().and_then(|s| s.as_name().ok());
+        if subtype != Some(b"Form" as &[u8]) {
+            return;
+        }
+        buf.save_state();
+        state.save();
+        if let Ok(matrix) = stream.dict.get(b"Matrix") {
+            if let Ok(arr) = matrix.as_array() {
+                if arr.len() >= 6 {
+                    let a = Self::f(&arr[0]);
+                    let b_val = Self::f(&arr[1]);
+                    let c = Self::f(&arr[2]);
+                    let d = Self::f(&arr[3]);
+                    let e = Self::f(&arr[4]);
+                    let f = Self::f(&arr[5]);
+                    buf.transform(a, b_val, c, d, e, f);
+                    state.concat_matrix(a, b_val, c, d, e, f);
+                }
+            }
+        }
+        let form_resources = Self::extract_form_resources(&stream.dict, doc);
+        let res = form_resources.as_ref().unwrap_or(resources);
+        if let Ok(content_bytes) = stream.decompressed_content() {
+            let _ = Self::extract_commands(&content_bytes, buf, state, doc, res);
+        }
+        state.restore();
+        buf.restore_state();
+    }
+
+    fn resolve_dict<'a>(obj: &'a Object, doc: &'a Document) -> Result<&'a Dictionary, lopdf::Error> {
+        match obj {
+            Object::Dictionary(d) => Ok(d),
+            Object::Reference(id) => {
+                let resolved = doc.get_object(*id)?;
+                resolved.as_dict()
+            }
+            _ => Err(lopdf::Error::Type),
+        }
+    }
+
+    fn extract_form_resources(dict: &Dictionary, doc: &Document) -> Option<Dictionary> {
+        let res_obj = dict.get(b"Resources").ok()?;
+        match res_obj {
+            Object::Reference(rid) => {
+                doc.get_object(*rid).ok().and_then(|o| o.as_dict().ok().cloned())
+            }
+            Object::Dictionary(d) => Some(d.clone()),
+            _ => None,
         }
     }
 }

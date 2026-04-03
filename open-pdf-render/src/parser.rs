@@ -38,7 +38,8 @@ impl DocumentHandle {
         state.current.ctm = tiny_skia::Transform::from_row(scale, 0.0, 0.0, -scale, 0.0, h_pt * scale);
 
         let content_bytes = self.get_content_stream(page_id)?;
-        crate::interpreter::Interpreter::execute(&content_bytes, &mut renderer, &mut state)?;
+        let resources = self.get_page_resources(page_id)?;
+        crate::interpreter::Interpreter::execute(&content_bytes, &mut renderer, &mut state, &self.doc, &resources)?;
 
         Ok(RenderedPage { width, height, rgba: renderer.into_rgba() })
     }
@@ -76,6 +77,30 @@ impl DocumentHandle {
     fn extract_media_box(&self, page_id: ObjectId) -> Result<(f32, f32), RenderError> {
         let (_, _, w, h) = self.extract_media_box_full(page_id)?;
         Ok((w, h))
+    }
+
+    fn get_page_resources(&self, page_id: ObjectId) -> Result<lopdf::Dictionary, RenderError> {
+        let page_obj = self.doc.get_object(page_id)
+            .map_err(|e| RenderError::ParseError(format!("{}", e)))?;
+        let dict = page_obj.as_dict()
+            .map_err(|_| RenderError::ParseError("Page is not a dict".into()))?;
+
+        match dict.get(b"Resources") {
+            Ok(res) => {
+                match res {
+                    lopdf::Object::Dictionary(d) => Ok(d.clone()),
+                    lopdf::Object::Reference(id) => {
+                        let resolved = self.doc.get_object(*id)
+                            .map_err(|e| RenderError::ParseError(format!("{}", e)))?;
+                        resolved.as_dict()
+                            .map(|d| d.clone())
+                            .map_err(|_| RenderError::ParseError("Resources is not a dict".into()))
+                    }
+                    _ => Ok(lopdf::Dictionary::new()),
+                }
+            }
+            Err(_) => Ok(lopdf::Dictionary::new()),
+        }
     }
 
     fn get_content_stream(&self, page_id: ObjectId) -> Result<Vec<u8>, RenderError> {
@@ -168,7 +193,8 @@ impl DocumentHandle {
 
         let mut state = crate::graphics_state::GraphicsStateStack::new();
         let mut cmds = crate::draw_commands::DrawCommandBuffer::new();
-        crate::interpreter::Interpreter::extract_commands(&content_bytes, &mut cmds, &mut state)?;
+        let resources = self.get_page_resources(page_id)?;
+        crate::interpreter::Interpreter::extract_commands(&content_bytes, &mut cmds, &mut state, &self.doc, &resources)?;
 
         // Prepend 16-byte header: x0, y0, width, height (all f32 LE)
         let cmd_bytes = cmds.into_bytes();
