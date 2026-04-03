@@ -111,6 +111,8 @@ export async function prepareImages(filePath, pageNum) {
         break;
       }
       case 17: break;           // BeginPath
+      case 20: break;           // Clip
+      case 21: break;           // ClipEvenOdd
       case 18: {                // TextAt
         pos += 16; // x + y + fontSize + rgba
         const len = bytes[pos++];
@@ -314,6 +316,12 @@ export function renderVectorPage(ctx, filePath, pageNum, transform) {
         ctx.restore();
         break;
       }
+      case 20: // Clip (nonzero winding)
+        ctx.clip('nonzero');
+        break;
+      case 21: // ClipEvenOdd
+        ctx.clip('evenodd');
+        break;
       case 19: { // DrawImage(w, h, dataLen, imageBytes)
         const imgPos = pos - 1; // cache key = opcode position
         const imgW = dv.getUint16(pos, true); pos += 2;

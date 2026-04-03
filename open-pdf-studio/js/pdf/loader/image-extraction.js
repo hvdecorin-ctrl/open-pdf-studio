@@ -9,12 +9,17 @@ export async function extractStampImagesViaPdfJs(page, viewport, stampAnnots) {
   if (stampAnnots.length === 0) return imageMap;
 
   try {
-    const hiResScale = 3;
+    // Render at 2x for quality. CRITICAL: the canvas pixel dimensions must
+    // exactly match the viewport dimensions — do NOT apply additional DPR scaling,
+    // otherwise crop coordinates will be wrong (causing tiled/repeated images).
+    const hiResScale = 2;
     const hiResViewport = page.getViewport({ scale: hiResScale });
 
+    // Canvas pixel size must EXACTLY match viewport dimensions.
+    // Do NOT apply DPR scaling — it causes crop coordinate mismatch (tiled images).
     const tempCanvas = document.createElement('canvas');
-    tempCanvas.width = hiResViewport.width;
-    tempCanvas.height = hiResViewport.height;
+    tempCanvas.width = Math.floor(hiResViewport.width);
+    tempCanvas.height = Math.floor(hiResViewport.height);
 
     await page.render({
       canvasContext: tempCanvas.getContext('2d'),

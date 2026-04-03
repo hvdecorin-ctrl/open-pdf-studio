@@ -15,9 +15,9 @@ const READONLY_ALLOWED_TOOLS = new Set(['select', 'selectComments', 'hand']);
 export function getCursorForTool(tool = state.currentTool) {
   switch (tool) {
     case 'select':
-      return 'text';  // Text selection cursor (I-beam)
+      return 'default';  // Arrow cursor for annotation selection
     case 'selectComments':
-      return 'default';
+      return 'text';     // I-beam cursor for text selection
     case 'hand':
       return 'grab';
     case 'text':
@@ -105,13 +105,12 @@ export function setTool(tool) {
     hideProperties();
   }
 
-  // Enable text selection only for select tool
-  // (editText tool manages its own pointer-events via enableTextLayerHover)
+  // Text selection: only for selectComments tool (select = annotation selection, not text)
   if (tool !== 'editText') {
-    setTextSelectionEnabled(tool === 'select');
+    setTextSelectionEnabled(tool === 'selectComments');
   }
 
-  // Set cursor based on tool (UI active state is handled reactively by Solid.js toolStore)
+  // Set cursor based on tool
   setAllCanvasCursors(getCursorForTool(tool));
 
   // Activate edit text tool layer management
@@ -119,8 +118,10 @@ export function setTool(tool) {
     import('./text-edit-tool.js').then(m => m.activateEditTextTool());
   }
 
-  // Drop annotation canvas below text layer for tools that need text access
-  setAnnotationCanvasForTextAccess(tool === 'select' || tool === 'editText');
+  // Drop annotation canvas below text layer ONLY for text-related tools
+  // select = annotation selection (canvas ABOVE text layer)
+  // selectComments/editText = text access (canvas BELOW text layer)
+  setAnnotationCanvasForTextAccess(tool === 'selectComments' || tool === 'editText');
 
   // Update status bar
   updateStatusTool();
@@ -136,5 +137,5 @@ export function updatePdfAToolState() {
 
 // Reset to hand tool whenever a PDF is loaded (avoids circular dependency with loader.js)
 document.addEventListener('pdf-loaded', () => {
-  setTool('hand');
+  setTool('select');
 });

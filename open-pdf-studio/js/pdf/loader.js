@@ -465,10 +465,19 @@ async function loadAnnotationsForSinglePage(doc, pageNum, waitForColors = false)
     pdfLibDoc = await getSharedPdfLibDoc(doc);
   }
 
-  if (stampAnnots.length > 0 && pdfLibDoc) {
-    // Extract images directly from AP stream XObjects via pdf-lib
-    // (avoids rendering whole page with annotationMode:1 which bakes other annotations into stamp images)
-    stampImageMap = await extractStampImages(pageNum, pdfLibDoc);
+  if (stampAnnots.length > 0) {
+    // Use PDF.js render+crop method: renders the page with annotations and crops each stamp region.
+    // This correctly handles appearance streams with complex content (tiling, patterns, transforms).
+    try {
+      const pdfPage = await doc.pdfDoc.getPage(pageNum);
+      const extractViewport = pdfPage.getViewport({ scale: 1 });
+      stampImageMap = await extractStampImagesViaPdfJs(pdfPage, extractViewport, stampAnnots);
+    } catch (e) {
+      console.warn('[loader] PDF.js stamp extraction failed, trying pdf-lib fallback:', e);
+      if (pdfLibDoc) {
+        stampImageMap = null; // pdf-lib extraction disabled — use PDF.js render+crop instead
+      }
+    }
   }
 
   if (needsExtraData) {
@@ -559,8 +568,12 @@ export async function loadExistingAnnotations(doc) {
       const pdfLibDoc = await getSharedPdfLibDoc(doc);
       if (loadId !== doc._annotationLoadId || !state.documents.includes(doc)) return;
 
-      if (stampAnnots.length > 0 && pdfLibDoc) {
-        stampImageMap = await extractStampImages(pageNum, pdfLibDoc);
+      if (stampAnnots.length > 0) {
+        try {
+          stampImageMap = await extractStampImagesViaPdfJs(pages[i], viewport, stampAnnots);
+        } catch (e) {
+          if (pdfLibDoc) stampImageMap = null; // pdf-lib extraction disabled — use PDF.js render+crop instead
+        }
         if (loadId !== doc._annotationLoadId || !state.documents.includes(doc)) return;
       }
 
@@ -603,8 +616,12 @@ export async function loadExistingAnnotations(doc) {
         let stampImageMap = null;
         let annotColorMap = null;
 
-        if (stampAnnots.length > 0 && pdfLibDoc) {
-          stampImageMap = await extractStampImages(pageNum, pdfLibDoc);
+        if (stampAnnots.length > 0) {
+          try {
+            stampImageMap = await extractStampImagesViaPdfJs(page, viewport, stampAnnots);
+          } catch (e) {
+            console.warn('[loader] stamp extraction failed:', e);
+          }
         }
         if (needsExtraData) {
           annotColorMap = await extractAnnotationColors(pageNum, pdfLibDoc);

@@ -212,9 +212,16 @@ export function findAnnotationAt(x, y) {
       case 'image':
       case 'stamp':
       case 'signature':
-      case 'redaction':
+      case 'redaction': {
+        // Images/stamps/signatures: selectable ANYWHERE inside the bounding box
+        const imgCenter = { x: ann.x + ann.width / 2, y: ann.y + ann.height / 2 };
+        const imgLocal = transformPointByInverseRotation(x, y, imgCenter.x, imgCenter.y, ann.rotation);
+        if (imgLocal.x >= ann.x && imgLocal.x <= ann.x + ann.width &&
+            imgLocal.y >= ann.y && imgLocal.y <= ann.y + ann.height) return ann;
+        break;
+      }
       case 'viewport': {
-        // Viewport: hit test on boundary edges and name label
+        // Viewport: hit test on boundary edges and name label only
         const edgeTol = 6;
         const nearLeft = Math.abs(x - ann.x) < edgeTol && y >= ann.y - edgeTol && y <= ann.y + ann.height + edgeTol;
         const nearRight = Math.abs(x - (ann.x + ann.width)) < edgeTol && y >= ann.y - edgeTol && y <= ann.y + ann.height + edgeTol;

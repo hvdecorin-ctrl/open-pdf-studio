@@ -138,7 +138,7 @@ export const imageCache = new Map<string, HTMLImageElement>();
 export const state = createMutable<AppState>({
   documents: [],
   activeDocumentIndex: -1,
-  currentTool: 'hand',
+  currentTool: 'select',
   toolOverrides: null,
   imageCache: imageCache,  // legacy reference — use standalone `imageCache` export
   modalDialogOpen: false,

@@ -567,8 +567,13 @@ impl Interpreter {
                 "n" => {
                     has_active_path = false;
                 }
-                // Clipping
-                "W" | "W*" => {}
+                // Clipping — apply current path as clipping region
+                "W" => {
+                    buf.clip();
+                }
+                "W*" => {
+                    buf.clip_even_odd();
+                }
                 // Text operators
                 "BT" => {
                     text_state.begin_text();

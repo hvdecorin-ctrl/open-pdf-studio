@@ -157,6 +157,16 @@ impl DrawCommandBuffer {
         self.data.extend_from_slice(&bytes[..len]);
     }
 
+    // Command 20: Clip — apply current path as clipping region (nonzero winding)
+    pub fn clip(&mut self) {
+        self.data.push(20);
+    }
+
+    // Command 21: ClipEvenOdd — apply current path as clipping region (even-odd)
+    pub fn clip_even_odd(&mut self) {
+        self.data.push(21);
+    }
+
     // Command 19: DrawImage(w, h, dataLen, imageBytes)
     // Draws an image at the current transform position.
     // The image is placed in a 1×1 unit square (PDF image space), so the caller

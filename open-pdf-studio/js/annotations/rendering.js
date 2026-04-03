@@ -481,9 +481,10 @@ export function drawAnnotation(ctx, annotation) {
         ctx.setLineDash([]);
       }
 
-      // Clip text to textbox bounds
+      // Allow text to overflow slightly beyond textbox bounds
+      // (other PDF viewers show overflow text; hard clipping hides words at edges)
       ctx.beginPath();
-      ctx.rect(annotation.x, annotation.y, tbWidth, tbHeight);
+      ctx.rect(annotation.x - 2, annotation.y - 2, tbWidth + 4, tbHeight + 4);
       ctx.clip();
 
       // Draw text content
@@ -1269,7 +1270,10 @@ export function redrawAnnotations(lightweight = false) {
       const aw = annotation.width || 0, ah = annotation.height || 0;
       if (ax + aw < vpX || ax > vpX + vpW || ay + ah < vpY || ay > vpY + vpH) return;
     }
+    // Wrap each annotation in save/restore to prevent clip leaks between annotations
+    annotationCtx.save();
     drawAnnotation(annotationCtx, annotation);
+    annotationCtx.restore();
   });
 
   annotationCtx.globalAlpha = 1;

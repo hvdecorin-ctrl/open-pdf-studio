@@ -70,14 +70,14 @@ export default function OpenPanel() {
     closeAppMenu();
     if (isTauri()) {
       try {
+        // Grant FS scope FIRST — fileExists needs it to access the path
+        await window.__TAURI__.core.invoke('allow_fs_scope', { path: file.path });
         const exists = await fileExists(file.path);
         if (!exists) {
           removeRecentFile(file.path);
           refreshFiles();
           return;
         }
-        // Grant FS scope access for the file path (required for Rust backend to read it)
-        await window.__TAURI__.core.invoke('allow_fs_scope', { path: file.path });
       } catch (e) {
         // If we can't check, try opening anyway
       }
