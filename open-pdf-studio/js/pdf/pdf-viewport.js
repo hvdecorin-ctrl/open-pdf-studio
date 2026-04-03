@@ -13,6 +13,8 @@ if (!window.__pdfViewport) {
     offsetY: 0,
     pageW: 0,
     pageH: 0,
+    originX: 0,      // MediaBox x0 (can be negative)
+    originY: 0,      // MediaBox y0 (can be negative)
     filePath: null,
     pageNum: 1,
     dirty: true,
@@ -92,15 +94,13 @@ function _render() {
   _ctx.fillStyle = '#e0e0e0';
   _ctx.fillRect(0, 0, vpW, vpH);
 
-  // Vector draw commands — renderVectorPage sets its own transform internally
-  // White page background is drawn FIRST using the SAME transform as the vectors
+  // White page background — SAME transform as vector commands
   _ctx.save();
-  // Set the exact transform that renderVectorPage will use
   _ctx.setTransform(viewport.zoom, 0, 0, viewport.zoom, viewport.offsetX, viewport.offsetY);
   _ctx.transform(1, 0, 0, -1, 0, viewport.pageH);
-  // White page background (must be BEFORE vector commands, SAME coordinate space)
+  _ctx.translate(-viewport.originX, -viewport.originY); // MediaBox origin offset
   _ctx.fillStyle = '#ffffff';
-  _ctx.fillRect(0, 0, viewport.pageW, viewport.pageH);
+  _ctx.fillRect(viewport.originX, viewport.originY, viewport.pageW, viewport.pageH);
   _ctx.restore();
 
   // Now draw the vectors (renderVectorPage does setTransform+transform internally)
@@ -126,11 +126,13 @@ function _render() {
 
 // ─── Load Page ──────────────────────────────────────────────────────────────
 
-export function setPage(filePath, pageNum, pageW, pageH) {
+export function setPage(filePath, pageNum, pageW, pageH, originX, originY) {
   viewport.filePath = filePath;
   viewport.pageNum = pageNum;
   viewport.pageW = pageW;
   viewport.pageH = pageH;
+  viewport.originX = originX || 0;
+  viewport.originY = originY || 0;
   viewport.active = true;
   fitToViewport();
 }

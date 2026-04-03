@@ -38,11 +38,14 @@ export function clearVectorCache() {
 
 export function cacheCommands(filePath, pageNum, rawBytes) {
   const bytes = rawBytes instanceof Uint8Array ? rawBytes : new Uint8Array(rawBytes);
-  if (bytes.length < 8) return;
+  if (bytes.length < 16) return;
   const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-  const w = dv.getFloat32(0, true);
-  const h = dv.getFloat32(4, true);
-  _cache.set(_key(filePath, pageNum), { bytes, w, h });
+  // 16-byte header: x0, y0, width, height (all f32 LE)
+  const x0 = dv.getFloat32(0, true);
+  const y0 = dv.getFloat32(4, true);
+  const w = dv.getFloat32(8, true);
+  const h = dv.getFloat32(12, true);
+  _cache.set(_key(filePath, pageNum), { bytes, x0, y0, w, h });
 }
 
 export function hasCachedCommands(filePath, pageNum) {
@@ -52,7 +55,7 @@ export function hasCachedCommands(filePath, pageNum) {
 export function getCachedPageDimensions(filePath, pageNum) {
   const entry = _cache.get(_key(filePath, pageNum));
   if (!entry) return null;
-  return { w: entry.w, h: entry.h };
+  return { x0: entry.x0, y0: entry.y0, w: entry.w, h: entry.h };
 }
 
 function _rgbaToCSS(rgba) {
@@ -70,13 +73,15 @@ export function renderVectorPage(ctx, filePath, pageNum, transform) {
   const entry = _cache.get(_key(filePath, pageNum));
   if (!entry) return;
 
-  const { bytes, h: pageH } = entry;
+  const { bytes, x0, y0, h: pageH } = entry;
   const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-  let pos = 8; // skip header
+  let pos = 16; // skip 16-byte header (x0, y0, w, h)
 
-  // Apply caller transform then Y-flip (PDF bottom-left origin -> Canvas top-left)
+  // Apply caller transform, then Y-flip, then translate to MediaBox origin
+  // PDF content is drawn in MediaBox coordinates (which can start at -846, -595 etc.)
   ctx.setTransform(transform.a, transform.b, transform.c, transform.d, transform.e, transform.f);
-  ctx.transform(1, 0, 0, -1, 0, pageH);
+  ctx.transform(1, 0, 0, -1, 0, pageH);   // Y-flip
+  ctx.translate(-x0, -y0);                  // Shift to MediaBox origin
 
   while (pos < bytes.length) {
     const op = bytes[pos++];

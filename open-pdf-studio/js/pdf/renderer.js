@@ -212,7 +212,7 @@ export async function renderPage(pageNum) {
           if (container) container.style.overflow = 'hidden';
 
           // Load page into viewport (triggers fitToViewport + first render)
-          setPage(doc.filePath, pageNum, dims.w, dims.h);
+          setPage(doc.filePath, pageNum, dims.w, dims.h, dims.x0 || 0, dims.y0 || 0);
 
           console.log(`[render] ✅ Vector viewport: ${dims.w}x${dims.h} pt, commands cached`);
           _skipBitmapRender = true;
