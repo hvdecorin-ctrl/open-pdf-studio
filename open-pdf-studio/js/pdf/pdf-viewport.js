@@ -134,6 +134,8 @@ function _render() {
     textLayer.style.transform = `matrix(${viewport.zoom}, 0, 0, ${viewport.zoom}, ${tx}, ${ty})`;
     textLayer.style.transformOrigin = '0 0';
     textLayer.style.pointerEvents = 'none';
+    textLayer.style.opacity = '1';
+    textLayer.style.color = '#000';
   }
 
   // Annotation overlay
