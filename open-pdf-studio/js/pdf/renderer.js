@@ -180,7 +180,9 @@ export async function renderPage(pageNum) {
   const _hasFilePath = !!doc.filePath;
   let _skipBitmapRender = false;
 
-  // Vector mode: instant rendering via Canvas2D command replay
+  // ─── VECTOR VIEWPORT MODE ──────────────────────────────────────────────
+  // Extract draw commands once, then hand off to pdf-viewport.js render loop.
+  // All zoom/pan is handled by the viewport — no re-rendering needed here.
   if (_canUseTauri && _hasFilePath) {
     try {
       const vr = await import('./vector-renderer.js');
@@ -194,44 +196,27 @@ export async function renderPage(pageNum) {
       }
 
       if (vr.hasCachedCommands(doc.filePath, pageNum)) {
-        const t0v = performance.now();
         const dims = vr.getCachedPageDimensions(doc.filePath, pageNum);
+        if (dims) {
+          const { initViewport, setPage, wireEvents, viewport: pdfVP } = await import('./pdf-viewport.js');
 
-        // FIXED CANVAS SIZE = viewport dimensions (like Open2D Studio)
-        // Canvas NEVER resizes on zoom — only the transform matrix changes.
-        // This makes zoom/pan O(1) regardless of zoom level.
-        const scrollContainer = document.getElementById('pdf-container');
-        const vpW = scrollContainer ? scrollContainer.clientWidth : 1280;
-        const vpH = scrollContainer ? scrollContainer.clientHeight : 800;
+          // Initialize viewport once (fixed canvas, RAF loop)
+          if (!pdfVP.active) {
+            initViewport(pdfCanvas, () => {
+              import('../annotations/rendering.js').then(m => m.redrawAnnotations());
+            });
+            wireEvents(pdfCanvas);
+            // Hide scroll — viewport handles zoom/pan internally
+            const container = document.getElementById('pdf-container');
+            if (container) container.style.overflow = 'hidden';
+          }
 
-        // Only resize canvas if viewport changed (window resize), not on zoom
-        if (pdfCanvas.width !== vpW || pdfCanvas.height !== vpH) {
-          pdfCanvas.width = vpW;
-          pdfCanvas.height = vpH;
+          // Load page into viewport (triggers fitToViewport + first render)
+          setPage(doc.filePath, pageNum, dims.w, dims.h);
+
+          console.log(`[render] ✅ Vector viewport: ${dims.w}x${dims.h} pt, commands cached`);
+          _skipBitmapRender = true;
         }
-        // CSS size = scaled page size (for scroll area calculation)
-        pdfCanvas.style.width = Math.ceil(dims.w * scale) + 'px';
-        pdfCanvas.style.height = Math.ceil(dims.h * scale) + 'px';
-
-        const ctx = pdfCanvas.getContext('2d');
-        ctx.clearRect(0, 0, vpW, vpH);
-        ctx.fillStyle = '#ffffff';
-        ctx.fillRect(0, 0, vpW, vpH);
-
-        // Calculate scroll offset for viewport clipping
-        const scrollX = scrollContainer ? scrollContainer.scrollLeft : 0;
-        const scrollY = scrollContainer ? scrollContainer.scrollTop : 0;
-
-        // Transform: scale + translate to show the correct viewport portion
-        const transform = { a: scale, b: 0, c: 0, d: scale, e: -scrollX, f: -scrollY };
-        vr.renderVectorPage(ctx, doc.filePath, pageNum, transform);
-
-        const elapsed = Math.round(performance.now() - t0v);
-        state.renderEngine = 'Vector';
-        state.renderTiming = elapsed + 'ms';
-        console.log(`[render] ✅ Vector: viewport ${vpW}x${vpH}, scale=${scale}, ${elapsed}ms`);
-
-        _skipBitmapRender = true;
       }
     } catch (e) {
       console.warn('[render] Vector mode failed:', e);

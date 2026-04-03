@@ -1,231 +1,64 @@
 import { state, getActiveDocument } from '../../core/state.js';
-import { annotationCanvas } from '../dom-elements.js';
-import { renderPage, renderPageOffscreen, renderContinuous, goToPage } from '../../pdf/renderer.js';
-import { showLoading, hideLoading } from '../chrome/dialogs.js';
-import { clearHighlights } from '../../search/find-bar.js';
+import { goToPage } from '../../pdf/renderer.js';
+import { viewport, zoomAtPoint } from '../../pdf/pdf-viewport.js';
 import { getTool } from '../../tools/tool-registry.js';
 
-// Cached vector renderer module (loaded once, avoids dynamic import per zoom event)
-let _vectorRenderer = null;
-import('../../pdf/vector-renderer.js').then(m => { _vectorRenderer = m; }).catch(() => {});
+// ─── Wheel Zoom & Page Navigation ──────────────────────────────────────────
+// ONE zoom strategy: delegate to pdf-viewport.js transform-based zoom.
+// No CSS-scale, no debounce, no canvas resize. Just data update → dirty flag.
 
-// Setup wheel zoom
-let _zoomRenderTimer = null;
-let _zoomBaseScale = null; // scale at which the canvas was last truly rendered
-let _pageNavCooldown = false; // prevent rapid page flipping from wheel events
+let _pageNavCooldown = false;
 
 export function setupWheelZoom() {
   document.querySelector('.main-view')?.addEventListener('wheel', async (e) => {
     const activeDoc = getActiveDocument();
     if (!activeDoc?.pdfDoc) return;
 
-    // Delegate wheel to active tool first (e.g. arc bulge adjustment)
+    // Delegate to active tool first (e.g. arc bulge adjustment)
     const _wheelTool = getTool(state.currentTool);
     if (_wheelTool && _wheelTool.onWheel) {
       const _wheelCtx = { state, redraw: () => {
-        if (getActiveDocument()?.viewMode === 'continuous') renderContinuous();
-        // For single-page mode a lightweight redraw suffices but we import
-        // the annotation renderer lazily to avoid circular deps
-        else import('../../annotations/rendering.js').then(m => m.redrawAnnotations());
+        viewport.dirty = true;
       }};
       _wheelTool.onWheel(_wheelCtx, e);
       if (e.defaultPrevented) return;
     }
 
-    // Check if Ctrl key is pressed for zoom functionality
+    // Ctrl+wheel = zoom
     if (e.ctrlKey || e.metaKey) {
       e.preventDefault();
-
-      const doc = state.documents[state.activeDocumentIndex];
-      if (!doc) return;
-
-      const minZoom = 0.25;
-      const maxZoom = 5.0; // Capped to prevent canvas OOM (A3 at 5x = ~140MB)
-      const oldScale = doc.scale;
-
-      // Multiplicative zoom: smooth at all levels, works with trackpad pinch too
-      // Mouse wheel deltaY is ~+-100 per tick, trackpad gives smaller values
-      const factor = Math.pow(0.999, e.deltaY);
-      doc.scale = Math.min(Math.max(doc.scale * factor, minZoom), maxZoom);
-
-      // Round to avoid floating point noise (e.g. 0.9999999 -> 1.0)
-      doc.scale = Math.round(doc.scale * 1000) / 1000;
-
-      if (doc.scale === oldScale) return;
-
-      const scrollContainer = document.getElementById('pdf-container');
-      if (!scrollContainer) return;
-
-      const isContinuous = doc.viewMode === 'continuous';
-      const canvas = isContinuous
-        ? document.querySelector('#continuous-container .annotation-canvas')
-        : annotationCanvas;
-      if (!canvas) return;
-
-      // Record the scale at which the canvas was actually rendered
-      if (_zoomBaseScale === null) _zoomBaseScale = oldScale;
-
-      // Anchor zoom to mouse cursor
-      const canvasRect = canvas.getBoundingClientRect();
-      const mouseOnCanvasX = e.clientX - canvasRect.left;
-      const mouseOnCanvasY = e.clientY - canvasRect.top;
-      const docX = mouseOnCanvasX / oldScale;
-      const docY = mouseOnCanvasY / oldScale;
-
-      // Clear search highlights immediately so they don't appear at wrong
-      // positions while the canvas is CSS-scaled. They are recreated after
-      // the full render via onPageRendered().
-      clearHighlights();
-
-      // Scale canvases via CSS width/height for instant flicker-free feedback.
-      // Unlike CSS transform, this updates layout (centering, scroll area)
-      // without clearing the canvas pixel buffer.
-      // c.width is physical pixels (= CSS width × DPR), so divide by DPR to get CSS base.
-      const cssScale = doc.scale / _zoomBaseScale;
-      const _dpr = window.devicePixelRatio || 1;
-      const canvasSelector = isContinuous
-        ? '#continuous-container canvas'
-        : '#canvas-container canvas';
-      document.querySelectorAll(canvasSelector).forEach(c => {
-        c.style.width = Math.round(c.width / _dpr * cssScale) + 'px';
-        c.style.height = Math.round(c.height / _dpr * cssScale) + 'px';
-      });
-
-      // Scroll so that the document point stays under the mouse cursor
-      const newCanvasRect = canvas.getBoundingClientRect();
-      const newPointViewportX = newCanvasRect.left + docX * doc.scale;
-      const newPointViewportY = newCanvasRect.top + docY * doc.scale;
-      scrollContainer.scrollLeft += newPointViewportX - e.clientX;
-      scrollContainer.scrollTop += newPointViewportY - e.clientY;
-
-      // Vector mode: use CSS scale for instant feedback, debounced vector redraw
-      // CSS scale is 0ms — no canvas resize, no redraw, just CSS transform
-      // After 150ms idle: do the actual vector redraw (crisp, <20ms)
-      if (!isContinuous && _vectorRenderer && _vectorRenderer.hasCachedCommands(doc.filePath, doc.currentPage)) {
-        // CSS-scale is already applied above — just debounce the vector redraw
-        if (_zoomRenderTimer) clearTimeout(_zoomRenderTimer);
-        _zoomRenderTimer = setTimeout(() => {
-          _zoomRenderTimer = null;
-          _zoomBaseScale = null;
-
-          const pdfCanvas = document.getElementById('pdf-canvas');
-          if (!pdfCanvas) return;
-          const dims = _vectorRenderer.getCachedPageDimensions(doc.filePath, doc.currentPage);
-          if (!dims) return;
-
-          // Fixed viewport canvas — NO resize on zoom (like Open2D Studio)
-          const scrollCont = document.getElementById('pdf-container');
-          const vpW = scrollCont ? scrollCont.clientWidth : 1280;
-          const vpH = scrollCont ? scrollCont.clientHeight : 800;
-          if (pdfCanvas.width !== vpW || pdfCanvas.height !== vpH) {
-            pdfCanvas.width = vpW;
-            pdfCanvas.height = vpH;
-          }
-          pdfCanvas.style.width = Math.ceil(dims.w * doc.scale) + 'px';
-          pdfCanvas.style.height = Math.ceil(dims.h * doc.scale) + 'px';
-          const scrollX = scrollCont ? scrollCont.scrollLeft : 0;
-          const scrollY = scrollCont ? scrollCont.scrollTop : 0;
-          const ctx = pdfCanvas.getContext('2d');
-          ctx.clearRect(0, 0, vpW, vpH);
-          ctx.fillStyle = '#ffffff';
-          ctx.fillRect(0, 0, vpW, vpH);
-          _vectorRenderer.renderVectorPage(ctx, doc.filePath, doc.currentPage,
-            { a: doc.scale, b: 0, c: 0, d: doc.scale, e: -scrollX, f: -scrollY });
-
-          // Annotation canvas — same viewport size
-          const annCanvas = document.getElementById('annotation-canvas');
-          if (annCanvas) {
-            if (annCanvas.width !== vpW || annCanvas.height !== vpH) {
-              annCanvas.width = vpW;
-              annCanvas.height = vpH;
-            }
-            annCanvas.style.width = pdfCanvas.style.width;
-            annCanvas.style.height = pdfCanvas.style.height;
-          }
-          import('../../annotations/rendering.js').then(m => m.redrawAnnotations());
-        }, 150);
-        return;
-      }
-
-      // Debounce: only re-render after user STOPS zooming (500ms idle).
-      // The CSS-scaled canvas stays visible — no freeze, no flicker.
-      if (_zoomRenderTimer) clearTimeout(_zoomRenderTimer);
-      _zoomRenderTimer = setTimeout(async () => {
-        _zoomRenderTimer = null;
-        _zoomBaseScale = null;
-
-        // Fire-and-forget background render — don't await, don't block UI
-        if (isContinuous) {
-          document.querySelectorAll(canvasSelector).forEach(c => {
-            c.style.width = '';
-            c.style.height = '';
-          });
-          renderContinuous(true).catch(() => {});
-        } else {
-          const curDoc = state.documents[state.activeDocumentIndex];
-          const pageNum = curDoc ? curDoc.currentPage : 1;
-          // Render in background — CSS-scaled version stays visible until done
-          renderPageOffscreen(pageNum).catch(() => {});
-        }
-      }, 500);
-
+      if (!viewport.active) return;
+      const rect = e.target.closest('canvas')?.getBoundingClientRect() || e.target.getBoundingClientRect();
+      const factor = e.deltaY > 0 ? 0.92 : 1.08;
+      zoomAtPoint(e.clientX - rect.left, e.clientY - rect.top, factor);
       return;
     }
 
-    // Page navigation in single page mode (without Ctrl)
-    if (getActiveDocument()?.viewMode !== 'single') return;
+    // Page navigation (without Ctrl) — single page mode only
+    if (activeDoc?.viewMode !== 'single') return;
     if (_pageNavCooldown) return;
 
     const pdfContainer = document.getElementById('pdf-container');
     if (!pdfContainer) return;
-    const scrollTop = pdfContainer.scrollTop;
-    const scrollHeight = pdfContainer.scrollHeight;
-    const clientHeight = pdfContainer.clientHeight;
 
-    // At low zoom the page fits entirely in the viewport — no scrollbar.
-    // Scroll thresholds don't work here, so treat it as always at boundary.
-    const canScroll = scrollHeight > clientHeight + 1;
-    const atBottom = !canScroll || scrollTop + clientHeight >= scrollHeight - 5;
-    const atTop = !canScroll || scrollTop <= 5;
+    const canScroll = pdfContainer.scrollHeight > pdfContainer.clientHeight + 1;
+    const atBottom = !canScroll || pdfContainer.scrollTop + pdfContainer.clientHeight >= pdfContainer.scrollHeight - 5;
+    const atTop = !canScroll || pdfContainer.scrollTop <= 5;
 
-    // Scrolling down at the bottom (or page fits in viewport)
-    if (e.deltaY > 0 && atBottom) {
-      if (activeDoc.currentPage < activeDoc.pdfDoc.numPages) {
-        e.preventDefault();
-        _pageNavCooldown = true;
-        await goToPage(activeDoc.currentPage + 1);
-        pdfContainer.scrollTop = 0;
-        setTimeout(() => { _pageNavCooldown = false; }, 300);
-      }
-    }
-    // Scrolling up at the top (or page fits in viewport)
-    else if (e.deltaY < 0 && atTop) {
-      if (activeDoc.currentPage > 1) {
-        e.preventDefault();
-        _pageNavCooldown = true;
-        await goToPage(activeDoc.currentPage - 1);
-        // Scroll to bottom of previous page only if it needs scrolling
-        if (pdfContainer.scrollHeight > pdfContainer.clientHeight + 1) {
-          pdfContainer.scrollTop = pdfContainer.scrollHeight - pdfContainer.clientHeight;
-        }
-        setTimeout(() => { _pageNavCooldown = false; }, 300);
-      }
+    if (e.deltaY > 0 && atBottom && activeDoc.currentPage < activeDoc.pdfDoc.numPages) {
+      e.preventDefault();
+      _pageNavCooldown = true;
+      await goToPage(activeDoc.currentPage + 1);
+      setTimeout(() => { _pageNavCooldown = false; }, 300);
+    } else if (e.deltaY < 0 && atTop && activeDoc.currentPage > 1) {
+      e.preventDefault();
+      _pageNavCooldown = true;
+      await goToPage(activeDoc.currentPage - 1);
+      setTimeout(() => { _pageNavCooldown = false; }, 300);
     }
   }, { passive: false });
 }
 
-// Cancel any pending zoom render (call when switching documents)
 export function cancelPendingZoom() {
-  if (_zoomRenderTimer) {
-    clearTimeout(_zoomRenderTimer);
-    _zoomRenderTimer = null;
-  }
-  if (_zoomBaseScale !== null) {
-    // Clear CSS inline sizing left by the zoom preview
-    document.querySelectorAll('#canvas-container canvas, #continuous-container canvas').forEach(c => {
-      c.style.width = '';
-      c.style.height = '';
-    });
-    _zoomBaseScale = null;
-  }
+  // No-op — viewport zoom is instant, no pending renders
 }
