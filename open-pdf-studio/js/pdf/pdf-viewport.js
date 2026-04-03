@@ -26,10 +26,13 @@ let _annotationRedraw = null; // callback for annotation overlay
 // ─── Init / Teardown ────────────────────────────────────────────────────────
 
 export function initViewport(canvas, annotationRedrawFn) {
+  // Stop previous loop if re-initializing
+  if (_rafId) cancelAnimationFrame(_rafId);
   _canvas = canvas;
   _ctx = canvas.getContext('2d');
   _annotationRedraw = annotationRedrawFn || null;
   _resizeCanvas();
+  window.removeEventListener('resize', _resizeCanvas);
   window.addEventListener('resize', _resizeCanvas);
   _startLoop();
 }

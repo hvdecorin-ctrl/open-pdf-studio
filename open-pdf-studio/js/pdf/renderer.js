@@ -200,16 +200,16 @@ export async function renderPage(pageNum) {
         if (dims) {
           const { initViewport, setPage, wireEvents, viewport: pdfVP } = await import('./pdf-viewport.js');
 
-          // Initialize viewport once (fixed canvas, RAF loop)
-          if (!pdfVP.active) {
-            initViewport(pdfCanvas, () => {
-              import('../annotations/rendering.js').then(m => m.redrawAnnotations());
-            });
+          // Initialize viewport (idempotent — safe to call multiple times)
+          initViewport(pdfCanvas, () => {
+            import('../annotations/rendering.js').then(m => m.redrawAnnotations());
+          });
+          if (!pdfCanvas._vpEventsWired) {
             wireEvents(pdfCanvas);
-            // Hide scroll — viewport handles zoom/pan internally
-            const container = document.getElementById('pdf-container');
-            if (container) container.style.overflow = 'hidden';
+            pdfCanvas._vpEventsWired = true;
           }
+          const container = document.getElementById('pdf-container');
+          if (container) container.style.overflow = 'hidden';
 
           // Load page into viewport (triggers fitToViewport + first render)
           setPage(doc.filePath, pageNum, dims.w, dims.h);
