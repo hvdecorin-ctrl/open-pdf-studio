@@ -135,7 +135,16 @@ function _render() {
     textLayer.style.transformOrigin = '0 0';
     textLayer.style.pointerEvents = 'none';
     textLayer.style.opacity = '1';
-    textLayer.style.color = '#000';
+    // PDF.js text layer uses transparent text for selection overlay.
+    // In vector mode, force all text visible since we don't render text in the vector canvas.
+    if (!textLayer._textMadeVisible) {
+      textLayer._textMadeVisible = true;
+      const style = document.createElement('style');
+      style.textContent = `.textLayer span { color: #000 !important; }
+        .textLayer { opacity: 1 !important; }
+        .textLayer ::selection { background: rgba(0, 0, 255, 0.3); }`;
+      textLayer.prepend(style);
+    }
   }
 
   // Annotation overlay
