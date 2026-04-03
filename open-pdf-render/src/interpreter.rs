@@ -600,22 +600,23 @@ impl Interpreter {
                         if !bytes.is_empty() {
                             let (r, g, b, a) = state.current.fill_color;
                             let rgba = Self::color_to_u32(r, g, b, a);
-                            let effective_size = text_state.font_size
-                                * text_state.tm[0].abs().max(text_state.tm[3].abs()).max(1.0);
                             if let Some(font_entry) = font_registry.get_font(
                                 &text_state.current_font_name, doc, resources,
                             ) {
                                 let advance = crate::text_renderer::render_text_glyphs(
                                     bytes,
                                     font_entry,
-                                    effective_size,
-                                    text_state.effective_x(),
-                                    text_state.effective_y(),
+                                    text_state.font_size,
+                                    &text_state.tm,
+                                    text_state.tx,
+                                    text_state.ty,
                                     rgba,
                                     buf,
                                 );
                                 text_state.tx += advance;
                             } else {
+                                let effective_size = text_state.font_size
+                                    * text_state.tm[0].abs().max(text_state.tm[3].abs()).max(1.0);
                                 let decoded = String::from_utf8_lossy(bytes);
                                 buf.text_at(
                                     text_state.effective_x(),
@@ -632,8 +633,6 @@ impl Interpreter {
                     if let Some(Object::Array(arr)) = op.operands.first() {
                         let (r, g, b, a) = state.current.fill_color;
                         let rgba = Self::color_to_u32(r, g, b, a);
-                        let effective_size = text_state.font_size
-                            * text_state.tm[0].abs().max(text_state.tm[3].abs()).max(1.0);
                         let font_entry_opt = font_registry.get_font(
                             &text_state.current_font_name, doc, resources,
                         );
@@ -650,9 +649,10 @@ impl Interpreter {
                                             let advance = crate::text_renderer::render_text_glyphs(
                                                 bytes,
                                                 font_entry,
-                                                effective_size,
-                                                text_state.effective_x(),
-                                                text_state.effective_y(),
+                                                text_state.font_size,
+                                                &text_state.tm,
+                                                text_state.tx,
+                                                text_state.ty,
                                                 rgba,
                                                 buf,
                                             );
@@ -661,12 +661,14 @@ impl Interpreter {
                                     }
                                     Object::Integer(_) | Object::Real(_) => {
                                         let kern = Self::f(item);
-                                        text_state.tx -= kern * effective_size / 1000.0;
+                                        text_state.tx -= kern * text_state.font_size / 1000.0;
                                     }
                                     _ => {}
                                 }
                             }
                         } else {
+                            let effective_size = text_state.font_size
+                                * text_state.tm[0].abs().max(text_state.tm[3].abs()).max(1.0);
                             let mut accumulated = String::new();
                             for item in arr {
                                 match item {
@@ -702,22 +704,23 @@ impl Interpreter {
                         if !bytes.is_empty() {
                             let (r, g, b, a) = state.current.fill_color;
                             let rgba = Self::color_to_u32(r, g, b, a);
-                            let effective_size = text_state.font_size
-                                * text_state.tm[0].abs().max(text_state.tm[3].abs()).max(1.0);
                             if let Some(font_entry) = font_registry.get_font(
                                 &text_state.current_font_name, doc, resources,
                             ) {
                                 let advance = crate::text_renderer::render_text_glyphs(
                                     bytes,
                                     font_entry,
-                                    effective_size,
-                                    text_state.effective_x(),
-                                    text_state.effective_y(),
+                                    text_state.font_size,
+                                    &text_state.tm,
+                                    text_state.tx,
+                                    text_state.ty,
                                     rgba,
                                     buf,
                                 );
                                 text_state.tx += advance;
                             } else {
+                                let effective_size = text_state.font_size
+                                    * text_state.tm[0].abs().max(text_state.tm[3].abs()).max(1.0);
                                 let decoded = String::from_utf8_lossy(bytes);
                                 buf.text_at(
                                     text_state.effective_x(),
@@ -739,22 +742,23 @@ impl Interpreter {
                             if !bytes.is_empty() {
                                 let (r, g, b, a) = state.current.fill_color;
                                 let rgba = Self::color_to_u32(r, g, b, a);
-                                let effective_size = text_state.font_size
-                                    * text_state.tm[0].abs().max(text_state.tm[3].abs()).max(1.0);
                                 if let Some(font_entry) = font_registry.get_font(
                                     &text_state.current_font_name, doc, resources,
                                 ) {
                                     let advance = crate::text_renderer::render_text_glyphs(
                                         bytes,
                                         font_entry,
-                                        effective_size,
-                                        text_state.effective_x(),
-                                        text_state.effective_y(),
+                                        text_state.font_size,
+                                        &text_state.tm,
+                                        text_state.tx,
+                                        text_state.ty,
                                         rgba,
                                         buf,
                                     );
                                     text_state.tx += advance;
                                 } else {
+                                    let effective_size = text_state.font_size
+                                        * text_state.tm[0].abs().max(text_state.tm[3].abs()).max(1.0);
                                     let decoded = String::from_utf8_lossy(bytes);
                                     buf.text_at(
                                         text_state.effective_x(),
