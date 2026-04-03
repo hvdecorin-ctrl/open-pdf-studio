@@ -5,18 +5,21 @@
 import { renderVectorPage } from './vector-renderer.js';
 import { state } from '../core/state.js';
 
-// ─── Viewport State ─────────────────────────────────────────────────────────
-export const viewport = {
-  zoom: 1.5,
-  offsetX: 0,
-  offsetY: 0,
-  pageW: 0,
-  pageH: 0,
-  filePath: null,
-  pageNum: 1,
-  dirty: true,
-  active: false,
-};
+// ─── Viewport State (singleton via window to survive HMR/dynamic imports) ───
+if (!window.__pdfViewport) {
+  window.__pdfViewport = {
+    zoom: 1.5,
+    offsetX: 0,
+    offsetY: 0,
+    pageW: 0,
+    pageH: 0,
+    filePath: null,
+    pageNum: 1,
+    dirty: true,
+    active: false,
+  };
+}
+export const viewport = window.__pdfViewport;
 
 let _canvas = null;
 let _ctx = null;
@@ -198,28 +201,45 @@ export function worldToScreen(wx, wy) {
 // ─── Wire Events (call once after canvas is ready) ──────────────────────────
 
 export function wireEvents(canvas) {
-  // Zoom: Ctrl+wheel
-  canvas.addEventListener('wheel', (e) => {
-    if (!(e.ctrlKey || e.metaKey)) return;
+  // Wire events on the main-view (above tool dispatcher) for reliable capture
+  const mainView = document.querySelector('.main-view') || canvas;
+
+  // Zoom: Ctrl+wheel. Pan: plain wheel (scroll)
+  mainView.addEventListener('wheel', (e) => {
     if (!viewport.active) return;
-    e.preventDefault();
-    const rect = canvas.getBoundingClientRect();
-    const factor = e.deltaY > 0 ? 0.92 : 1.08;
-    zoomAtPoint(e.clientX - rect.left, e.clientY - rect.top, factor);
+    if (e.ctrlKey || e.metaKey) {
+      // ZOOM
+      e.preventDefault();
+      const rect = canvas.getBoundingClientRect();
+      const factor = e.deltaY > 0 ? 0.92 : 1.08;
+      zoomAtPoint(e.clientX - rect.left, e.clientY - rect.top, factor);
+    } else {
+      // PAN via scroll wheel
+      e.preventDefault();
+      viewport.offsetX -= e.deltaX || 0;
+      viewport.offsetY -= e.deltaY || 0;
+      viewport.dirty = true;
+    }
   }, { passive: false });
 
-  // Pan: middle-click drag or hand tool
-  canvas.addEventListener('pointerdown', (e) => {
+  // Pan: middle-click drag, or hand tool left-click drag
+  mainView.addEventListener('pointerdown', (e) => {
     if (!viewport.active) return;
     if (e.button === 1 || (e.button === 0 && state.currentTool === 'hand')) {
       e.preventDefault();
-      startPan(e.offsetX, e.offsetY);
-      canvas.setPointerCapture(e.pointerId);
+      e.stopPropagation();
+      const rect = canvas.getBoundingClientRect();
+      startPan(e.clientX - rect.left, e.clientY - rect.top);
+      mainView.setPointerCapture(e.pointerId);
     }
+  }, { capture: true });
+
+  mainView.addEventListener('pointermove', (e) => {
+    if (!_isPanning) return;
+    const rect = canvas.getBoundingClientRect();
+    updatePan(e.clientX - rect.left, e.clientY - rect.top);
   });
-  canvas.addEventListener('pointermove', (e) => {
-    if (_isPanning) updatePan(e.offsetX, e.offsetY);
-  });
-  canvas.addEventListener('pointerup', () => endPan());
-  canvas.addEventListener('pointercancel', () => endPan());
+
+  mainView.addEventListener('pointerup', () => endPan());
+  mainView.addEventListener('pointercancel', () => endPan());
 }
