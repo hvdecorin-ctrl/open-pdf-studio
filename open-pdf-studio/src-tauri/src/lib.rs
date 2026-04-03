@@ -12,6 +12,9 @@ struct OpenedFiles(Mutex<Vec<String>>);
 // Store locked file handles to prevent other apps from writing
 struct LockedFiles(Mutex<HashMap<String, File>>);
 
+// Cache PDF file bytes to avoid re-reading from disk on every render call
+struct PdfBytesCache(Mutex<HashMap<String, Vec<u8>>>);
+
 #[tauri::command]
 fn get_opened_file(state: tauri::State<OpenedFiles>) -> Vec<String> {
     state.0.lock().unwrap().clone()
@@ -818,32 +821,67 @@ fn allow_fs_scope(app: tauri::AppHandle, path: String) -> Result<bool, String> {
 use open_pdf_render::PdfRenderer;
 
 #[tauri::command]
-fn render_pdf_page(path: String, page_index: u32, scale: f32) -> Result<String, String> {
-    let bytes = fs::read(&path).map_err(|e| format!("Read: {}", e))?;
+fn render_pdf_page(path: String, page_index: u32, scale: f32, cache: tauri::State<PdfBytesCache>) -> Result<String, String> {
+    // Use cached PDF bytes if available, otherwise read from disk and cache
+    let bytes = {
+        let mut cache_map = cache.0.lock().map_err(|e| format!("Cache lock: {}", e))?;
+        if let Some(cached) = cache_map.get(&path) {
+            cached.clone()
+        } else {
+            let read_bytes = fs::read(&path).map_err(|e| format!("Read: {}", e))?;
+            cache_map.insert(path.clone(), read_bytes.clone());
+            read_bytes
+        }
+    };
+
     let renderer = PdfRenderer::new();
     let doc = renderer.load_document(&bytes).map_err(|e| format!("{}", e))?;
     let page = doc.render_page(page_index as usize, scale).map_err(|e| format!("{}", e))?;
 
-    // Write RGBA to temp file (avoids 36MB IPC serialization overhead)
+    // Write RGBA to temp file (Tauri IPC is too slow for 16-36MB binary data)
     let temp_dir = std::env::temp_dir();
-    let temp_path = temp_dir.join(format!("opdf_render_{}_{}.raw", page_index, std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis()));
+    let temp_path = temp_dir.join(format!("opdf_{}_{}.raw", page_index,
+        std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis()));
 
-    // Prepend 8-byte header: width (u32 LE) + height (u32 LE)
     let mut data = Vec::with_capacity(8 + page.rgba.len());
     data.extend_from_slice(&page.width.to_le_bytes());
     data.extend_from_slice(&page.height.to_le_bytes());
     data.extend_from_slice(&page.rgba);
-
     fs::write(&temp_path, &data).map_err(|e| format!("Write temp: {}", e))?;
 
-    // Return temp file path + dimensions as JSON string
+    // Return path|width|height (tiny string, fast IPC)
     Ok(format!("{}|{}|{}", temp_path.to_string_lossy(), page.width, page.height))
 }
 
+/// Invalidate the PDF bytes cache for a specific file (call after save/modify)
 #[tauri::command]
-fn get_page_dimensions(path: String) -> Result<Vec<(f32, f32)>, String> {
-    let bytes = fs::read(&path).map_err(|e| format!("Read: {}", e))?;
+fn invalidate_pdf_cache(path: String, cache: tauri::State<PdfBytesCache>) -> Result<bool, String> {
+    let mut cache_map = cache.0.lock().map_err(|e| format!("Cache lock: {}", e))?;
+    cache_map.remove(&path);
+    Ok(true)
+}
+
+/// Clear the entire PDF bytes cache (call on app cleanup or memory pressure)
+#[tauri::command]
+fn clear_pdf_cache(cache: tauri::State<PdfBytesCache>) -> Result<bool, String> {
+    let mut cache_map = cache.0.lock().map_err(|e| format!("Cache lock: {}", e))?;
+    cache_map.clear();
+    Ok(true)
+}
+
+#[tauri::command]
+fn get_page_dimensions(path: String, cache: tauri::State<PdfBytesCache>) -> Result<Vec<(f32, f32)>, String> {
+    let bytes = {
+        let mut cache_map = cache.0.lock().map_err(|e| format!("Cache lock: {}", e))?;
+        if let Some(cached) = cache_map.get(&path) {
+            cached.clone()
+        } else {
+            let read_bytes = fs::read(&path).map_err(|e| format!("Read: {}", e))?;
+            cache_map.insert(path.clone(), read_bytes.clone());
+            read_bytes
+        }
+    };
+
     let renderer = PdfRenderer::new();
     let doc = renderer.load_document(&bytes).map_err(|e| format!("{}", e))?;
     (0..doc.page_count())
@@ -864,6 +902,7 @@ pub fn run() {
     let mut builder = tauri::Builder::default()
         .manage(OpenedFiles(Mutex::new(opened_files)))
         .manage(LockedFiles(Mutex::new(HashMap::new())))
+        .manage(PdfBytesCache(Mutex::new(HashMap::new())))
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
@@ -947,6 +986,8 @@ pub fn run() {
             read_plugin_file,
             render_pdf_page,
             get_page_dimensions,
+            invalidate_pdf_cache,
+            clear_pdf_cache,
             allow_fs_scope
         ])
         .run(tauri::generate_context!())

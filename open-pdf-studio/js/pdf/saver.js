@@ -2,7 +2,7 @@ import { state, getPageRotation, getActiveDocument } from '../core/state.js';
 import { showLoading, hideLoading } from '../ui/chrome/dialogs.js';
 import { hexToColorArray } from '../utils/colors.js';
 import { markDocumentSaved, updateWindowTitle } from '../ui/chrome/tabs.js';
-import { isTauri, readBinaryFile, writeBinaryFile, saveFileDialog, unlockFile, lockFile } from '../core/platform.js';
+import { isTauri, invoke, readBinaryFile, writeBinaryFile, saveFileDialog, unlockFile, lockFile } from '../core/platform.js';
 import { getCachedPdfBytes, setCachedPdfBytes, hidePdfABar } from './loader.js';
 import { PDFDocument, PDFString, PDFName, PDFArray, PDFStream, degrees,
   PDFTextField, PDFCheckBox, PDFDropdown, PDFRadioGroup, PDFOptionList } from 'pdf-lib';
@@ -1360,6 +1360,11 @@ export async function savePDF(saveAsPath = null) {
       throw writeErr;
     }
     await lockFile(outputPath);
+
+    // Invalidate the Rust-side PDF bytes cache so next render reads the updated file
+    if (isTauri()) {
+      try { await invoke('invalidate_pdf_cache', { path: outputPath }); } catch {}
+    }
 
     // Update cache so subsequent saves use the latest PDF as base
     setCachedPdfBytes(outputPath, savedBytes.slice());

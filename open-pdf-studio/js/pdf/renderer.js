@@ -180,34 +180,33 @@ export async function renderPage(pageNum) {
   const _hasFilePath = !!doc.filePath;
 
   if (_canUseTauri && _hasFilePath) {
-    console.log(`[render] 🦀 Rust render: page=${pageNum}, scale=${scale}, dpr=${dpr}, path=${doc.filePath}`);
+    console.log(`[render] Rust render: page=${pageNum}, scale=${scale}, dpr=${dpr}, path=${doc.filePath}`);
     try {
-      // Rust renders to temp file, returns "tempPath|width|height"
-      const resultStr = await invoke('render_pdf_page', {
+      // Rust returns RGBA bytes directly as Uint8Array with 8-byte header (width u32 LE + height u32 LE)
+      const rgbaData = await invoke('render_pdf_page', {
         path: doc.filePath,
         pageIndex: pageNum - 1,
         scale: scale,
       });
       const _t1 = performance.now();
-      console.log(`[render] Rust command: ${Math.round(_t1 - _t0)}ms`);
 
-      const parts = resultStr.split('|');
+      // Rust returns "tempPath|width|height" string
+      const parts = rgbaData.split('|');
       const tempPath = parts[0];
       const rustW = parseInt(parts[1]);
       const rustH = parseInt(parts[2]);
 
-      // Read RGBA from temp file via Tauri FS (fast binary read, no JSON overhead)
+      // Read RGBA from temp file via Tauri FS (fast binary)
       await invoke('allow_fs_scope', { path: tempPath });
       const { readBinaryFile } = await import('../core/platform.js');
       const fileBytes = await readBinaryFile(tempPath);
       const _t2 = performance.now();
 
       if (fileBytes && fileBytes.length > 8) {
-        // Skip 8-byte header
         const rgba = new Uint8ClampedArray(fileBytes.buffer, fileBytes.byteOffset + 8, fileBytes.length - 8);
 
         if (rustW * rustH * 4 !== rgba.length) {
-          console.warn(`[render] ⚠️ Size mismatch: ${rustW}x${rustH}x4=${rustW*rustH*4} ≠ ${rgba.length}. Fallback.`);
+          console.warn(`[render] Size mismatch: ${rustW}x${rustH}x4=${rustW*rustH*4} != ${rgba.length}. Fallback.`);
           await _renderPageWithPdfJs(page, viewport, pdfCanvas, bufferW, bufferH, dpr);
         } else {
           pdfCanvas.width = rustW;
@@ -219,14 +218,14 @@ export async function renderPage(pageNum) {
           const _totalMs = Math.round(_t2 - _t0);
           state.renderEngine = 'Rust';
           state.renderTiming = `${_totalMs}ms`;
-          console.log(`[render] ✅ Rust OK: ${rustW}x${rustH}, render=${Math.round(_t1 - _t0)}ms, read=${Math.round(_t2 - _t1)}ms, total=${_totalMs}ms`);
+          console.log(`[render] ✅ Rust OK: ${rustW}x${rustH}, cmd=${Math.round(_t1 - _t0)}ms, read=${Math.round(_t2 - _t1)}ms, total=${_totalMs}ms`);
         }
       } else {
-        console.warn(`[render] ⚠️ Temp file empty. Fallback.`);
+        console.warn(`[render] Empty response. Fallback.`);
         await _renderPageWithPdfJs(page, viewport, pdfCanvas, bufferW, bufferH, dpr);
       }
     } catch (e) {
-      console.warn(`[render] ❌ Rust render FAILED: ${e}. Falling back to PDF.js`);
+      console.warn(`[render] Rust render FAILED: ${e}. Falling back to PDF.js`);
       await _renderPageWithPdfJs(page, viewport, pdfCanvas, bufferW, bufferH, dpr);
       console.log(`[render] PDF.js fallback: ${Math.round(performance.now() - _t0)}ms`);
     }
@@ -335,19 +334,22 @@ export async function renderPageOffscreen(pageNum) {
 
   if (isTauri() && doc.filePath) {
     try {
-      const rgbaBytes = await invoke('render_pdf_page', {
+      const rgbaData = await invoke('render_pdf_page', {
         path: doc.filePath,
         pageIndex: pageNum - 1,
         scale: scale,
       });
-      if (rgbaBytes && rgbaBytes.length > 0) {
-        const expectedW = Math.floor(viewport.width * dpr);
-        const expectedH = Math.floor(rgbaBytes.length / (expectedW * 4));
-        pdfCanvas.width = expectedW;
-        pdfCanvas.height = expectedH;
+      const _offBytes = rgbaData instanceof Uint8Array ? rgbaData : new Uint8Array(rgbaData);
+      if (_offBytes && _offBytes.length > 8) {
+        const headerView = new DataView(_offBytes.buffer, _offBytes.byteOffset, 8);
+        const rustW = headerView.getUint32(0, true);
+        const rustH = headerView.getUint32(4, true);
+        const rgba = new Uint8ClampedArray(_offBytes.buffer, _offBytes.byteOffset + 8, _offBytes.length - 8);
+        pdfCanvas.width = rustW;
+        pdfCanvas.height = rustH;
         pdfCanvas.style.width = Math.floor(viewport.width) + 'px';
         pdfCanvas.style.height = Math.floor(viewport.height) + 'px';
-        const imageData = new ImageData(new Uint8ClampedArray(rgbaBytes), expectedW, expectedH);
+        const imageData = new ImageData(rgba, rustW, rustH);
         pdfCanvas.getContext('2d').putImageData(imageData, 0, 0);
         setupCanvasHiDPI(annotationCanvas, viewport.width, viewport.height);
         rustRendered = true;
@@ -550,19 +552,22 @@ async function renderContinuousPage(pageNum) {
 
   if (isTauri() && doc.filePath) {
     try {
-      const rgbaBytes = await invoke('render_pdf_page', {
+      const rgbaData = await invoke('render_pdf_page', {
         path: doc.filePath,
         pageIndex: pageNum - 1,
         scale: doc.scale * contDpr,
       });
-      if (rgbaBytes && rgbaBytes.length > 0) {
-        const expectedW = Math.floor(viewport.width * contDpr);
-        const expectedH = Math.floor(rgbaBytes.length / (expectedW * 4));
-        pdfCanvasEl.width = expectedW;
-        pdfCanvasEl.height = expectedH;
-        pdfCanvasEl.style.width = Math.floor(expectedW / contDpr) + 'px';
-        pdfCanvasEl.style.height = Math.floor(expectedH / contDpr) + 'px';
-        const imageData = new ImageData(new Uint8ClampedArray(rgbaBytes), expectedW, expectedH);
+      const _contBytes = rgbaData instanceof Uint8Array ? rgbaData : new Uint8Array(rgbaData);
+      if (_contBytes && _contBytes.length > 8) {
+        const headerView = new DataView(_contBytes.buffer, _contBytes.byteOffset, 8);
+        const rustW = headerView.getUint32(0, true);
+        const rustH = headerView.getUint32(4, true);
+        const rgba = new Uint8ClampedArray(_contBytes.buffer, _contBytes.byteOffset + 8, _contBytes.length - 8);
+        pdfCanvasEl.width = rustW;
+        pdfCanvasEl.height = rustH;
+        pdfCanvasEl.style.width = Math.floor(rustW / contDpr) + 'px';
+        pdfCanvasEl.style.height = Math.floor(rustH / contDpr) + 'px';
+        const imageData = new ImageData(rgba, rustW, rustH);
         pdfCtxEl.putImageData(imageData, 0, 0);
         contRustRendered = true;
       }
@@ -1222,22 +1227,24 @@ if (typeof window !== 'undefined') {
       const rgba = await invoke('render_pdf_page', { path: testPath, pageIndex: 0, scale: 1.5 });
       const elapsed = Math.round(performance.now() - t0);
       console.log(`Result: ${rgba?.length || 0} bytes in ${elapsed}ms`);
-      if (rgba && rgba.length > 16) {
-        // Show on canvas
+      if (rgba && rgba.length > 8) {
+        // Parse 8-byte header: width (u32 LE) + height (u32 LE)
+        const hdr = new DataView(rgba.buffer, rgba.byteOffset, 8);
+        const w = hdr.getUint32(0, true);
+        const h = hdr.getUint32(4, true);
+        const pixels = new Uint8ClampedArray(rgba.buffer, rgba.byteOffset + 8, rgba.length - 8);
+        console.log(`Dimensions: ${w}x${h}, RGBA: ${pixels.length} bytes`);
         const canvas = document.getElementById('pdf-canvas');
-        if (canvas) {
-          // Estimate dimensions from A3 landscape at 1.5x
-          const w = Math.round(2384 * 1.5);
-          const h = Math.floor(rgba.length / (w * 4));
+        if (canvas && w * h * 4 === pixels.length) {
           canvas.width = w;
           canvas.height = h;
           canvas.style.width = (w / (window.devicePixelRatio || 1)) + 'px';
           canvas.style.height = (h / (window.devicePixelRatio || 1)) + 'px';
-          const imgData = new ImageData(new Uint8ClampedArray(rgba), w, h);
+          const imgData = new ImageData(pixels, w, h);
           canvas.getContext('2d').putImageData(imgData, 0, 0);
           document.getElementById('placeholder')?.style.setProperty('display', 'none');
           document.getElementById('pdf-container')?.classList.add('visible');
-          console.log(`✅ Drawn to canvas: ${w}x${h}`);
+          console.log(`Drawn to canvas: ${w}x${h}`);
         }
       }
     } catch (e) {

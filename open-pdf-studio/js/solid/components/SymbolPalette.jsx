@@ -73,14 +73,35 @@ function startDrag(e, fromDocked) {
 
 // --- Select symbol → activate stamp tool with SVG override ---
 function selectSymbol(symbol) {
-  // setTool clears toolOverrides, so set them AFTER switching tool
-  setTool('stamp');
+  // Set overrides BEFORE setTool — manager.js preserves them for stamp tool
   state.toolOverrides = {
     stampSvg: symbol.svg,
+    stampName: symbol.name,
     stampWidth: 40,
     stampHeight: 40,
     lockAspectRatio: true,
   };
+  // Pre-cache rasterized preview image for cursor preview
+  const blob = new Blob([symbol.svg], { type: 'image/svg+xml' });
+  const url = URL.createObjectURL(blob);
+  const img = new Image();
+  img.onload = () => {
+    const canvas = document.createElement('canvas');
+    const scale = 2;
+    canvas.width = img.naturalWidth * scale;
+    canvas.height = img.naturalHeight * scale;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    URL.revokeObjectURL(url);
+    const pngImg = new Image();
+    pngImg.onload = () => {
+      if (state.toolOverrides) state.toolOverrides._previewImg = pngImg;
+    };
+    pngImg.src = canvas.toDataURL('image/png');
+  };
+  img.onerror = () => URL.revokeObjectURL(url);
+  img.src = url;
+  setTool('stamp');
 }
 
 // Colorize SVG: replace #000 and #d00 strokes/fills with category color

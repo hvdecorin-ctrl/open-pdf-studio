@@ -38,6 +38,31 @@ export const stampTool = {
       ctx.showStampPicker(ctx.x, ctx.y);
     }
   },
+
+  onPointerMove(ctx) {
+    const { state } = ctx;
+    const previewImg = state.toolOverrides?._previewImg;
+    if (!previewImg || !ctx.canvasCtx) return;
+
+    const scale = ctx.scale || 1.5;
+    const w = state.toolOverrides.stampWidth || 40;
+    const h = state.toolOverrides.stampHeight || 40;
+
+    // Redraw existing annotations then overlay the preview
+    ctx.redraw();
+
+    const canvasCtx = ctx.canvasCtx;
+    canvasCtx.save();
+    canvasCtx.scale(scale, scale);
+    canvasCtx.globalAlpha = 0.6;
+    canvasCtx.drawImage(previewImg, ctx.x - w / 2, ctx.y - h / 2, w, h);
+    canvasCtx.restore();
+  },
+
+  onDeactivate(ctx) {
+    // Clear preview when switching away from stamp tool
+    ctx.redraw();
+  },
 };
 
 export const signatureTool = {

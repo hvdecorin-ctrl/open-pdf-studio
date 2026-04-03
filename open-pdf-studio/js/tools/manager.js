@@ -94,7 +94,10 @@ export function setTool(tool) {
   }
 
   state.currentTool = tool;
-  state.toolOverrides = null;
+  // Don't clear toolOverrides when switching TO stamp — SymbolPalette sets them before setTool
+  if (tool !== 'stamp') {
+    state.toolOverrides = null;
+  }
 
   // Hide properties panel when switching tools (keep visible for annotation tools)
   if (tool !== 'select' && tool !== 'selectComments') {
