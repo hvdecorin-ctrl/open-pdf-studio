@@ -143,6 +143,20 @@ impl DrawCommandBuffer {
         self.data.push(17);
     }
 
+    // Command 18: TextAt(x, y, fontSize, text) — variable length
+    // u8 opcode + f32 x + f32 y + f32 fontSize + u32 rgba + u8 textLength + UTF-8 bytes
+    pub fn text_at(&mut self, x: f32, y: f32, font_size: f32, rgba: u32, text: &str) {
+        self.data.push(18);
+        self.push_f32(x);
+        self.push_f32(y);
+        self.push_f32(font_size);
+        self.push_u32(rgba);
+        let bytes = text.as_bytes();
+        let len = bytes.len().min(255);
+        self.data.push(len as u8);
+        self.data.extend_from_slice(&bytes[..len]);
+    }
+
     fn push_f32(&mut self, v: f32) {
         self.data.extend_from_slice(&v.to_le_bytes());
     }

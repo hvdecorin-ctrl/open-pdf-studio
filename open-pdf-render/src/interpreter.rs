@@ -6,6 +6,49 @@ use crate::draw_commands::DrawCommandBuffer;
 use crate::color;
 use crate::RenderError;
 
+struct TextState {
+    font_size: f32,
+    tx: f32,
+    ty: f32,
+    line_x: f32,
+    line_y: f32,
+    tm: [f32; 6],
+    leading: f32,
+    in_text: bool,
+}
+
+impl TextState {
+    fn new() -> Self {
+        TextState {
+            font_size: 12.0,
+            tx: 0.0,
+            ty: 0.0,
+            line_x: 0.0,
+            line_y: 0.0,
+            tm: [1.0, 0.0, 0.0, 1.0, 0.0, 0.0],
+            leading: 0.0,
+            in_text: false,
+        }
+    }
+
+    fn reset(&mut self) {
+        self.tx = 0.0;
+        self.ty = 0.0;
+        self.line_x = 0.0;
+        self.line_y = 0.0;
+        self.tm = [1.0, 0.0, 0.0, 1.0, 0.0, 0.0];
+        self.in_text = false;
+    }
+
+    fn effective_x(&self) -> f32 {
+        self.tm[4] + self.tx
+    }
+
+    fn effective_y(&self) -> f32 {
+        self.tm[5] + self.ty
+    }
+}
+
 pub struct Interpreter;
 
 impl Interpreter {
@@ -110,6 +153,7 @@ impl Interpreter {
             .map_err(|e| RenderError::ParseError(format!("Content decode: {}", e)))?;
 
         let mut has_active_path = false;
+        let mut text_state = TextState::new();
 
         for op in &content.operations {
             match op.operator.as_str() {
@@ -420,15 +464,167 @@ impl Interpreter {
                 "n" => {
                     has_active_path = false;
                 }
-                // Clipping, text, XObjects -- skip
+                // Clipping
                 "W" | "W*" => {}
-                "BT" | "ET" | "Tf" | "Td" | "TD" | "Tm" | "Tj" | "TJ" | "T*" | "'" | "\"" | "Tc" | "Tw" | "Tz" | "TL" | "Ts" | "Tr" => {}
+                // Text operators
+                "BT" => {
+                    text_state.reset();
+                    text_state.in_text = true;
+                }
+                "ET" => {
+                    text_state.in_text = false;
+                }
+                "Tf" => {
+                    if op.operands.len() >= 2 {
+                        text_state.font_size = Self::f(&op.operands[1]);
+                    }
+                }
+                "TL" => {
+                    if let Some(v) = op.operands.first() {
+                        text_state.leading = Self::f(v);
+                    }
+                }
+                "Td" => {
+                    if op.operands.len() >= 2 {
+                        let tx = Self::f(&op.operands[0]);
+                        let ty = Self::f(&op.operands[1]);
+                        text_state.line_x += tx;
+                        text_state.line_y += ty;
+                        text_state.tx = text_state.line_x;
+                        text_state.ty = text_state.line_y;
+                    }
+                }
+                "TD" => {
+                    if op.operands.len() >= 2 {
+                        let tx = Self::f(&op.operands[0]);
+                        let ty = Self::f(&op.operands[1]);
+                        text_state.leading = -ty;
+                        text_state.line_x += tx;
+                        text_state.line_y += ty;
+                        text_state.tx = text_state.line_x;
+                        text_state.ty = text_state.line_y;
+                    }
+                }
+                "Tm" => {
+                    if op.operands.len() >= 6 {
+                        text_state.tm = [
+                            Self::f(&op.operands[0]),
+                            Self::f(&op.operands[1]),
+                            Self::f(&op.operands[2]),
+                            Self::f(&op.operands[3]),
+                            Self::f(&op.operands[4]),
+                            Self::f(&op.operands[5]),
+                        ];
+                        text_state.tx = 0.0;
+                        text_state.ty = 0.0;
+                        text_state.line_x = 0.0;
+                        text_state.line_y = 0.0;
+                    }
+                }
+                "T*" => {
+                    text_state.line_x += 0.0;
+                    text_state.line_y -= text_state.leading;
+                    text_state.tx = text_state.line_x;
+                    text_state.ty = text_state.line_y;
+                }
+                "Tj" => {
+                    if let Some(text) = op.operands.first() {
+                        let decoded = Self::decode_pdf_string(text);
+                        if !decoded.is_empty() {
+                            let (r, g, b, a) = state.current.fill_color;
+                            let rgba = Self::color_to_u32(r, g, b, a);
+                            buf.text_at(
+                                text_state.effective_x(),
+                                text_state.effective_y(),
+                                text_state.font_size * text_state.tm[0].abs().max(text_state.tm[3].abs()).max(1.0),
+                                rgba,
+                                &decoded,
+                            );
+                        }
+                    }
+                }
+                "TJ" => {
+                    if let Some(Object::Array(arr)) = op.operands.first() {
+                        let mut accumulated = String::new();
+                        for item in arr {
+                            match item {
+                                Object::String(bytes, _) => {
+                                    accumulated.push_str(&String::from_utf8_lossy(bytes));
+                                }
+                                Object::Integer(_) | Object::Real(_) => {
+                                    let kern = Self::f(item);
+                                    if kern.abs() > 200.0 {
+                                        accumulated.push(' ');
+                                    }
+                                }
+                                _ => {}
+                            }
+                        }
+                        if !accumulated.is_empty() {
+                            let (r, g, b, a) = state.current.fill_color;
+                            let rgba = Self::color_to_u32(r, g, b, a);
+                            buf.text_at(
+                                text_state.effective_x(),
+                                text_state.effective_y(),
+                                text_state.font_size * text_state.tm[0].abs().max(text_state.tm[3].abs()).max(1.0),
+                                rgba,
+                                &accumulated,
+                            );
+                        }
+                    }
+                }
+                "'" => {
+                    text_state.line_y -= text_state.leading;
+                    text_state.tx = text_state.line_x;
+                    text_state.ty = text_state.line_y;
+                    if let Some(text) = op.operands.first() {
+                        let decoded = Self::decode_pdf_string(text);
+                        if !decoded.is_empty() {
+                            let (r, g, b, a) = state.current.fill_color;
+                            let rgba = Self::color_to_u32(r, g, b, a);
+                            buf.text_at(
+                                text_state.effective_x(),
+                                text_state.effective_y(),
+                                text_state.font_size * text_state.tm[0].abs().max(text_state.tm[3].abs()).max(1.0),
+                                rgba,
+                                &decoded,
+                            );
+                        }
+                    }
+                }
+                "\"" => {
+                    if op.operands.len() >= 3 {
+                        text_state.line_y -= text_state.leading;
+                        text_state.tx = text_state.line_x;
+                        text_state.ty = text_state.line_y;
+                        let decoded = Self::decode_pdf_string(&op.operands[2]);
+                        if !decoded.is_empty() {
+                            let (r, g, b, a) = state.current.fill_color;
+                            let rgba = Self::color_to_u32(r, g, b, a);
+                            buf.text_at(
+                                text_state.effective_x(),
+                                text_state.effective_y(),
+                                text_state.font_size * text_state.tm[0].abs().max(text_state.tm[3].abs()).max(1.0),
+                                rgba,
+                                &decoded,
+                            );
+                        }
+                    }
+                }
+                "Tc" | "Tw" | "Tz" | "Ts" | "Tr" => {}
                 "Do" => {}
                 "gs" | "ri" | "i" => {}
                 _ => {}
             }
         }
         Ok(())
+    }
+
+    fn decode_pdf_string(obj: &Object) -> String {
+        match obj {
+            Object::String(bytes, _) => String::from_utf8_lossy(bytes).into_owned(),
+            _ => String::new(),
+        }
     }
 
     fn color_to_u32(r: u8, g: u8, b: u8, a: u8) -> u32 {

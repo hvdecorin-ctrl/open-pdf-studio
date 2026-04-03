@@ -23,6 +23,7 @@
  *    15  SetMiterLimit(f32)
  *    16  SetDash(u8 count, count*f32, f32 phase)
  *    17  BeginPath
+ *    18  TextAt(f32 x, f32 y, f32 fontSize, u32 rgba, u8 len, UTF-8 bytes)
  */
 
 // Cache: Map<"filePath:pageNum", { bytes: Uint8Array, w: number, h: number }>
@@ -185,6 +186,22 @@ export function renderVectorPage(ctx, filePath, pageNum, transform) {
       case 17: // BeginPath
         ctx.beginPath();
         break;
+      case 18: { // TextAt
+        const x = dv.getFloat32(pos, true); pos += 4;
+        const y = dv.getFloat32(pos, true); pos += 4;
+        const fontSize = dv.getFloat32(pos, true); pos += 4;
+        const rgba = dv.getUint32(pos, true); pos += 4;
+        const len = bytes[pos++];
+        const text = new TextDecoder().decode(bytes.slice(pos, pos + len));
+        pos += len;
+        ctx.save();
+        ctx.scale(1, -1);
+        ctx.font = `${fontSize}px sans-serif`;
+        ctx.fillStyle = _rgbaToCSS(rgba);
+        ctx.fillText(text, x, -y);
+        ctx.restore();
+        break;
+      }
       default:
         console.warn(`[vector-renderer] Unknown opcode ${op} at position ${pos - 1}`);
         return; // bail out on unknown command
