@@ -73,7 +73,14 @@ jobs:
       - name: Build snap
         id: snapcraft
         run: |
-          snapcraft
+          # Use destructive mode so snapcraft builds directly on the runner
+          # instead of spinning up an LXD container. The default LXD provider
+          # fails on GitHub Actions runners because the runner user isn't in
+          # the `lxd` group and snapcraft can't add it on the fly. Destructive
+          # mode is the standard pattern for ephemeral CI environments.
+          # `snapcraft pack` replaces the bare `snapcraft` invocation which
+          # is deprecated in snapcraft 8+.
+          sudo snapcraft pack --destructive-mode
           SNAP_FILE=$(ls *.snap | head -1)
           echo "snap=$SNAP_FILE" >> $GITHUB_OUTPUT
           echo "Built snap: $SNAP_FILE"
