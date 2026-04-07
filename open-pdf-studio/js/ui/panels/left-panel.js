@@ -17,6 +17,7 @@ import {
   setThumbnailPlaceholderSize as setPlaceholderSize,
   setThumbnailImage, clearAllThumbnails, removeThumbnailImage,
   getThumbnailContainerRef as getContainerRef,
+  thumbnailSelectedPages, selectThumbnailPage,
 } from '../../bridge.js';
 
 // Thumbnail scale (relative to actual page size)
@@ -512,7 +513,17 @@ export function saveThumbnailScrollPosition() {
 // Update which thumbnail is marked as active
 export function updateActiveThumbnail(restoreScroll = false) {
   const doc = getActiveDocument();
-  setActivePage(doc ? doc.currentPage : 1);
+  const newPage = doc ? doc.currentPage : 1;
+  setActivePage(newPage);
+
+  // Keep the thumbnail selection in sync with the active page when the user
+  // has a single-page selection (which is the default after a normal click).
+  // If they have a multi-page selection (Ctrl/Shift-click), leave it alone so
+  // they don't lose their selection while navigating with the wheel/keyboard.
+  const sel = thumbnailSelectedPages();
+  if (sel.size <= 1) {
+    selectThumbnailPage(newPage);
+  }
 
   setTimeout(() => {
     const container = getContainerRef();

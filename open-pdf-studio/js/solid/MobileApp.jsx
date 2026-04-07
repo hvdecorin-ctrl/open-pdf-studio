@@ -352,6 +352,7 @@ export default function MobileApp() {
           <div id="canvas-wrapper">
             <div id="canvas-container" class="single-page-container">
               <canvas id="pdf-canvas"></canvas>
+              <canvas id="text-highlight-canvas"></canvas>
               <canvas id="annotation-canvas"></canvas>
             </div>
             <div id="continuous-container" class="continuous-container"></div>

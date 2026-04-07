@@ -6,6 +6,7 @@
 export let placeholder = null;
 export let pdfContainer = null;
 export let pdfCanvas = null;
+export let textHighlightCanvas = null;
 export let annotationCanvas = null;
 export let continuousContainer = null;
 export let canvasContainer = null;
@@ -15,6 +16,7 @@ export const propertiesPanel = null;
 
 // Canvas contexts - initialized after DOM is ready
 export let pdfCtx = null;
+export let textHighlightCtx = null;
 export let annotationCtx = null;
 
 // Initialize all DOM element references and canvas contexts
@@ -22,12 +24,16 @@ export function initDomElements() {
   placeholder = document.getElementById('placeholder');
   pdfContainer = document.getElementById('pdf-container');
   pdfCanvas = document.getElementById('pdf-canvas');
+  textHighlightCanvas = document.getElementById('text-highlight-canvas');
   annotationCanvas = document.getElementById('annotation-canvas');
   continuousContainer = document.getElementById('continuous-container');
   canvasContainer = document.getElementById('canvas-container');
 
   if (pdfCanvas) {
     pdfCtx = pdfCanvas.getContext('2d');
+  }
+  if (textHighlightCanvas) {
+    textHighlightCtx = textHighlightCanvas.getContext('2d');
   }
   if (annotationCanvas) {
     annotationCtx = annotationCanvas.getContext('2d');

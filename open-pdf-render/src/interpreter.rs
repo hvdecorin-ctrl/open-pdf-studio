@@ -630,28 +630,31 @@ impl Interpreter {
                         if !bytes.is_empty() {
                             let (r, g, b, a) = state.current.fill_color;
                             let rgba = Self::color_to_u32(r, g, b, a);
-                            let font_entry_opt = font_registry.get_font(
+                            // get_font now returns Arc<FontEntry> from a
+                            // document-scoped cache. Cheap for shared fonts
+                            // already seen on previous pages.
+                            if let Some(font_entry) = font_registry.get_font(
                                 &text_state.current_font_name, doc, resources,
-                            );
-                            if let Some(font_entry) = font_entry_opt {
-                                if font_entry.is_cid && font_entry.parsed.is_some() {
-                                    crate::text_renderer::render_cid_text_glyphs(
-                                        bytes, font_entry, text_state.font_size,
-                                        text_state.horizontal_scaling, text_state.char_spacing,
-                                        text_state.word_spacing, text_state.rise,
-                                        &mut text_state.tm, rgba, buf,
-                                    );
-                                } else if font_entry.parsed.is_some() {
-                                    crate::text_renderer::render_text_glyphs(
-                                        bytes, font_entry, text_state.font_size,
-                                        text_state.horizontal_scaling, text_state.char_spacing,
-                                        text_state.word_spacing, text_state.rise,
-                                        &mut text_state.tm, rgba, buf,
-                                    );
-                                } else {
-                                    // No font data available — skip rendering
-                                    // (TextAt fallback causes mispositioned text)
+                            ) {
+                                if font_entry.parsed.is_some() {
+                                    if font_entry.is_cid {
+                                        crate::text_renderer::render_cid_text_glyphs(
+                                            bytes, &*font_entry, text_state.font_size,
+                                            text_state.horizontal_scaling, text_state.char_spacing,
+                                            text_state.word_spacing, text_state.rise,
+                                            &mut text_state.tm, rgba, buf,
+                                        );
+                                    } else {
+                                        crate::text_renderer::render_text_glyphs(
+                                            bytes, &*font_entry, text_state.font_size,
+                                            text_state.horizontal_scaling, text_state.char_spacing,
+                                            text_state.word_spacing, text_state.rise,
+                                            &mut text_state.tm, rgba, buf,
+                                        );
+                                    }
                                 }
+                                // No parsed font data → skip (TextAt
+                                // fallback would mis-position the text).
                             }
                         }
                     }
@@ -660,47 +663,44 @@ impl Interpreter {
                     if let Some(Object::Array(arr)) = op.operands.first() {
                         let (r, g, b, a) = state.current.fill_color;
                         let rgba = Self::color_to_u32(r, g, b, a);
+                        // Fetch the font ONCE for the whole TJ array — Arc
+                        // makes it trivial to hold across the loop instead
+                        // of re-fetching per string like the old code did.
                         let font_entry_opt = font_registry.get_font(
                             &text_state.current_font_name, doc, resources,
                         );
-                        let has_font = font_entry_opt.and_then(|e| e.parsed.as_ref()).is_some();
-
-                        let is_cid_font = font_entry_opt.map(|e| e.is_cid).unwrap_or(false);
-
-                        if has_font {
-                            for item in arr {
-                                match item {
-                                    Object::String(bytes, _) => {
-                                        if !bytes.is_empty() {
-                                            let font_entry = font_registry
-                                                .get_font(&text_state.current_font_name, doc, resources)
-                                                .unwrap();
-                                            if is_cid_font {
-                                                crate::text_renderer::render_cid_text_glyphs(
-                                                    bytes, font_entry, text_state.font_size,
-                                                    text_state.horizontal_scaling, text_state.char_spacing,
-                                                    text_state.word_spacing, text_state.rise,
-                                                    &mut text_state.tm, rgba, buf,
-                                                );
-                                            } else {
-                                                crate::text_renderer::render_text_glyphs(
-                                                    bytes, font_entry, text_state.font_size,
-                                                    text_state.horizontal_scaling, text_state.char_spacing,
-                                                    text_state.word_spacing, text_state.rise,
-                                                    &mut text_state.tm, rgba, buf,
-                                                );
+                        if let Some(font_entry) = font_entry_opt {
+                            if font_entry.parsed.is_some() {
+                                let is_cid = font_entry.is_cid;
+                                for item in arr {
+                                    match item {
+                                        Object::String(bytes, _) => {
+                                            if !bytes.is_empty() {
+                                                if is_cid {
+                                                    crate::text_renderer::render_cid_text_glyphs(
+                                                        bytes, &*font_entry, text_state.font_size,
+                                                        text_state.horizontal_scaling, text_state.char_spacing,
+                                                        text_state.word_spacing, text_state.rise,
+                                                        &mut text_state.tm, rgba, buf,
+                                                    );
+                                                } else {
+                                                    crate::text_renderer::render_text_glyphs(
+                                                        bytes, &*font_entry, text_state.font_size,
+                                                        text_state.horizontal_scaling, text_state.char_spacing,
+                                                        text_state.word_spacing, text_state.rise,
+                                                        &mut text_state.tm, rgba, buf,
+                                                    );
+                                                }
                                             }
                                         }
+                                        Object::Integer(_) | Object::Real(_) => {
+                                            let kern = Self::f(item);
+                                            text_state.apply_tj_kern(kern);
+                                        }
+                                        _ => {}
                                     }
-                                    Object::Integer(_) | Object::Real(_) => {
-                                        let kern = Self::f(item);
-                                        text_state.apply_tj_kern(kern);
-                                    }
-                                    _ => {}
                                 }
                             }
-                        } else {
-                            // No font data — skip rendering
                         }
                     }
                 }
@@ -716,7 +716,7 @@ impl Interpreter {
                             ) {
                                 crate::text_renderer::render_text_glyphs(
                                     bytes,
-                                    font_entry,
+                                    &*font_entry,
                                     text_state.font_size,
                                     text_state.horizontal_scaling,
                                     text_state.char_spacing,
@@ -745,7 +745,7 @@ impl Interpreter {
                                 ) {
                                     crate::text_renderer::render_text_glyphs(
                                         bytes,
-                                        font_entry,
+                                        &*font_entry,
                                         text_state.font_size,
                                         text_state.horizontal_scaling,
                                         text_state.char_spacing,
@@ -1080,5 +1080,327 @@ impl Interpreter {
             Object::Dictionary(d) => Some(d.clone()),
             _ => None,
         }
+    }
+
+    /// Walk a content stream and emit one TextSpan per Tj/TJ run.
+    /// Lighter than extract_commands — only the operators that affect text
+    /// position or content are processed; path/color/image ops are skipped.
+    pub fn extract_text_only(
+        content_bytes: &[u8],
+        spans: &mut Vec<crate::TextSpan>,
+        state: &mut GraphicsStateStack,
+        doc: &Document,
+        resources: &Dictionary,
+        font_registry: &mut crate::fonts::FontRegistry,
+    ) -> Result<(), RenderError> {
+        let content = Content::decode(content_bytes)
+            .map_err(|e| RenderError::ParseError(format!("Content decode: {}", e)))?;
+
+        let mut text_state = TextState::new();
+
+        for op in &content.operations {
+            match op.operator.as_str() {
+                // Graphics state stack — only CTM matters for text positioning.
+                "q" => state.save(),
+                "Q" => state.restore(),
+                "cm" => {
+                    if op.operands.len() >= 6 {
+                        state.concat_matrix(
+                            Self::f(&op.operands[0]), Self::f(&op.operands[1]),
+                            Self::f(&op.operands[2]), Self::f(&op.operands[3]),
+                            Self::f(&op.operands[4]), Self::f(&op.operands[5]),
+                        );
+                    }
+                }
+                // Text state operators
+                "BT" => text_state.begin_text(),
+                "ET" => text_state.in_text = false,
+                "Tf" => {
+                    if op.operands.len() >= 2 {
+                        if let Object::Name(ref name_bytes) = op.operands[0] {
+                            text_state.current_font_name =
+                                String::from_utf8_lossy(name_bytes).to_string();
+                        }
+                        text_state.font_size = Self::f(&op.operands[1]);
+                    }
+                }
+                "TL" => {
+                    if let Some(v) = op.operands.first() { text_state.leading = Self::f(v); }
+                }
+                "Td" => {
+                    if op.operands.len() >= 2 {
+                        text_state.translate_line(Self::f(&op.operands[0]), Self::f(&op.operands[1]));
+                    }
+                }
+                "TD" => {
+                    if op.operands.len() >= 2 {
+                        let tx = Self::f(&op.operands[0]);
+                        let ty = Self::f(&op.operands[1]);
+                        text_state.leading = -ty;
+                        text_state.translate_line(tx, ty);
+                    }
+                }
+                "Tm" => {
+                    if op.operands.len() >= 6 {
+                        text_state.set_text_matrix(
+                            Self::f(&op.operands[0]), Self::f(&op.operands[1]),
+                            Self::f(&op.operands[2]), Self::f(&op.operands[3]),
+                            Self::f(&op.operands[4]), Self::f(&op.operands[5]),
+                        );
+                    }
+                }
+                "T*" => text_state.translate_line(0.0, -text_state.leading),
+                "Tc" => {
+                    if let Some(v) = op.operands.first() { text_state.char_spacing = Self::f(v); }
+                }
+                "Tw" => {
+                    if let Some(v) = op.operands.first() { text_state.word_spacing = Self::f(v); }
+                }
+                "Tz" => {
+                    if let Some(v) = op.operands.first() { text_state.horizontal_scaling = Self::f(v) / 100.0; }
+                }
+                "Ts" => {
+                    if let Some(v) = op.operands.first() { text_state.rise = Self::f(v); }
+                }
+                "Tj" => {
+                    if let Some(Object::String(bytes, _)) = op.operands.first() {
+                        if !bytes.is_empty() {
+                            Self::emit_text_span(
+                                bytes, &mut text_state, font_registry, doc, resources,
+                                state, spans,
+                            );
+                        }
+                    }
+                }
+                "TJ" => {
+                    if let Some(Object::Array(arr)) = op.operands.first() {
+                        for item in arr {
+                            match item {
+                                Object::String(bytes, _) => {
+                                    if !bytes.is_empty() {
+                                        Self::emit_text_span(
+                                            bytes, &mut text_state, font_registry, doc, resources,
+                                            state, spans,
+                                        );
+                                    }
+                                }
+                                Object::Integer(_) | Object::Real(_) => {
+                                    text_state.apply_tj_kern(Self::f(item));
+                                }
+                                _ => {}
+                            }
+                        }
+                    }
+                }
+                "'" => {
+                    text_state.translate_line(0.0, -text_state.leading);
+                    if let Some(Object::String(bytes, _)) = op.operands.first() {
+                        if !bytes.is_empty() {
+                            Self::emit_text_span(
+                                bytes, &mut text_state, font_registry, doc, resources,
+                                state, spans,
+                            );
+                        }
+                    }
+                }
+                "\"" => {
+                    if op.operands.len() >= 3 {
+                        text_state.word_spacing = Self::f(&op.operands[0]);
+                        text_state.char_spacing = Self::f(&op.operands[1]);
+                        text_state.translate_line(0.0, -text_state.leading);
+                        if let Object::String(bytes, _) = &op.operands[2] {
+                            if !bytes.is_empty() {
+                                Self::emit_text_span(
+                                    bytes, &mut text_state, font_registry, doc, resources,
+                                    state, spans,
+                                );
+                            }
+                        }
+                    }
+                }
+                // Form XObjects can contain nested text — recurse into them.
+                "Do" => {
+                    Self::handle_do_text_only(&op.operands, spans, state, doc, resources, font_registry);
+                }
+                _ => {} // skip path/color/image/everything else
+            }
+        }
+        Ok(())
+    }
+
+    /// Helper: process one Tj/TJ string run and emit a TextSpan.
+    /// Captures the start text-matrix, advances tm by each glyph's width,
+    /// then computes the final user-space bbox by transforming through the
+    /// current CTM. Decodes bytes to text via the font's ToUnicode CMap
+    /// (falls back to Latin-1 / WinAnsi for fonts without ToUnicode).
+    fn emit_text_span(
+        bytes: &[u8],
+        text_state: &mut TextState,
+        font_registry: &mut crate::fonts::FontRegistry,
+        doc: &Document,
+        resources: &Dictionary,
+        state: &GraphicsStateStack,
+        spans: &mut Vec<crate::TextSpan>,
+    ) {
+        // Capture the start position in text space (BEFORE we advance tm).
+        let start_tx = text_state.tm[4];
+        let start_ty = text_state.tm[5];
+
+        // Resolve font + decode text content. get_font returns Arc<FontEntry>;
+        // we hold the Arc for the duration of this run so cache lookups are
+        // a single refcount bump.
+        let font_arc = font_registry.get_font(&text_state.current_font_name, doc, resources);
+        let mut decoded = String::new();
+        let mut total_advance_text_units: f32 = 0.0;
+
+        if let Some(font_entry) = font_arc.as_deref() {
+            if font_entry.is_cid {
+                // Type0 / 2-byte CID font — process two bytes at a time.
+                let mut i = 0;
+                while i + 1 < bytes.len() {
+                    let cid = u16::from_be_bytes([bytes[i], bytes[i + 1]]);
+                    i += 2;
+                    // ToUnicode for CID fonts is currently truncated to u8 in
+                    // this codebase — best-effort decode for low CIDs.
+                    if let Some(ch) = font_entry.to_unicode.get(&(cid as u8)) {
+                        decoded.push(*ch);
+                    } else {
+                        decoded.push('\u{FFFD}');
+                    }
+                    let w0 = 0.5; // approximate em width — good enough for hit-testing
+                    let tw = if cid == 32 || cid == 3 { text_state.word_spacing } else { 0.0 };
+                    let tx = (w0 * text_state.font_size + text_state.char_spacing + tw) * text_state.horizontal_scaling;
+                    total_advance_text_units += tx;
+                    text_state.tm[4] += tx * text_state.tm[0];
+                    text_state.tm[5] += tx * text_state.tm[1];
+                }
+            } else {
+                // Single-byte font — decode each byte and advance precisely.
+                let parsed_opt = font_entry.parsed.as_ref();
+                for &byte in bytes {
+                    let ch = if let Some(&c) = font_entry.to_unicode.get(&byte) {
+                        c
+                    } else {
+                        crate::encoding::resolve_char_code(
+                            font_entry.encoding_name.as_deref(),
+                            &font_entry.differences,
+                            byte,
+                        )
+                    };
+                    decoded.push(ch);
+
+                    let w0 = if let Some(parsed) = parsed_opt {
+                        if let Some(gid) = crate::fonts::FontRegistry::char_to_glyph_id(font_entry, byte) {
+                            if let Some(g) = parsed.glyphs.get(&gid) {
+                                g.advance_width / parsed.units_per_em as f32
+                            } else { 0.5 }
+                        } else { 0.5 }
+                    } else { 0.5 };
+                    let tw = if byte == 32 { text_state.word_spacing } else { 0.0 };
+                    let tx = (w0 * text_state.font_size + text_state.char_spacing + tw) * text_state.horizontal_scaling;
+                    total_advance_text_units += tx;
+                    text_state.tm[4] += tx * text_state.tm[0];
+                    text_state.tm[5] += tx * text_state.tm[1];
+                }
+            }
+        } else {
+            // No font resolved — still advance the matrix so subsequent text
+            // operators see a sensible position.
+            for _ in bytes {
+                let tx = 0.5 * text_state.font_size * text_state.horizontal_scaling;
+                total_advance_text_units += tx;
+                text_state.tm[4] += tx * text_state.tm[0];
+                text_state.tm[5] += tx * text_state.tm[1];
+            }
+        }
+
+        if decoded.is_empty() {
+            return;
+        }
+
+        // Transform the start position from text space → user space via CTM.
+        // Text space already has tm baked in; for the SPAN ORIGIN we apply CTM.
+        let ctm = state.current.ctm;
+        let user_x = start_tx * ctm.sx + start_ty * ctm.kx + ctm.tx;
+        let user_y = start_tx * ctm.ky + start_ty * ctm.sy + ctm.ty;
+
+        // Effective font size in user space ≈ Tfs × |CTM scale|.
+        let ctm_scale = (ctm.sx * ctm.sx + ctm.ky * ctm.ky).sqrt().abs();
+        let font_size_user = text_state.font_size * ctm_scale;
+
+        // Width in user space: project the total text-space advance through
+        // tm (text matrix) and CTM. The span advances along (tm[0], tm[1])
+        // in text space, so the user-space delta is that vector × CTM.
+        let dtx = total_advance_text_units * text_state.tm[0];
+        let dty = total_advance_text_units * text_state.tm[1];
+        let du_x = dtx * ctm.sx + dty * ctm.kx;
+        let du_y = dtx * ctm.ky + dty * ctm.sy;
+        let width_user = (du_x * du_x + du_y * du_y).sqrt();
+
+        spans.push(crate::TextSpan {
+            text: decoded,
+            x: user_x,
+            y: user_y,
+            width: width_user,
+            height: font_size_user,
+            font_size: font_size_user,
+        });
+    }
+
+    /// Recurse into a Form XObject for text-only extraction.
+    fn handle_do_text_only(
+        operands: &[Object],
+        spans: &mut Vec<crate::TextSpan>,
+        state: &mut GraphicsStateStack,
+        doc: &Document,
+        resources: &Dictionary,
+        font_registry: &mut crate::fonts::FontRegistry,
+    ) {
+        let name = match operands.first() {
+            Some(Object::Name(n)) => n,
+            _ => return,
+        };
+        let xobj_dict = match resources.get(b"XObject").and_then(|o| Self::resolve_dict(o, doc)) {
+            Ok(d) => d,
+            _ => return,
+        };
+        let obj_ref = match xobj_dict.get(name.as_slice()) {
+            Ok(o) => o,
+            _ => return,
+        };
+        let resolved_id = match obj_ref {
+            Object::Reference(id) => *id,
+            _ => return,
+        };
+        let obj = match doc.get_object(resolved_id) {
+            Ok(o) => o,
+            _ => return,
+        };
+        let stream = match obj {
+            Object::Stream(ref s) => s,
+            _ => return,
+        };
+        let subtype = stream.dict.get(b"Subtype").ok().and_then(|s| s.as_name().ok());
+        if subtype != Some(b"Form" as &[u8]) {
+            return;
+        }
+        state.save();
+        if let Ok(matrix) = stream.dict.get(b"Matrix") {
+            if let Ok(arr) = matrix.as_array() {
+                if arr.len() >= 6 {
+                    state.concat_matrix(
+                        Self::f(&arr[0]), Self::f(&arr[1]),
+                        Self::f(&arr[2]), Self::f(&arr[3]),
+                        Self::f(&arr[4]), Self::f(&arr[5]),
+                    );
+                }
+            }
+        }
+        let form_resources = Self::extract_form_resources(&stream.dict, doc);
+        let res = form_resources.as_ref().unwrap_or(resources);
+        if let Ok(content_bytes) = stream.decompressed_content() {
+            let _ = Self::extract_text_only(&content_bytes, spans, state, doc, res, font_registry);
+        }
+        state.restore();
     }
 }

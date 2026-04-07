@@ -176,6 +176,8 @@ export {
   clearAllThumbnails,
   removeThumbnailImage,
   getContainerRef as getThumbnailContainerRef,
+  selectedPages as thumbnailSelectedPages,
+  selectPage as selectThumbnailPage,
 } from './solid/stores/panels/thumbnailStore.js';
 
 // ============= PANEL DATA STORES =============

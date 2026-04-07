@@ -15,7 +15,7 @@ import { showMessage } from '../bridge.js';
 
 // Sub-module imports
 import { extractAnnotationColors } from './loader/color-extraction.js';
-import { extractStampImagesViaPdfJs, extractStampImages } from './loader/image-extraction.js';
+import { extractStampImagesViaPdfJs, extractStampImages, extractStampImagesHybrid } from './loader/image-extraction.js';
 import { convertPdfAnnotation } from './loader/annotation-converter.js';
 
 
@@ -466,17 +466,17 @@ async function loadAnnotationsForSinglePage(doc, pageNum, waitForColors = false)
   }
 
   if (stampAnnots.length > 0) {
-    // Use PDF.js render+crop method: renders the page with annotations and crops each stamp region.
-    // This correctly handles appearance streams with complex content (tiling, patterns, transforms).
+    // Hybrid extraction: pdf-lib XObject path first (clean, no annotation
+    // bake-in), PDF.js render+crop fallback for complex appearance streams.
+    // See extractStampImagesHybrid() in image-extraction.js for the why.
     try {
       const pdfPage = await doc.pdfDoc.getPage(pageNum);
       const extractViewport = pdfPage.getViewport({ scale: 1 });
-      stampImageMap = await extractStampImagesViaPdfJs(pdfPage, extractViewport, stampAnnots);
+      stampImageMap = await extractStampImagesHybrid(
+        pdfPage, extractViewport, stampAnnots, pageNum, pdfLibDoc,
+      );
     } catch (e) {
-      console.warn('[loader] PDF.js stamp extraction failed, trying pdf-lib fallback:', e);
-      if (pdfLibDoc) {
-        stampImageMap = null; // pdf-lib extraction disabled — use PDF.js render+crop instead
-      }
+      console.warn('[loader] hybrid stamp extraction failed:', e);
     }
   }
 
@@ -570,9 +570,11 @@ export async function loadExistingAnnotations(doc) {
 
       if (stampAnnots.length > 0) {
         try {
-          stampImageMap = await extractStampImagesViaPdfJs(pages[i], viewport, stampAnnots);
+          stampImageMap = await extractStampImagesHybrid(
+            pages[i], viewport, stampAnnots, pageNum, pdfLibDoc,
+          );
         } catch (e) {
-          if (pdfLibDoc) stampImageMap = null; // pdf-lib extraction disabled — use PDF.js render+crop instead
+          console.warn('[loader] hybrid stamp extraction failed:', e);
         }
         if (loadId !== doc._annotationLoadId || !state.documents.includes(doc)) return;
       }
@@ -618,9 +620,11 @@ export async function loadExistingAnnotations(doc) {
 
         if (stampAnnots.length > 0) {
           try {
-            stampImageMap = await extractStampImagesViaPdfJs(page, viewport, stampAnnots);
+            stampImageMap = await extractStampImagesHybrid(
+              page, viewport, stampAnnots, pageNum, pdfLibDoc,
+            );
           } catch (e) {
-            console.warn('[loader] stamp extraction failed:', e);
+            console.warn('[loader] hybrid stamp extraction failed:', e);
           }
         }
         if (needsExtraData) {

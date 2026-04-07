@@ -7,7 +7,6 @@ import { redrawAnnotations, renderAnnotationsForPage } from '../annotations/rend
 import { ensureAnnotationsForPage, hidePdfABar } from './loader.js';
 import { updateAllStatus } from '../ui/chrome/status-bar.js';
 import { hideProperties } from '../ui/panels/properties-panel.js';
-import { getCursorForTool } from '../tools/manager.js';
 import { updateActiveThumbnail } from '../ui/panels/left-panel.js';
 import { createSinglePageTextLayer, clearSinglePageTextLayer, createTextLayer, clearTextLayers } from '../text/text-layer.js';
 import { createSinglePageLinkLayer, clearSinglePageLinkLayer, createLinkLayer, clearLinkLayers } from './link-layer.js';
@@ -183,29 +182,39 @@ export async function renderPage(pageNum) {
   // ─── VECTOR VIEWPORT MODE ──────────────────────────────────────────────
   // Extract draw commands once, then hand off to pdf-viewport.js render loop.
   // All zoom/pan is handled by the viewport — no re-rendering needed here.
+  // The user-applied page rotation is part of the cache key so a rotated
+  // page coexists with its un-rotated version in cache.
   if (_canUseTauri && _hasFilePath) {
     try {
       const vr = await import('./vector-renderer.js');
-      if (!vr.hasCachedCommands(doc.filePath, pageNum)) {
+      const userRotation = getPageRotation(pageNum);
+      if (!vr.hasCachedCommands(doc.filePath, pageNum, userRotation)) {
         const pageType = await invoke('analyze_page_type', { path: doc.filePath, pageIndex: pageNum - 1 });
         if (pageType === 'vector') {
-          const cmdData = await invoke('extract_draw_commands', { path: doc.filePath, pageIndex: pageNum - 1 });
+          const cmdData = await invoke('extract_draw_commands', {
+            path: doc.filePath,
+            pageIndex: pageNum - 1,
+            rotation: userRotation,
+          });
           const cmdBytes = cmdData instanceof Uint8Array ? cmdData : new Uint8Array(cmdData);
-          vr.cacheCommands(doc.filePath, pageNum, cmdBytes);
+          vr.cacheCommands(doc.filePath, pageNum, cmdBytes, userRotation);
           // Pre-decode any images in the command buffer (async, must complete before render)
-          await vr.prepareImages(doc.filePath, pageNum);
+          await vr.prepareImages(doc.filePath, pageNum, userRotation);
         }
       }
 
-      if (vr.hasCachedCommands(doc.filePath, pageNum)) {
-        const dims = vr.getCachedPageDimensions(doc.filePath, pageNum);
+      if (vr.hasCachedCommands(doc.filePath, pageNum, userRotation)) {
+        const dims = vr.getCachedPageDimensions(doc.filePath, pageNum, userRotation);
         if (dims) {
           const { initViewport, setPage, wireEvents, viewport: pdfVP } = await import('./pdf-viewport.js');
 
-          // Initialize viewport (idempotent — safe to call multiple times)
-          initViewport(pdfCanvas, () => {
-            import('../annotations/rendering.js').then(m => m.redrawAnnotations());
-          });
+          // Initialize viewport (idempotent — safe to call multiple times).
+          // Call redrawAnnotations SYNCHRONOUSLY inside the viewport's RAF tick
+          // (a dynamic import().then() would defer to a microtask, lagging
+          // annotations one frame behind the PDF during zoom/pan). Use the
+          // lightweight=true path so per-frame zoom skips the heavy SolidJS
+          // status-bar / list / ribbon updates that would stall the frame.
+          initViewport(pdfCanvas, () => redrawAnnotations(true));
           if (!pdfCanvas._vpEventsWired) {
             wireEvents(pdfCanvas);
             pdfCanvas._vpEventsWired = true;
@@ -214,7 +223,7 @@ export async function renderPage(pageNum) {
           if (container) container.style.overflow = 'hidden';
 
           // Load page into viewport (triggers fitToViewport + first render)
-          setPage(doc.filePath, pageNum, dims.w, dims.h, dims.x0 || 0, dims.y0 || 0);
+          setPage(doc.filePath, pageNum, dims.w, dims.h, dims.x0 || 0, dims.y0 || 0, userRotation);
 
           // Create text layer for text selection + search (one-time per page)
           try {
@@ -596,7 +605,7 @@ async function renderContinuousPage(pageNum) {
   // Update canvas dimensions for new scale
   setupCanvasHiDPI(pdfCanvasEl, viewport.width, viewport.height);
   setupCanvasHiDPI(annotationCanvasEl, viewport.width, viewport.height);
-  annotationCanvasEl.style.cursor = getCursorForTool();
+  // Cursor is handled centrally by js/ui/cursor.js — no need to set it here.
 
   if (state.currentTool === 'select' || state.currentTool === 'editText') {
     annotationCanvasEl.style.zIndex = '2';
@@ -900,12 +909,24 @@ export async function goToPage(pageNum) {
   updateActiveThumbnail();
 }
 
-// Zoom controls
+// Zoom controls.
+//
+// In vector viewport mode (the modern path) the truth is `viewport.zoom`,
+// not `doc.scale` — `_render()` overwrites `doc.scale = viewport.zoom`
+// every frame, so any function that mutates `doc.scale` and then re-renders
+// via the legacy PDF.js path will have its change immediately stomped.
+// We must therefore mutate the viewport directly when it's active, and
+// only fall back to the legacy `doc.scale` path otherwise.
 export async function zoomIn() {
   const doc = state.documents[state.activeDocumentIndex];
   if (!doc) return;
+  const vp = window.__pdfViewport;
+  if (vp && vp.active) {
+    const m = await import('./pdf-viewport.js');
+    m.zoomStepAtCenter(+1);
+    return;
+  }
   doc.scale += 0.25;
-
   if (doc.viewMode === 'continuous') {
     await renderContinuous();
   } else {
@@ -916,9 +937,14 @@ export async function zoomIn() {
 export async function zoomOut() {
   const doc = state.documents[state.activeDocumentIndex];
   if (!doc) return;
+  const vp = window.__pdfViewport;
+  if (vp && vp.active) {
+    const m = await import('./pdf-viewport.js');
+    m.zoomStepAtCenter(-1);
+    return;
+  }
   if (doc.scale > 0.5) {
     doc.scale -= 0.25;
-
     if (doc.viewMode === 'continuous') {
       await renderContinuous();
     } else {
@@ -930,8 +956,78 @@ export async function zoomOut() {
 export async function setZoom(newScale) {
   const doc = state.documents[state.activeDocumentIndex];
   if (!doc) return;
+  const vp = window.__pdfViewport;
+  if (vp && vp.active) {
+    // Set absolute zoom anchored at the canvas center.
+    const pdfCanvas = document.getElementById('pdf-canvas');
+    if (pdfCanvas) {
+      const m = await import('./pdf-viewport.js');
+      m.setZoomAtPoint(pdfCanvas.width / 2, pdfCanvas.height / 2, newScale);
+    }
+    return;
+  }
   doc.scale = newScale;
+  if (doc.viewMode === 'continuous') {
+    await renderContinuous();
+  } else {
+    await renderPageOffscreen(doc.currentPage);
+  }
+}
 
+// Helper: pick the right (pageW, pageH, canvasW, canvasH) tuple for the
+// current rendering mode and return them. Vector viewport reads from the
+// singleton; legacy mode reads PDF.js viewport + #pdf-container.
+//
+// Returns null if the rendering mode can't compute fit yet (no viewport or
+// no page loaded).
+async function _getFitInputs() {
+  const doc = state.documents[state.activeDocumentIndex];
+  if (!doc || !doc.pdfDoc) return null;
+
+  const vp = window.__pdfViewport;
+  if (vp && vp.active) {
+    const pdfCanvas = document.getElementById('pdf-canvas');
+    if (!pdfCanvas) return null;
+    return {
+      mode: 'vector',
+      pageW: vp.pageW,
+      pageH: vp.pageH,
+      canvasW: pdfCanvas.width,
+      canvasH: pdfCanvas.height,
+      pdfCanvas,
+    };
+  }
+
+  // Legacy mode — read dimensions from PDF.js viewport + container.
+  const page = await doc.pdfDoc.getPage(doc.currentPage);
+  const extraRot = getPageRotation(doc.currentPage);
+  const opts = { scale: 1 };
+  if (extraRot) opts.rotation = (page.rotate + extraRot) % 360;
+  const pageViewport = page.getViewport(opts);
+  const container = document.getElementById('pdf-container');
+  if (!container) return null;
+  return {
+    mode: 'legacy',
+    pageW: pageViewport.width,
+    pageH: pageViewport.height,
+    canvasW: container.clientWidth,
+    canvasH: container.clientHeight,
+    doc,
+  };
+}
+
+// Apply a computed zoom value, dispatching to the right renderer for the
+// active mode. Centralized so fitWidth/fitPage/setZoom all share the same
+// "now actually use this zoom value" code path.
+async function _applyZoom(fitInputs, newZoom) {
+  if (fitInputs.mode === 'vector') {
+    const m = await import('./pdf-viewport.js');
+    m.setZoomAtPoint(fitInputs.canvasW / 2, fitInputs.canvasH / 2, newZoom);
+    return;
+  }
+  // Legacy
+  const doc = fitInputs.doc;
+  doc.scale = newZoom;
   if (doc.viewMode === 'continuous') {
     await renderContinuous();
   } else {
@@ -940,53 +1036,38 @@ export async function setZoom(newScale) {
 }
 
 export async function fitWidth() {
-  const doc = state.documents[state.activeDocumentIndex];
-  if (!doc || !doc.pdfDoc) return;
-
-  const page = await doc.pdfDoc.getPage(doc.currentPage);
-  const extraRot = getPageRotation(doc.currentPage);
-  const fwOpts = { scale: 1 };
-  if (extraRot) fwOpts.rotation = (page.rotate + extraRot) % 360;
-  const viewport = page.getViewport(fwOpts);
-  const container = document.getElementById('pdf-container');
-  const containerWidth = container.clientWidth - 40; // padding
-  doc.scale = containerWidth / viewport.width;
-
-  if (doc.viewMode === 'continuous') {
-    await renderContinuous();
-  } else {
-    await renderPageOffscreen(doc.currentPage);
-  }
+  const fit = await _getFitInputs();
+  if (!fit) return;
+  const { computeFitZoom } = await import('./pdf-viewport.js');
+  const newZoom = computeFitZoom('width', fit.pageW, fit.pageH, fit.canvasW, fit.canvasH, 0);
+  await _applyZoom(fit, newZoom);
 }
 
 export async function fitPage() {
-  const doc = state.documents[state.activeDocumentIndex];
-  if (!doc || !doc.pdfDoc) return;
-
-  const page = await doc.pdfDoc.getPage(doc.currentPage);
-  const extraRot2 = getPageRotation(doc.currentPage);
-  const fpOpts = { scale: 1 };
-  if (extraRot2) fpOpts.rotation = (page.rotate + extraRot2) % 360;
-  const viewport = page.getViewport(fpOpts);
-  const container = document.getElementById('pdf-container');
-  const containerWidth = container.clientWidth - 40;
-  const containerHeight = container.clientHeight - 40;
-  const scaleX = containerWidth / viewport.width;
-  const scaleY = containerHeight / viewport.height;
-  doc.scale = Math.min(scaleX, scaleY);
-
-  if (doc.viewMode === 'continuous') {
-    await renderContinuous();
-  } else {
-    await renderPageOffscreen(doc.currentPage);
-  }
+  const fit = await _getFitInputs();
+  if (!fit) return;
+  const { computeFitZoom } = await import('./pdf-viewport.js');
+  const newZoom = computeFitZoom('page', fit.pageW, fit.pageH, fit.canvasW, fit.canvasH, 0);
+  await _applyZoom(fit, newZoom);
 }
 
 export async function actualSize() {
   const doc = state.documents[state.activeDocumentIndex];
   if (!doc) return;
-  doc.scale = 1;
 
+  // Vector viewport mode: 100% = 1.0 zoom, anchored at canvas center.
+  // This makes 1 PDF point = 1 CSS pixel, the standard "Actual Size"
+  // interpretation.
+  const vp = window.__pdfViewport;
+  if (vp && vp.active) {
+    const pdfCanvas = document.getElementById('pdf-canvas');
+    if (!pdfCanvas) return;
+    const m = await import('./pdf-viewport.js');
+    m.setZoomAtPoint(pdfCanvas.width / 2, pdfCanvas.height / 2, 1.0);
+    return;
+  }
+
+  doc.scale = 1;
   if (doc.pdfDoc) {
     if (doc.viewMode === 'continuous') {
       await renderContinuous();

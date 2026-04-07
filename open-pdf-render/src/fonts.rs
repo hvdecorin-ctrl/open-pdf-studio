@@ -1,5 +1,6 @@
 use std::collections::HashMap;
-use lopdf::{Dictionary, Document, Object};
+use std::sync::Arc;
+use lopdf::{Dictionary, Document, Object, ObjectId};
 use crate::encoding;
 use crate::font_parser::{self, ParsedFont};
 
@@ -17,9 +18,22 @@ pub struct FontEntry {
     pub to_unicode: HashMap<u8, char>,
 }
 
-/// Registry that caches font lookups per font name.
+/// Registry that caches parsed fonts by their global PDF ObjectId.
+///
+/// IMPORTANT: this is keyed by `ObjectId`, NOT by the page-local font name
+/// (e.g. "F1"), because the same name can refer to different fonts on
+/// different pages. ObjectId is the only stable global identifier for an
+/// indirect font dictionary inside a single PDF document.
+///
+/// Inline (non-referenced) font dictionaries cannot be cached because they
+/// have no stable identity — they get parsed on every lookup. This is rare
+/// in practice; almost all PDFs share fonts via indirect references.
+///
+/// FontRegistry lives on `DocumentHandle` and survives across page renders,
+/// so the expensive glyph-outline extraction (which dominates per-page cost
+/// for text-heavy pages) only runs the first time a font is encountered.
 pub struct FontRegistry {
-    fonts: HashMap<String, FontEntry>,
+    fonts: HashMap<ObjectId, Arc<FontEntry>>,
 }
 
 impl FontRegistry {
@@ -29,21 +43,45 @@ impl FontRegistry {
         }
     }
 
-    /// Look up a font by name from the page Resources/Font dictionary.
-    /// Caches results so each font is only parsed once.
-    pub fn get_font<'a>(
-        &'a mut self,
+    /// Look up a font by its page-local name. Resolves the name through the
+    /// page Resources/Font dictionary to a global `ObjectId`, then returns
+    /// the cached `FontEntry` (or parses + caches it on miss).
+    ///
+    /// Returns `Arc<FontEntry>` so the caller can hold the entry across the
+    /// borrow that filled the cache without lifetime contortions.
+    pub fn get_font(
+        &mut self,
         name: &str,
         doc: &Document,
         resources: &Dictionary,
-    ) -> Option<&'a FontEntry> {
-        if self.fonts.contains_key(name) {
-            return self.fonts.get(name);
+    ) -> Option<Arc<FontEntry>> {
+        let (font_id_opt, font_dict) = Self::resolve_font_dict_with_id(name, doc, resources)?;
+
+        // Cache hit (only possible for indirectly-referenced fonts)
+        if let Some(font_id) = font_id_opt {
+            if let Some(entry) = self.fonts.get(&font_id) {
+                return Some(entry.clone());
+            }
         }
 
-        // Look up font dictionary from Resources -> Font -> <name>
-        let font_dict = Self::resolve_font_dict(name, doc, resources)?;
+        // Cache miss — do the expensive parse
+        let entry = Arc::new(Self::build_font_entry(&font_dict, doc));
 
+        // Cache only when we have a stable global ObjectId
+        if let Some(font_id) = font_id_opt {
+            self.fonts.insert(font_id, entry.clone());
+        }
+
+        Some(entry)
+    }
+
+    /// Build a FontEntry from a font dictionary. This is the expensive
+    /// per-font work — all of the calls inside (extract_and_parse_font,
+    /// try_system_font, parse_truetype) walk every glyph in the embedded
+    /// font and build a 64K-entry Unicode→GID cmap. Caching the result via
+    /// `get_font()` saves all of this work on subsequent lookups within the
+    /// same document.
+    fn build_font_entry(font_dict: &Dictionary, doc: &Document) -> FontEntry {
         // Extract base font name
         let base_font = font_dict
             .get(b"BaseFont")
@@ -68,19 +106,19 @@ impl FontRegistry {
 
         // Check CIDToGIDMap for Type0 fonts
         let cid_to_gid_identity = if is_cid {
-            Self::check_cid_to_gid_identity(&font_dict, doc)
+            Self::check_cid_to_gid_identity(font_dict, doc)
         } else {
             false
         };
 
         // Extract encoding info
-        let (encoding_name, differences) = Self::extract_encoding(&font_dict, doc);
+        let (encoding_name, differences) = Self::extract_encoding(font_dict, doc);
 
         // Extract ToUnicode CMap (maps char codes to Unicode codepoints)
-        let to_unicode = Self::extract_to_unicode(&font_dict, doc);
+        let to_unicode = Self::extract_to_unicode(font_dict, doc);
 
         // Try to extract and parse embedded font data
-        let mut parsed = Self::extract_and_parse_font(&font_dict, doc);
+        let mut parsed = Self::extract_and_parse_font(font_dict, doc);
 
         // Check if the embedded font has usable glyph outlines for common character codes.
         // Some PDFs embed fonts with empty glyph entries for subset codes — fall back
@@ -103,10 +141,10 @@ impl FontRegistry {
 
         // For Type0 fonts with DescendantFonts, also check the descendant for embedded data
         if parsed.is_none() && is_cid {
-            parsed = Self::extract_descendant_font(&font_dict, doc);
+            parsed = Self::extract_descendant_font(font_dict, doc);
         }
 
-        let entry = FontEntry {
+        FontEntry {
             parsed,
             encoding_name,
             differences,
@@ -114,10 +152,7 @@ impl FontRegistry {
             is_cid,
             cid_to_gid_identity,
             to_unicode,
-        };
-
-        self.fonts.insert(name.to_string(), entry);
-        self.fonts.get(name)
+        }
     }
 
     /// Resolve a character code to a glyph ID using the font entry.
@@ -154,19 +189,36 @@ impl FontRegistry {
         None
     }
 
-    /// Resolve the Font dictionary for a given font name from resources.
-    fn resolve_font_dict(name: &str, doc: &Document, resources: &Dictionary) -> Option<Dictionary> {
+    /// Resolve the Font dictionary for a given font name from resources,
+    /// returning the global `ObjectId` if the font is referenced indirectly.
+    /// Inline (non-referenced) font dicts get `None` as the id and are
+    /// re-parsed on every lookup.
+    fn resolve_font_dict_with_id(
+        name: &str,
+        doc: &Document,
+        resources: &Dictionary,
+    ) -> Option<(Option<ObjectId>, Dictionary)> {
         let font_res = resources.get(b"Font").ok()?;
-        let font_res = Self::resolve_obj(font_res, doc)?;
-        let font_dict_parent = match font_res {
+        let font_res_resolved = Self::resolve_obj(font_res, doc)?;
+        let font_dict_parent = match font_res_resolved {
             Object::Dictionary(d) => d.clone(),
             _ => return None,
         };
 
         let font_obj = font_dict_parent.get(name.as_bytes()).ok()?;
-        let font_obj = Self::resolve_obj(font_obj, doc)?;
+
+        // The entry may be an indirect reference (which gives us a stable
+        // ObjectId for caching) or an inline dictionary (no stable id).
         match font_obj {
-            Object::Dictionary(d) => Some(d.clone()),
+            Object::Reference(id) => {
+                let resolved = doc.get_object(*id).ok()?.clone();
+                if let Object::Dictionary(d) = resolved {
+                    Some((Some(*id), d))
+                } else {
+                    None
+                }
+            }
+            Object::Dictionary(d) => Some((None, d.clone())),
             _ => None,
         }
     }

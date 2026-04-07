@@ -1,7 +1,7 @@
 use std::fs;
 use std::fs::File;
 use std::collections::HashMap;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use tauri::{Emitter, Manager};
 use tauri_plugin_fs::FsExt;
@@ -14,6 +14,14 @@ struct LockedFiles(Mutex<HashMap<String, File>>);
 
 // Cache PDF file bytes to avoid re-reading from disk on every render call
 struct PdfBytesCache(Mutex<HashMap<String, Vec<u8>>>);
+
+// Cache parsed DocumentHandle objects so the font registry inside each
+// handle survives across page renders. The handle holds a Mutex<FontRegistry>
+// internally — extracting glyph outlines for a font (the dominant cost on
+// text-heavy pages) only runs the first time that font is encountered in
+// the document. Without this cache every Tauri command would create a
+// fresh DocumentHandle and re-extract every glyph from scratch.
+struct DocHandleCache(Mutex<HashMap<String, Arc<open_pdf_render::DocumentHandle>>>);
 
 #[tauri::command]
 fn get_opened_file(state: tauri::State<OpenedFiles>) -> Vec<String> {
@@ -818,25 +826,67 @@ fn allow_fs_scope(app: tauri::AppHandle, path: String) -> Result<bool, String> {
 }
 
 // ─── PDF rendering via open-pdf-render (pure Rust) ────────────────────────
-use open_pdf_render::PdfRenderer;
+use open_pdf_render::{DocumentHandle, PdfRenderer};
 
-#[tauri::command]
-fn render_pdf_page(path: String, page_index: u32, scale: f32, cache: tauri::State<PdfBytesCache>) -> Result<String, String> {
-    // Use cached PDF bytes if available, otherwise read from disk and cache
+/// Get a cached `Arc<DocumentHandle>` for the given file, or load + cache one.
+///
+/// First checks the DocHandleCache. On miss, falls back to the bytes cache
+/// (or disk), parses the PDF once, and stores the resulting Arc in the
+/// handle cache for all future commands. The handle owns its own internal
+/// font registry so subsequent extract_draw_commands calls reuse all glyph
+/// outlines from previous pages.
+fn get_or_load_doc(
+    path: &str,
+    bytes_cache: &PdfBytesCache,
+    handle_cache: &DocHandleCache,
+) -> Result<Arc<DocumentHandle>, String> {
+    // Fast path — handle already cached
+    {
+        let cache_map = handle_cache.0.lock().map_err(|e| format!("Handle cache lock: {}", e))?;
+        if let Some(handle) = cache_map.get(path) {
+            return Ok(handle.clone());
+        }
+    }
+
+    // Slow path — fetch bytes (from cache or disk), parse, insert
     let bytes = {
-        let mut cache_map = cache.0.lock().map_err(|e| format!("Cache lock: {}", e))?;
-        if let Some(cached) = cache_map.get(&path) {
+        let mut bm = bytes_cache.0.lock().map_err(|e| format!("Bytes cache lock: {}", e))?;
+        if let Some(cached) = bm.get(path) {
             cached.clone()
         } else {
-            let read_bytes = fs::read(&path).map_err(|e| format!("Read: {}", e))?;
-            cache_map.insert(path.clone(), read_bytes.clone());
-            read_bytes
+            let read = fs::read(path).map_err(|e| format!("Read: {}", e))?;
+            bm.insert(path.to_string(), read.clone());
+            read
         }
     };
 
     let renderer = PdfRenderer::new();
-    let doc = renderer.load_document(&bytes).map_err(|e| format!("{}", e))?;
-    let page = doc.render_page(page_index as usize, scale).map_err(|e| format!("{}", e))?;
+    let handle = renderer.load_document(&bytes).map_err(|e| format!("{}", e))?;
+    let arc = Arc::new(handle);
+
+    {
+        let mut hm = handle_cache.0.lock().map_err(|e| format!("Handle cache lock: {}", e))?;
+        // Double-check in case another thread inserted while we were parsing.
+        if let Some(existing) = hm.get(path) {
+            return Ok(existing.clone());
+        }
+        hm.insert(path.to_string(), arc.clone());
+    }
+    Ok(arc)
+}
+
+#[tauri::command]
+fn render_pdf_page(
+    path: String,
+    page_index: u32,
+    scale: f32,
+    rotation: Option<i32>,
+    bytes_cache: tauri::State<PdfBytesCache>,
+    handle_cache: tauri::State<DocHandleCache>,
+) -> Result<String, String> {
+    let doc = get_or_load_doc(&path, &bytes_cache, &handle_cache)?;
+    let extra_rot = rotation.unwrap_or(0);
+    let page = doc.render_page(page_index as usize, scale, extra_rot).map_err(|e| format!("{}", e))?;
 
     // Write RGBA to temp file (Tauri IPC is too slow for 16-36MB binary data)
     let temp_dir = std::env::temp_dir();
@@ -856,15 +906,16 @@ fn render_pdf_page(path: String, page_index: u32, scale: f32, cache: tauri::Stat
 /// Render a thumbnail for a PDF page. Returns a JSON string with {dataURL, width, height}.
 /// Uses the Rust bitmap renderer at low resolution for maximum speed (~10-50ms per page).
 #[tauri::command]
-fn render_thumbnail(path: String, page_index: u32, max_width: u32, cache: tauri::State<PdfBytesCache>) -> Result<String, String> {
-    let bytes = {
-        let mut c = cache.0.lock().map_err(|e| format!("{}", e))?;
-        if let Some(b) = c.get(&path) { b.clone() }
-        else { let b = fs::read(&path).map_err(|e| format!("{}", e))?; c.insert(path.clone(), b.clone()); b }
-    };
-
-    let renderer = PdfRenderer::new();
-    let doc = renderer.load_document(&bytes).map_err(|e| format!("{}", e))?;
+fn render_thumbnail(
+    path: String,
+    page_index: u32,
+    max_width: u32,
+    rotation: Option<i32>,
+    bytes_cache: tauri::State<PdfBytesCache>,
+    handle_cache: tauri::State<DocHandleCache>,
+) -> Result<String, String> {
+    let doc = get_or_load_doc(&path, &bytes_cache, &handle_cache)?;
+    let extra_rot = rotation.unwrap_or(0);
 
     // Get page dimensions to calculate thumbnail scale
     let (w_pt, h_pt) = doc.page_dimensions(page_index as usize)
@@ -874,7 +925,7 @@ fn render_thumbnail(path: String, page_index: u32, max_width: u32, cache: tauri:
     let scale = max_width as f32 / w_pt.max(h_pt);
 
     // Render at thumbnail scale
-    let page = doc.render_page(page_index as usize, scale).map_err(|e| format!("{}", e))?;
+    let page = doc.render_page(page_index as usize, scale, extra_rot).map_err(|e| format!("{}", e))?;
 
     // Convert RGBA to RGB (JPEG doesn't support alpha)
     let pixel_count = (page.width * page.height) as usize;
@@ -904,14 +955,13 @@ fn render_thumbnail(path: String, page_index: u32, max_width: u32, cache: tauri:
 }
 
 #[tauri::command]
-fn analyze_page_type(path: String, page_index: u32, cache: tauri::State<PdfBytesCache>) -> Result<String, String> {
-    let bytes = {
-        let mut c = cache.0.lock().map_err(|e| format!("{}", e))?;
-        if let Some(b) = c.get(&path) { b.clone() }
-        else { let b = fs::read(&path).map_err(|e| format!("{}", e))?; c.insert(path.clone(), b.clone()); b }
-    };
-    let renderer = PdfRenderer::new();
-    let doc = renderer.load_document(&bytes).map_err(|e| format!("{}", e))?;
+fn analyze_page_type(
+    path: String,
+    page_index: u32,
+    bytes_cache: tauri::State<PdfBytesCache>,
+    handle_cache: tauri::State<DocHandleCache>,
+) -> Result<String, String> {
+    let doc = get_or_load_doc(&path, &bytes_cache, &handle_cache)?;
     match doc.analyze_page_type(page_index as usize).map_err(|e| format!("{}", e))? {
         open_pdf_render::PageType::Vector => Ok("vector".into()),
         open_pdf_render::PageType::Tile => Ok("tile".into()),
@@ -919,51 +969,147 @@ fn analyze_page_type(path: String, page_index: u32, cache: tauri::State<PdfBytes
 }
 
 #[tauri::command]
-fn extract_draw_commands(path: String, page_index: u32, cache: tauri::State<PdfBytesCache>) -> Result<Vec<u8>, String> {
-    let bytes = {
-        let mut c = cache.0.lock().map_err(|e| format!("{}", e))?;
-        if let Some(b) = c.get(&path) { b.clone() }
-        else { let b = fs::read(&path).map_err(|e| format!("{}", e))?; c.insert(path.clone(), b.clone()); b }
-    };
-    let renderer = PdfRenderer::new();
-    let doc = renderer.load_document(&bytes).map_err(|e| format!("{}", e))?;
-    let cmds = doc.extract_draw_commands(page_index as usize).map_err(|e| format!("{}", e))?;
+fn extract_draw_commands(
+    path: String,
+    page_index: u32,
+    rotation: Option<i32>,
+    bytes_cache: tauri::State<PdfBytesCache>,
+    handle_cache: tauri::State<DocHandleCache>,
+) -> Result<Vec<u8>, String> {
+    let doc = get_or_load_doc(&path, &bytes_cache, &handle_cache)?;
+    let extra_rot = rotation.unwrap_or(0);
+    let cmds = doc.extract_draw_commands(page_index as usize, extra_rot).map_err(|e| format!("{}", e))?;
     Ok(cmds.into_bytes())
 }
 
-/// Invalidate the PDF bytes cache for a specific file (call after save/modify)
+/// Batch extract draw commands for multiple pages in parallel using rayon.
+/// Returns one Vec<u8> per requested page in the same order. Used for
+/// adjacent-page prefetch (warm pages 2..N in the background after page 1
+/// is on screen so wheel-scrolling forward feels instant).
+///
+/// `rotations` is a parallel array of extra rotation values (one per page).
+/// Pass an empty array to use 0 for all pages.
 #[tauri::command]
-fn invalidate_pdf_cache(path: String, cache: tauri::State<PdfBytesCache>) -> Result<bool, String> {
-    let mut cache_map = cache.0.lock().map_err(|e| format!("Cache lock: {}", e))?;
-    cache_map.remove(&path);
-    Ok(true)
+fn extract_draw_commands_batch(
+    path: String,
+    page_indices: Vec<u32>,
+    rotations: Option<Vec<i32>>,
+    bytes_cache: tauri::State<PdfBytesCache>,
+    handle_cache: tauri::State<DocHandleCache>,
+) -> Result<Vec<Vec<u8>>, String> {
+    let doc = get_or_load_doc(&path, &bytes_cache, &handle_cache)?;
+    let rots = rotations.unwrap_or_default();
+    let pairs: Vec<(usize, i32)> = page_indices.iter().enumerate().map(|(i, &p)| {
+        (p as usize, rots.get(i).copied().unwrap_or(0))
+    }).collect();
+    let results = doc.extract_draw_commands_batch(&pairs);
+    let mut out = Vec::with_capacity(results.len());
+    for r in results {
+        out.push(r.map(|b| b.into_bytes()).map_err(|e| format!("{}", e))?);
+    }
+    Ok(out)
 }
 
-/// Clear the entire PDF bytes cache (call on app cleanup or memory pressure)
+/// Extract text spans for the text-selection layer of one page.
+/// Replaces the second PDF parse PDF.js used to do for getTextContent —
+/// the Rust interpreter walks the same content stream as draw command
+/// extraction but only emits text spans, sharing the document-scoped font
+/// cache so glyph parsing is amortized across pages.
 #[tauri::command]
-fn clear_pdf_cache(cache: tauri::State<PdfBytesCache>) -> Result<bool, String> {
-    let mut cache_map = cache.0.lock().map_err(|e| format!("Cache lock: {}", e))?;
-    cache_map.clear();
-    Ok(true)
+fn extract_text(
+    path: String,
+    page_index: u32,
+    bytes_cache: tauri::State<PdfBytesCache>,
+    handle_cache: tauri::State<DocHandleCache>,
+) -> Result<Vec<TextSpanDto>, String> {
+    let doc = get_or_load_doc(&path, &bytes_cache, &handle_cache)?;
+    let spans = doc.extract_text_spans(page_index as usize).map_err(|e| format!("{}", e))?;
+    Ok(spans.into_iter().map(TextSpanDto::from).collect())
 }
 
+/// Batch text-span extraction for multiple pages, parallelized via rayon.
 #[tauri::command]
-fn get_page_dimensions(path: String, cache: tauri::State<PdfBytesCache>) -> Result<Vec<(f32, f32)>, String> {
-    let bytes = {
-        let mut cache_map = cache.0.lock().map_err(|e| format!("Cache lock: {}", e))?;
-        if let Some(cached) = cache_map.get(&path) {
-            cached.clone()
-        } else {
-            let read_bytes = fs::read(&path).map_err(|e| format!("Read: {}", e))?;
-            cache_map.insert(path.clone(), read_bytes.clone());
-            read_bytes
+fn extract_text_batch(
+    path: String,
+    page_indices: Vec<u32>,
+    bytes_cache: tauri::State<PdfBytesCache>,
+    handle_cache: tauri::State<DocHandleCache>,
+) -> Result<Vec<Vec<TextSpanDto>>, String> {
+    let doc = get_or_load_doc(&path, &bytes_cache, &handle_cache)?;
+    let pages: Vec<usize> = page_indices.iter().map(|i| *i as usize).collect();
+    let results = doc.extract_text_spans_batch(&pages);
+    let mut out = Vec::with_capacity(results.len());
+    for r in results {
+        out.push(r.map(|spans| spans.into_iter().map(TextSpanDto::from).collect())
+                  .map_err(|e| format!("{}", e))?);
+    }
+    Ok(out)
+}
+
+/// Serializable mirror of `open_pdf_render::TextSpan` for Tauri IPC.
+/// Tauri's serde plumbing requires types in this crate (or with derive
+/// access). The Rust crate's TextSpan can't derive Serialize without
+/// pulling serde into open-pdf-render, so we mirror it here.
+#[derive(serde::Serialize)]
+struct TextSpanDto {
+    text: String,
+    x: f32,
+    y: f32,
+    width: f32,
+    height: f32,
+    font_size: f32,
+}
+
+impl From<open_pdf_render::TextSpan> for TextSpanDto {
+    fn from(s: open_pdf_render::TextSpan) -> Self {
+        TextSpanDto {
+            text: s.text,
+            x: s.x,
+            y: s.y,
+            width: s.width,
+            height: s.height,
+            font_size: s.font_size,
         }
-    };
+    }
+}
 
-    let renderer = PdfRenderer::new();
-    let doc = renderer.load_document(&bytes).map_err(|e| format!("{}", e))?;
-    (0..doc.page_count())
-        .map(|i| doc.page_dimensions(i).map_err(|e| format!("{}", e)))
+/// Invalidate the PDF bytes cache AND the parsed handle cache for a specific
+/// file (call after save/modify so the next render sees the new content).
+#[tauri::command]
+fn invalidate_pdf_cache(
+    path: String,
+    bytes_cache: tauri::State<PdfBytesCache>,
+    handle_cache: tauri::State<DocHandleCache>,
+) -> Result<bool, String> {
+    bytes_cache.0.lock().map_err(|e| format!("Bytes cache lock: {}", e))?.remove(&path);
+    handle_cache.0.lock().map_err(|e| format!("Handle cache lock: {}", e))?.remove(&path);
+    Ok(true)
+}
+
+/// Clear the entire PDF bytes cache AND parsed handle cache (call on app
+/// cleanup or memory pressure).
+#[tauri::command]
+fn clear_pdf_cache(
+    bytes_cache: tauri::State<PdfBytesCache>,
+    handle_cache: tauri::State<DocHandleCache>,
+) -> Result<bool, String> {
+    bytes_cache.0.lock().map_err(|e| format!("Bytes cache lock: {}", e))?.clear();
+    handle_cache.0.lock().map_err(|e| format!("Handle cache lock: {}", e))?.clear();
+    Ok(true)
+}
+
+#[tauri::command]
+fn get_page_dimensions(
+    path: String,
+    bytes_cache: tauri::State<PdfBytesCache>,
+    handle_cache: tauri::State<DocHandleCache>,
+) -> Result<Vec<(f32, f32)>, String> {
+    let doc = get_or_load_doc(&path, &bytes_cache, &handle_cache)?;
+    // Parallelized via rayon inside open-pdf-render — much faster than the
+    // old sequential loop on multi-page documents.
+    doc.page_dimensions_all()
+        .into_iter()
+        .map(|r| r.map_err(|e| format!("{}", e)))
         .collect()
 }
 
@@ -981,6 +1127,7 @@ pub fn run() {
         .manage(OpenedFiles(Mutex::new(opened_files)))
         .manage(LockedFiles(Mutex::new(HashMap::new())))
         .manage(PdfBytesCache(Mutex::new(HashMap::new())))
+        .manage(DocHandleCache(Mutex::new(HashMap::new())))
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
@@ -1068,6 +1215,9 @@ pub fn run() {
             clear_pdf_cache,
             analyze_page_type,
             extract_draw_commands,
+            extract_draw_commands_batch,
+            extract_text,
+            extract_text_batch,
             render_thumbnail,
             allow_fs_scope
         ])

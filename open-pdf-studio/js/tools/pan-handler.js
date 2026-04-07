@@ -1,5 +1,8 @@
 import { state } from '../core/state.js';
-import { annotationCanvas, pdfContainer } from '../ui/dom-elements.js';
+
+// Pan handler — manages legacy (non-viewport) scroll-based panning.
+// Cursor is reactive: it follows state.isPanning + state.isMiddleButtonPanning
+// via js/ui/cursor.js. This file ONLY manipulates state and scroll position.
 
 export function getScrollContainer() {
   return document.getElementById('pdf-container');
@@ -18,11 +21,6 @@ export function handlePanMove(e) {
 export function handlePanEnd(e) {
   if (!state.isPanning) return;
   state.isPanning = false;
-  // Reset cursors back to grab
-  document.body.style.cursor = '';
-  pdfContainer.style.cursor = '';
-  if (annotationCanvas) annotationCanvas.style.cursor = 'grab';
-  document.querySelectorAll('.annotation-canvas').forEach(c => c.style.cursor = 'grab');
   document.removeEventListener('pointermove', handlePanMove);
   document.removeEventListener('pointerup', handlePanEnd);
   document.removeEventListener('mousemove', handlePanMove);
@@ -33,11 +31,6 @@ export function handleMiddleButtonPanEnd(e) {
   if (!state.isPanning || !state.isMiddleButtonPanning) return;
   state.isPanning = false;
   state.isMiddleButtonPanning = false;
-  // Reset cursors back to default (not grab, since we're not using hand tool)
-  document.body.style.cursor = '';
-  pdfContainer.style.cursor = '';
-  if (annotationCanvas) annotationCanvas.style.cursor = '';
-  document.querySelectorAll('.annotation-canvas').forEach(c => c.style.cursor = '');
   document.removeEventListener('pointermove', handlePanMove);
   document.removeEventListener('pointerup', handleMiddleButtonPanEnd);
   document.removeEventListener('mousemove', handlePanMove);
@@ -52,11 +45,6 @@ export function startPan(e, isMiddleButton) {
   state.panStartY = e.clientY;
   state.panScrollStartX = scrollContainer ? scrollContainer.scrollLeft : 0;
   state.panScrollStartY = scrollContainer ? scrollContainer.scrollTop : 0;
-  // Set grabbing cursor on all relevant elements
-  document.body.style.cursor = 'grabbing';
-  pdfContainer.style.cursor = 'grabbing';
-  if (annotationCanvas) annotationCanvas.style.cursor = 'grabbing';
-  document.querySelectorAll('.annotation-canvas').forEach(c => c.style.cursor = 'grabbing');
   document.addEventListener('pointermove', handlePanMove);
   document.addEventListener('pointerup', isMiddleButton ? handleMiddleButtonPanEnd : handlePanEnd);
   e.preventDefault();
@@ -70,9 +58,6 @@ export function startContinuousPan(e, isMiddleButton) {
   state.panStartY = e.clientY;
   state.panScrollStartX = scrollContainer ? scrollContainer.scrollLeft : 0;
   state.panScrollStartY = scrollContainer ? scrollContainer.scrollTop : 0;
-  document.body.style.cursor = 'grabbing';
-  pdfContainer.style.cursor = 'grabbing';
-  document.querySelectorAll('.annotation-canvas').forEach(c => c.style.cursor = 'grabbing');
   document.addEventListener('pointermove', handlePanMove);
   document.addEventListener('pointerup', isMiddleButton ? handleMiddleButtonPanEnd : handlePanEnd);
   e.preventDefault();

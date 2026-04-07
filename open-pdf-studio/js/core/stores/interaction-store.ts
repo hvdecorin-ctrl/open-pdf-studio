@@ -38,6 +38,18 @@ export interface InteractionState {
   addHoleTargetId: string | null;
   addHolePoints: Point[];
   lastSnapResult: any;
+  // ─── Reactive cursor inputs ──────────────────────────────────────────
+  // The cursor module (js/ui/cursor.js) reads these to derive the cursor
+  // shown in the PDF area. Tools write to these instead of touching
+  // canvas.style.cursor directly.
+  hoverAnnotation: Annotation | null;
+  hoverHandle: string | null;
+  /** When set during a drag, overrides the default 'move' cursor (e.g. 'copy' for Ctrl+drag). */
+  dragCursor: string | null;
+  /** Long-running operation in progress — shows the wait cursor. */
+  busy: boolean;
+  /** Snap calibration / pick mode — shows the crosshair cursor. */
+  snapPick: boolean;
 }
 
 export const interactionState = createMutable<InteractionState>({
@@ -77,6 +89,11 @@ export const interactionState = createMutable<InteractionState>({
   addHoleTargetId: null,
   addHolePoints: [],
   lastSnapResult: null,
+  hoverAnnotation: null,
+  hoverHandle: null,
+  dragCursor: null,
+  busy: false,
+  snapPick: false,
 });
 
 export function resetDrawing(): void {
@@ -102,6 +119,7 @@ export function resetDrag(): void {
   interactionState.activeHandle = null;
   interactionState.originalAnnotation = null;
   interactionState.originalAnnotations = [];
+  interactionState.dragCursor = null;
 }
 
 export function resetPan(): void {

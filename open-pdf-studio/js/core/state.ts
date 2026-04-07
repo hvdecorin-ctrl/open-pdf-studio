@@ -90,6 +90,11 @@ export interface AppState {
   rubberBandStartY: number;
   isPanning: boolean;
   isMiddleButtonPanning: boolean;
+  hoverAnnotation: Annotation | null;
+  hoverHandle: string | null;
+  dragCursor: string | null;
+  busy: boolean;
+  snapPick: boolean;
   panStartX: number;
   panStartY: number;
   panScrollStartX: number;
@@ -241,6 +246,16 @@ export const state = createMutable<AppState>({
   set addHolePoints(v) { interactionState.addHolePoints = v; },
   get lastSnapResult() { return interactionState.lastSnapResult; },
   set lastSnapResult(v) { interactionState.lastSnapResult = v; },
+  get hoverAnnotation() { return interactionState.hoverAnnotation; },
+  set hoverAnnotation(v) { interactionState.hoverAnnotation = v; },
+  get hoverHandle() { return interactionState.hoverHandle; },
+  set hoverHandle(v) { interactionState.hoverHandle = v; },
+  get dragCursor() { return interactionState.dragCursor; },
+  set dragCursor(v) { interactionState.dragCursor = v; },
+  get busy() { return interactionState.busy; },
+  set busy(v) { interactionState.busy = v; },
+  get snapPick() { return interactionState.snapPick; },
+  set snapPick(v) { interactionState.snapPick = v; },
 
   // Backward compat — clipboard-store
   get clipboardAnnotation() { return clipboardState.annotation; },

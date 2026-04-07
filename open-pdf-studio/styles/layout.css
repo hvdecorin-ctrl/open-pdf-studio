@@ -288,6 +288,14 @@
   flex: 1;
   min-height: 0;
   overflow: auto;
+}
+
+/* Padding only for the empty-state placeholder. The PDF container itself
+   must NOT have padding — the canvas paints its own grey backdrop via
+   _render() and we need it to fill the entire viewport area, otherwise the
+   parent's dark page-chrome leaks through the padding gap as a visible
+   frame around the canvas. */
+.main-view > #placeholder {
   padding: 20px;
 }
 
@@ -345,6 +353,9 @@
   position: relative;
   margin: 0 auto;
   display: inline-block;
+  /* Constrain mix-blend-mode of #text-highlight-canvas to this stacking
+     context so it only blends with #pdf-canvas, not page chrome below it. */
+  isolation: isolate;
 }
 
 #canvas-container.hidden {
@@ -386,12 +397,50 @@
   display: block;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
   background: white;
+  /* OPTION A: GPU layer promotion. Forces this canvas onto its own compositor
+     layer so it composites atomically with the overlay canvases above it.
+     Without this, separate canvases get uploaded to the GPU at slightly
+     different times and appear out of sync during fast zoom/pan. */
+  transform: translateZ(0);
+  will-change: transform;
 }
 
 #annotation-canvas {
   position: absolute;
   top: 0;
   left: 0;
+  /* OPTION A: layer promotion */
+  transform: translateZ(0);
+  will-change: transform;
+}
+
+/* Text highlights live on a dedicated canvas with multiply blend so they
+   tint the page yellow but leave the underlying text fully readable.
+   Must sit between #pdf-canvas and #annotation-canvas in the DOM.
+   IMPORTANT: do NOT layer-promote this canvas (no translateZ/will-change).
+   mix-blend-mode requires the element to share a compositor layer with its
+   backdrop (#pdf-canvas) — promoting it isolates the layer and either breaks
+   the blend or forces a slow software composite. */
+#text-highlight-canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+  mix-blend-mode: multiply;
+}
+
+/* The reactive cursor module (js/ui/cursor.js) sets the cursor on
+   `.main-view`. Most descendant elements have `cursor: auto` and inherit
+   from `.main-view` for free. The PDF.js text layer spans, link layer items,
+   and form fields have their own explicit cursor though, and would shadow
+   the inherited one. When the cursor module enters an "override" mode
+   (panning, busy, snap-pick) it toggles `body.pdf-cursor-override` and this
+   rule forces those overlay elements to fall back to the parent (.main-view)
+   cursor — so the grabbing/wait/crosshair cursor wins everywhere it should.
+   !important is needed only because the overlay cursors are set inline. */
+body.pdf-cursor-override .main-view *,
+body.pdf-cursor-override #canvas-container * {
+  cursor: inherit !important;
 }
 
 .continuous-container canvas {

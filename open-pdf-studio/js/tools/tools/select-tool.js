@@ -1,4 +1,3 @@
-import { getAnnotationHoverCursor } from '../../ui/cursors/annotation-cursors.js';
 import { getActiveDocument } from '../../core/state.js';
 import { applyToolTransform, getEffectiveScale } from '../tool-context.js';
 
@@ -11,12 +10,13 @@ export const selectTool = {
   cursor: 'default',
 
   onPointerDown(ctx, e) {
-    const { x, y, state, canvas } = ctx;
+    const { x, y, state } = ctx;
     const pdfaLocked = ctx.isPdfAReadOnly();
     const doc = getActiveDocument();
     const selAnns = doc ? doc.selectedAnnotations : [];
 
-    // Check resize handle on selected annotation
+    // Check resize handle on selected annotation.
+    // Cursor is driven by state.isResizing + state.activeHandle (see js/ui/cursor.js).
     const selAnn = selAnns.length === 1 ? selAnns[0] : null;
     if (!pdfaLocked && selAnn) {
       const handleType = ctx.findHandleAt(x, y, selAnn);
@@ -24,7 +24,6 @@ export const selectTool = {
         state.isResizing = true;
         state.activeHandle = handleType;
         state.originalAnnotation = ctx.cloneAnnotation(selAnn);
-        canvas.style.cursor = ctx.getCursorForHandle(handleType, selAnn.rotation, selAnn);
         return;
       }
     }
@@ -58,7 +57,7 @@ export const selectTool = {
             if (selAnns2().length === 1) {
               state.originalAnnotation = ctx.cloneAnnotation(selAnns2()[0]);
             }
-            canvas.style.cursor = 'copy';
+            state.dragCursor = 'copy';
           }
         } else {
           // Ctrl+click on unselected: add and allow drag
@@ -71,7 +70,7 @@ export const selectTool = {
             if (selAnns2().length === 1) {
               state.originalAnnotation = ctx.cloneAnnotation(selAnns2()[0]);
             }
-            canvas.style.cursor = 'copy';
+            state.dragCursor = 'copy';
           }
         }
         if (selAnns2().length === 1) {
@@ -88,7 +87,7 @@ export const selectTool = {
           if (!pdfaLocked && !isTextMarkup) {
             state.isDragging = true;
             state.originalAnnotations = selAnns.map(a => ctx.cloneAnnotation(a));
-            canvas.style.cursor = 'move';
+            state.dragCursor = 'move';
           }
         } else {
           if (doc) { doc.selectedAnnotations = [clickedAnnotation]; doc.selectedAnnotation = clickedAnnotation; }
@@ -97,7 +96,7 @@ export const selectTool = {
             state.isDragging = true;
             state.originalAnnotation = ctx.cloneAnnotation(clickedAnnotation);
             state.originalAnnotations = [ctx.cloneAnnotation(clickedAnnotation)];
-            canvas.style.cursor = 'move';
+            state.dragCursor = 'move';
           }
         }
       }
@@ -140,21 +139,27 @@ export const selectTool = {
       return;
     }
 
-    // Hover: show handle cursors
+    // Hover state — write to state.hoverAnnotation / state.hoverHandle.
+    // The reactive cursor module (js/ui/cursor.js) reads these and updates
+    // the visible cursor automatically; tools NEVER set canvas.style.cursor.
     const doc = getActiveDocument();
     const selAnns = doc ? doc.selectedAnnotations : [];
     const hoverAnn = selAnns.length === 1 ? selAnns[0] : null;
+    let hoverHandle = null;
     if (hoverAnn) {
-      const handleType = ctx.findHandleAt(x, y, hoverAnn);
-      if (handleType) {
-        canvas.style.cursor = ctx.getCursorForHandle(handleType, hoverAnn.rotation, hoverAnn);
-        return;
-      }
+      hoverHandle = ctx.findHandleAt(x, y, hoverAnn);
+    }
+    state.hoverHandle = hoverHandle;
+    if (hoverHandle) {
+      // Hovering a resize handle — clear annotation hover so the handle wins.
+      state.hoverAnnotation = null;
+      canvas.title = '';
+      return;
     }
     const hoverAnnotation = ctx.findAnnotationAt(x, y);
+    state.hoverAnnotation = hoverAnnotation || null;
     canvas.title = (hoverAnnotation?.type === 'comment' && !hoverAnnotation.popupOpen && hoverAnnotation.text)
       ? hoverAnnotation.text.split('\n').slice(0, 5).join('\n') : '';
-    canvas.style.cursor = hoverAnnotation ? getAnnotationHoverCursor(hoverAnnotation.type) : 'default';
   },
 
   onPointerUp(ctx, e) {

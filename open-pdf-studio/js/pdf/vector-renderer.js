@@ -26,18 +26,29 @@
  *    18  TextAt(f32 x, f32 y, f32 fontSize, u32 rgba, u8 len, UTF-8 bytes)
  */
 
-// Cache: Map<"filePath:pageNum", { bytes: Uint8Array, w: number, h: number }>
+// Cache: Map<"filePath:pageNum:rotation", { bytes: Uint8Array, w, h, x0, y0 }>
+// Rotation is part of the key so a page rotated 90° coexists with the same
+// page un-rotated, without invalidating either when the user toggles back.
 const _cache = new Map();
 
-function _key(filePath, pageNum) {
-  return filePath + ':' + pageNum;
+function _key(filePath, pageNum, rotation) {
+  return filePath + ':' + pageNum + ':' + ((rotation || 0) % 360);
 }
 
 export function clearVectorCache() {
   _cache.clear();
 }
 
-export function cacheCommands(filePath, pageNum, rawBytes) {
+/// Drop ALL cached entries for a specific (filePath, pageNum), regardless
+/// of rotation. Use this when the page content changes (e.g. after save).
+export function invalidatePageCache(filePath, pageNum) {
+  const prefix = filePath + ':' + pageNum + ':';
+  for (const k of _cache.keys()) {
+    if (k.startsWith(prefix)) _cache.delete(k);
+  }
+}
+
+export function cacheCommands(filePath, pageNum, rawBytes, rotation) {
   const bytes = rawBytes instanceof Uint8Array ? rawBytes : new Uint8Array(rawBytes);
   if (bytes.length < 16) return;
   const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
@@ -46,15 +57,15 @@ export function cacheCommands(filePath, pageNum, rawBytes) {
   const y0 = dv.getFloat32(4, true);
   const w = dv.getFloat32(8, true);
   const h = dv.getFloat32(12, true);
-  _cache.set(_key(filePath, pageNum), { bytes, x0, y0, w, h });
+  _cache.set(_key(filePath, pageNum, rotation), { bytes, x0, y0, w, h });
 }
 
-export function hasCachedCommands(filePath, pageNum) {
-  return _cache.has(_key(filePath, pageNum));
+export function hasCachedCommands(filePath, pageNum, rotation) {
+  return _cache.has(_key(filePath, pageNum, rotation));
 }
 
-export function getCachedPageDimensions(filePath, pageNum) {
-  const entry = _cache.get(_key(filePath, pageNum));
+export function getCachedPageDimensions(filePath, pageNum, rotation) {
+  const entry = _cache.get(_key(filePath, pageNum, rotation));
   if (!entry) return null;
   return { x0: entry.x0, y0: entry.y0, w: entry.w, h: entry.h };
 }
@@ -76,8 +87,8 @@ let _imagePreparing = false;
 
 /// Pre-decode all images in the command buffer before rendering.
 /// Returns a promise that resolves when all images are ready.
-export async function prepareImages(filePath, pageNum) {
-  const entry = _cache.get(_key(filePath, pageNum));
+export async function prepareImages(filePath, pageNum, rotation) {
+  const entry = _cache.get(_key(filePath, pageNum, rotation));
   if (!entry) return;
 
   const { bytes } = entry;
@@ -184,8 +195,8 @@ async function _decodeImage(cacheKey, w, h, imgBytes) {
   }
 }
 
-export function renderVectorPage(ctx, filePath, pageNum, transform) {
-  const entry = _cache.get(_key(filePath, pageNum));
+export function renderVectorPage(ctx, filePath, pageNum, transform, rotation) {
+  const entry = _cache.get(_key(filePath, pageNum, rotation));
   if (!entry) return;
 
   const { bytes, x0, y0, h: pageH } = entry;

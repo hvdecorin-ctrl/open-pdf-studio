@@ -1,5 +1,5 @@
 import { state, getActiveDocument, imageCache } from '../core/state.js';
-import { annotationCanvas, annotationCtx } from '../ui/dom-elements.js';
+import { annotationCanvas, annotationCtx, textHighlightCanvas, textHighlightCtx } from '../ui/dom-elements.js';
 import { updateStatusAnnotations } from '../ui/chrome/status-bar.js';
 import { updateAnnotationsList } from '../ui/panels/annotations-list.js';
 import { renderWatermarksBehind, renderWatermarksInFront } from '../watermark/watermark-renderer.js';
@@ -615,8 +615,12 @@ export function drawAnnotation(ctx, annotation) {
       break;
 
     case 'textHighlight':
-      // Draw text highlight - semi-transparent fill for each rect
+      // Draw text highlight as a solid fill. The actual blending with the
+      // underlying text happens via CSS `mix-blend-mode: multiply` on the
+      // dedicated #text-highlight-canvas this is drawn onto. Drawing at full
+      // alpha gives the cleanest multiply result.
       ctx.fillStyle = fillColor;
+      ctx.globalAlpha = 1;
       if (annotation.rects && annotation.rects.length > 0) {
         annotation.rects.forEach(rect => {
           ctx.fillRect(rect.x, rect.y, rect.width, rect.height);
@@ -1202,21 +1206,38 @@ export function redrawAnnotations(lightweight = false) {
 
   annotationCtx.clearRect(0, 0, annotationCanvas.width, annotationCanvas.height);
 
+  // Sync the dedicated text-highlight canvas with the annotation canvas.
+  // It uses CSS mix-blend-mode: multiply so it blends with #pdf-canvas below.
+  if (textHighlightCanvas && textHighlightCtx) {
+    if (textHighlightCanvas.width !== annotationCanvas.width ||
+        textHighlightCanvas.height !== annotationCanvas.height) {
+      textHighlightCanvas.width = annotationCanvas.width;
+      textHighlightCanvas.height = annotationCanvas.height;
+    }
+    textHighlightCanvas.style.width = annotationCanvas.style.width;
+    textHighlightCanvas.style.height = annotationCanvas.style.height;
+    textHighlightCtx.setTransform(1, 0, 0, 1, 0, 0);
+    textHighlightCtx.clearRect(0, 0, textHighlightCanvas.width, textHighlightCanvas.height);
+  }
+
   // Apply scale transformation for zooming
   const dpr = window.devicePixelRatio || 1;
   const vp = window.__pdfViewport;
   const useViewport = vp && vp.active;
   const effectiveScale = useViewport ? vp.zoom : scale * dpr;
   annotationCtx.save();
+  if (textHighlightCtx) textHighlightCtx.save();
   if (useViewport) {
     // Viewport mode: annotations are in app-space (top-left origin, Y-down, scale=1).
     // Page top-left on screen = (offsetX, offsetY).
     // App coord (ax, ay) → screen (ax*zoom + offsetX, ay*zoom + offsetY).
     // This is a simple scale + translate — no Y-flip needed for annotations.
     annotationCtx.setTransform(vp.zoom, 0, 0, vp.zoom, vp.offsetX, vp.offsetY);
+    if (textHighlightCtx) textHighlightCtx.setTransform(vp.zoom, 0, 0, vp.zoom, vp.offsetX, vp.offsetY);
   } else {
     // Legacy mode: simple scale from origin
     annotationCtx.scale(effectiveScale, effectiveScale);
+    if (textHighlightCtx) textHighlightCtx.scale(effectiveScale, effectiveScale);
   }
 
   // Draw grid overlay if enabled
@@ -1224,7 +1245,17 @@ export function redrawAnnotations(lightweight = false) {
     drawGrid(annotationCtx, annotationCanvas.width / effectiveScale, annotationCanvas.height / effectiveScale);
   }
 
-  const curPage = doc ? doc.currentPage : 1;
+  // CRITICAL: in vector viewport mode, key the annotation page off
+  // viewport.pageNum (what's currently drawn on #pdf-canvas) NOT
+  // doc.currentPage (what the user *asked* for). When the user wheels to a
+  // new uncached page, doc.currentPage updates immediately but the PDF takes
+  // hundreds of ms to extract draw commands; if we used doc.currentPage we'd
+  // draw the new page's annotations on top of the old page's PDF for that
+  // entire window. viewport.pageNum only updates after setPage() runs, so it
+  // always matches the visible PDF.
+  const curPage = useViewport
+    ? (vp.pageNum || (doc ? doc.currentPage : 1))
+    : (doc ? doc.currentPage : 1);
 
   // Draw watermarks behind content
   renderWatermarksBehind(annotationCtx, curPage, annotationCanvas.width / effectiveScale, annotationCanvas.height / effectiveScale);
@@ -1261,7 +1292,9 @@ export function redrawAnnotations(lightweight = false) {
     }
   }
 
-  // Draw all annotations for current page (with viewport culling)
+  // Draw all annotations for current page (with viewport culling).
+  // Text highlights go to the dedicated #text-highlight-canvas (CSS multiply
+  // blend with #pdf-canvas below); everything else goes to #annotation-canvas.
   annotations.forEach(annotation => {
     if (annotation.page !== curPage) return;
     // Quick bounding box check for viewport culling
@@ -1270,14 +1303,21 @@ export function redrawAnnotations(lightweight = false) {
       const aw = annotation.width || 0, ah = annotation.height || 0;
       if (ax + aw < vpX || ax > vpX + vpW || ay + ah < vpY || ay > vpY + vpH) return;
     }
+    const targetCtx = (annotation.type === 'textHighlight' && textHighlightCtx)
+      ? textHighlightCtx
+      : annotationCtx;
     // Wrap each annotation in save/restore to prevent clip leaks between annotations
-    annotationCtx.save();
-    drawAnnotation(annotationCtx, annotation);
-    annotationCtx.restore();
+    targetCtx.save();
+    drawAnnotation(targetCtx, annotation);
+    targetCtx.restore();
   });
 
   annotationCtx.globalAlpha = 1;
   annotationCtx.globalCompositeOperation = 'source-over';
+  if (textHighlightCtx) {
+    textHighlightCtx.globalAlpha = 1;
+    textHighlightCtx.globalCompositeOperation = 'source-over';
+  }
 
   // Draw watermarks in front of content
   renderWatermarksInFront(annotationCtx, curPage, annotationCanvas.width / effectiveScale, annotationCanvas.height / effectiveScale);
@@ -1294,6 +1334,7 @@ export function redrawAnnotations(lightweight = false) {
 
   // Restore context
   annotationCtx.restore();
+  if (textHighlightCtx) textHighlightCtx.restore();
 
   if (!lightweight) {
     // Update annotation count in status bar

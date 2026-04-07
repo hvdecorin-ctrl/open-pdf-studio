@@ -1,5 +1,4 @@
 import { state, getActiveDocument } from '../core/state.js';
-import { annotationCanvas, pdfContainer } from '../ui/dom-elements.js';
 import { hideProperties } from '../ui/panels/properties-panel.js';
 import { redrawAnnotations, redrawContinuous } from '../annotations/rendering.js';
 import { updateStatusTool } from '../ui/chrome/status-bar.js';
@@ -30,15 +29,10 @@ export function getCursorForTool(tool = state.currentTool) {
   }
 }
 
-// Helper to set cursor on all annotation canvases and container
-function setAllCanvasCursors(cursor) {
-  if (annotationCanvas) annotationCanvas.style.cursor = cursor;
-  if (pdfContainer) pdfContainer.style.cursor = cursor;
-  // Also set cursor on continuous view canvases
-  document.querySelectorAll('.annotation-canvas').forEach(canvas => {
-    canvas.style.cursor = cursor;
-  });
-}
+// NOTE: cursor management is now centralized in js/ui/cursor.js (reactive
+// memo derived from app state). Tools and the dispatcher write state — they
+// never set element.style.cursor. The setAllCanvasCursors helper that used
+// to live here has been removed; setTool() below clears hover state instead.
 
 // Enable or disable text selection based on current tool.
 // Stacking: textLayer (z:5) < annotation-canvas (z:6) < formLayer (z:7) < linkLayer (z:10)
@@ -100,6 +94,12 @@ export function setTool(tool) {
     state.toolOverrides = null;
   }
 
+  // Reset hover state so a stale hover from the previous tool doesn't keep
+  // showing its cursor under the new tool. The reactive cursor module
+  // (js/ui/cursor.js) will pick up state.currentTool and recompute.
+  state.hoverAnnotation = null;
+  state.hoverHandle = null;
+
   // Hide properties panel when switching tools (keep visible for annotation tools)
   if (tool !== 'select' && tool !== 'selectComments') {
     hideProperties();
@@ -109,9 +109,6 @@ export function setTool(tool) {
   if (tool !== 'editText') {
     setTextSelectionEnabled(tool === 'selectComments');
   }
-
-  // Set cursor based on tool
-  setAllCanvasCursors(getCursorForTool(tool));
 
   // Activate edit text tool layer management
   if (tool === 'editText') {

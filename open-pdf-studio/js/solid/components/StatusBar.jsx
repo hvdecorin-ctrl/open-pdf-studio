@@ -2,61 +2,51 @@ import { Show } from 'solid-js';
 import { state, getActiveDocument } from '../../core/state.js';
 import { useTranslation, localizeNumber } from '../../i18n/useTranslation.js';
 
+// All page navigation goes through goToPage() so the side effects
+// (active thumbnail update, hide properties, fire events) happen in one
+// place. Calling renderPage() directly would skip the thumbnail-active
+// update and the highlight in the left panel would lag the actual page.
+
 async function goFirst() {
-  const { renderPage } = await import('../../pdf/renderer.js');
-  const { hideProperties } = await import('../../ui/panels/properties-panel.js');
+  const { goToPage } = await import('../../pdf/renderer.js');
   const doc = getActiveDocument();
   if (doc?.pdfDoc && doc.currentPage !== 1) {
-    doc.currentPage = 1;
-    hideProperties();
-    await renderPage(doc.currentPage);
+    await goToPage(1);
   }
 }
 
 async function goPrev() {
-  const { renderPage } = await import('../../pdf/renderer.js');
-  const { hideProperties } = await import('../../ui/panels/properties-panel.js');
+  const { goToPage } = await import('../../pdf/renderer.js');
   const doc = getActiveDocument();
   if (doc && doc.currentPage > 1) {
-    doc.currentPage--;
-    hideProperties();
-    await renderPage(doc.currentPage);
+    await goToPage(doc.currentPage - 1);
   }
 }
 
 async function goNext() {
-  const { renderPage } = await import('../../pdf/renderer.js');
-  const { hideProperties } = await import('../../ui/panels/properties-panel.js');
+  const { goToPage } = await import('../../pdf/renderer.js');
   const doc = getActiveDocument();
   if (doc?.pdfDoc && doc.currentPage < doc.pdfDoc.numPages) {
-    doc.currentPage++;
-    hideProperties();
-    await renderPage(doc.currentPage);
+    await goToPage(doc.currentPage + 1);
   }
 }
 
 async function goLast() {
-  const { renderPage } = await import('../../pdf/renderer.js');
-  const { hideProperties } = await import('../../ui/panels/properties-panel.js');
+  const { goToPage } = await import('../../pdf/renderer.js');
   const doc = getActiveDocument();
   if (doc?.pdfDoc && doc.currentPage !== doc.pdfDoc.numPages) {
-    doc.currentPage = doc.pdfDoc.numPages;
-    hideProperties();
-    await renderPage(doc.currentPage);
+    await goToPage(doc.pdfDoc.numPages);
   }
 }
 
 async function handlePageInput(e) {
   if (e.key !== 'Enter') return;
   e.preventDefault();
-  const { renderPage } = await import('../../pdf/renderer.js');
-  const { hideProperties } = await import('../../ui/panels/properties-panel.js');
   const pageNum = parseInt(e.target.value, 10);
   const doc = getActiveDocument();
   if (doc?.pdfDoc && pageNum >= 1 && pageNum <= doc.pdfDoc.numPages) {
-    doc.currentPage = pageNum;
-    hideProperties();
-    await renderPage(doc.currentPage);
+    const { goToPage } = await import('../../pdf/renderer.js');
+    await goToPage(pageNum);
   } else if (doc) {
     e.target.value = doc.currentPage;
   }
@@ -86,18 +76,15 @@ async function handleZoomOut() {
 async function handleZoomInput(e) {
   if (e.key !== 'Enter') return;
   e.preventDefault();
-  const { renderPage, renderContinuous } = await import('../../pdf/renderer.js');
   let val = e.target.value.replace('%', '').trim();
   let pct = parseInt(val, 10);
   if (!isNaN(pct) && pct >= 10 && pct <= 500) {
     const doc = state.documents[state.activeDocumentIndex];
     if (doc) {
-      doc.scale = pct / 100;
-      if (doc.viewMode === 'continuous') {
-        await renderContinuous();
-      } else if (doc.pdfDoc) {
-        await renderPage(doc.currentPage);
-      }
+      // Vector viewport mode is the source of truth — setZoom() handles
+      // the dispatch (viewport.setZoomAtPoint vs legacy doc.scale path).
+      const { setZoom } = await import('../../pdf/renderer.js');
+      await setZoom(pct / 100);
     }
   }
   e.target.blur();

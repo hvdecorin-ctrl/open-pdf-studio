@@ -1,9 +1,66 @@
 import { PDFName, PDFArray } from 'pdf-lib';
 import { pdfNum, inflateBytes } from './pdf-helpers.js';
 
+// Hybrid stamp image extraction. Tries to extract each stamp via pdf-lib's
+// XObject reader first (clean — never bakes in overlapping annotations),
+// and falls back to the PDF.js render+crop method ONLY for stamps the
+// pdf-lib path couldn't decode (e.g. stamps whose appearance stream is
+// drawn content rather than a wrapped image XObject).
+//
+// This restores the fix from commit 178cf51 ("stamp ghost on load") for the
+// common case while preserving the PDF.js fallback for complex stamps.
+//
+// Symptom of NOT using this hybrid: when you move a Stamp annotation that
+// has any other annotation (highlight, draw, note) overlapping its bounds,
+// the overlapping annotation's pixels appear glued to the stamp and travel
+// with it. The bake-in happens because page.render() with annotationMode:1
+// rasterizes ALL annotations onto the temp canvas before cropping.
+export async function extractStampImagesHybrid(page, viewport, stampAnnots, pageNum, pdfLibDoc) {
+  if (stampAnnots.length === 0) return new Map();
+
+  // First pass: pdf-lib extraction (clean, no bake-in)
+  let imageMap = new Map();
+  if (pdfLibDoc) {
+    try {
+      imageMap = await extractStampImages(pageNum, pdfLibDoc);
+    } catch (e) {
+      console.warn('[image-extraction] pdf-lib extraction failed:', e);
+      imageMap = new Map();
+    }
+  }
+
+  // Identify stamps the pdf-lib path couldn't handle (key = rect string)
+  const missing = stampAnnots.filter(s => {
+    const rect = s.rect;
+    if (!rect) return false;
+    return !imageMap.has(`${rect[0]},${rect[1]},${rect[2]},${rect[3]}`);
+  });
+
+  // Second pass: PDF.js render+crop for the leftovers (still bakes in
+  // overlapping annotations for these specific stamps — known limitation
+  // for stamps with drawn appearance content).
+  if (missing.length > 0) {
+    try {
+      const fallbackMap = await extractStampImagesViaPdfJs(page, viewport, missing);
+      for (const [k, v] of fallbackMap) {
+        imageMap.set(k, v);
+      }
+    } catch (e) {
+      console.warn('[image-extraction] PDF.js fallback failed:', e);
+    }
+  }
+
+  return imageMap;
+}
+
 // Extract stamp images by rendering the page with annotations via PDF.js,
 // then cropping each stamp's region from the rendered result.
 // Uses a high-resolution render (3x) for sharp images at all zoom levels.
+//
+// WARNING: this method bakes in any annotation that overlaps a stamp's
+// bounding box because PDF.js renders all annotations together. Prefer
+// extractStampImagesHybrid() which uses pdf-lib first and falls back here
+// only when pdf-lib can't decode a stamp's appearance.
 export async function extractStampImagesViaPdfJs(page, viewport, stampAnnots) {
   const imageMap = new Map();
   if (stampAnnots.length === 0) return imageMap;

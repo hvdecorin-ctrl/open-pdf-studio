@@ -1,4 +1,3 @@
-import { getAnnotationHoverCursor } from '../../ui/cursors/annotation-cursors.js';
 import { getActiveDocument } from '../../core/state.js';
 
 /**
@@ -9,11 +8,12 @@ export const handTool = {
   cursor: 'grab',
 
   onPointerDown(ctx, e) {
-    const { x, y, state, canvas } = ctx;
+    const { x, y, state } = ctx;
     const doc = getActiveDocument();
     const selAnns = doc ? doc.selectedAnnotations : [];
 
-    // Check for resize handle on selected annotation
+    // Check for resize handle on selected annotation.
+    // Cursor is driven by state.isResizing + state.activeHandle.
     const selAnn = selAnns.length === 1 ? selAnns[0] : null;
     if (selAnn) {
       const handleType = ctx.findHandleAt(x, y, selAnn);
@@ -23,7 +23,6 @@ export const handTool = {
         state.dragStartX = x;
         state.dragStartY = y;
         state.originalAnnotation = ctx.cloneAnnotation(selAnn);
-        canvas.style.cursor = ctx.getCursorForHandle(handleType, selAnn.rotation, selAnn);
         return;
       }
     }
@@ -42,7 +41,7 @@ export const handTool = {
           if (selAnns2().length === 1) {
             state.originalAnnotation = ctx.cloneAnnotation(selAnns2()[0]);
           }
-          canvas.style.cursor = 'copy';
+          state.dragCursor = 'copy';
         } else {
           ctx.addToSelection(clickedAnnotation);
           state.isDragging = true;
@@ -52,7 +51,7 @@ export const handTool = {
           if (selAnns2().length === 1) {
             state.originalAnnotation = ctx.cloneAnnotation(selAnns2()[0]);
           }
-          canvas.style.cursor = 'copy';
+          state.dragCursor = 'copy';
         }
         if (selAnns2().length === 1) {
           ctx.showProperties(selAnns2()[0]);
@@ -71,7 +70,7 @@ export const handTool = {
           state.dragStartY = y;
           state.originalAnnotation = ctx.cloneAnnotation(clickedAnnotation);
           state.originalAnnotations = [ctx.cloneAnnotation(clickedAnnotation)];
-          canvas.style.cursor = 'move';
+          state.dragCursor = 'move';
         }
       }
       ctx.redraw();
@@ -90,19 +89,23 @@ export const handTool = {
   onPointerMove(ctx, e) {
     const { x, y, state, canvas } = ctx;
 
-    // Hover: show resize cursors on handles or annotation hover cursor
+    // Hover state goes into state.hoverHandle / state.hoverAnnotation —
+    // js/ui/cursor.js derives the cursor from these.
     const doc = getActiveDocument();
     const selAnns = doc ? doc.selectedAnnotations : [];
     const hoverAnn = selAnns.length === 1 ? selAnns[0] : null;
+    let hoverHandle = null;
     if (hoverAnn) {
-      const handleType = ctx.findHandleAt(x, y, hoverAnn);
-      if (handleType) {
-        canvas.style.cursor = ctx.getCursorForHandle(handleType, hoverAnn.rotation, hoverAnn);
-        return;
-      }
+      hoverHandle = ctx.findHandleAt(x, y, hoverAnn);
+    }
+    state.hoverHandle = hoverHandle;
+    if (hoverHandle) {
+      state.hoverAnnotation = null;
+      canvas.title = '';
+      return;
     }
     const hoverAnnotation = ctx.findAnnotationAt(x, y);
-    canvas.style.cursor = hoverAnnotation ? getAnnotationHoverCursor(hoverAnnotation.type) : 'grab';
+    state.hoverAnnotation = hoverAnnotation || null;
     canvas.title = (hoverAnnotation?.type === 'comment' && !hoverAnnotation.popupOpen && hoverAnnotation.text)
       ? hoverAnnotation.text.split('\n').slice(0, 5).join('\n') : '';
   },

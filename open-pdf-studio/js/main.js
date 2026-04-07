@@ -27,6 +27,9 @@ import { initLeftPanel } from './ui/panels/left-panel.js';
 // Event setup
 import { setupEventListeners } from './ui/setup.js';
 
+// Reactive cursor (single source of truth for the PDF area cursor)
+import { initCursor } from './ui/cursor.js';
+
 // PDF operations (for handling file drops from command line args)
 import { loadPDF } from './pdf/loader.js';
 import { fitPage } from './pdf/renderer.js';
@@ -196,6 +199,10 @@ async function init() {
 
   // Now that Solid has rendered, grab canvas and container refs
   initDomElements();
+
+  // Wire the reactive cursor — runs once, then updates the .main-view cursor
+  // automatically whenever any cursor-relevant state changes.
+  initCursor();
 
   // Initialize UI components (desktop-only UI modules)
   if (!mobile) {

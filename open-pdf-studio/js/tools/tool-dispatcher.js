@@ -523,10 +523,9 @@ function _finishDragResize(ctx, e, coords) {
   state._ctrlDragCopy = false;
   state._ctrlCopiesCreated = false;
   state.lastSnapResult = null;
-
-  // Restore cursor
-  const canvas = coords.canvas;
-  if (canvas) canvas.style.cursor = state.currentTool === 'hand' ? 'grab' : 'default';
+  state.dragCursor = null;
+  // Cursor is reactive — clearing the drag flags above causes the cursor
+  // module to recompute and revert to the appropriate hover/tool cursor.
 
   if (_fSel.length === 1) showProperties(_fSel[0]);
   else if (_fSel.length > 1) showMultiSelectionProperties();
