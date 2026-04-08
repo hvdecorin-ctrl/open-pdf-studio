@@ -8,7 +8,7 @@ import { ensureAnnotationsForPage, hidePdfABar } from './loader.js';
 import { updateAllStatus } from '../ui/chrome/status-bar.js';
 import { hideProperties } from '../ui/panels/properties-panel.js';
 import { updateActiveThumbnail } from '../ui/panels/left-panel.js';
-import { createSinglePageTextLayer, clearSinglePageTextLayer, createTextLayer, clearTextLayers } from '../text/text-layer.js';
+import { createSinglePageTextLayer, clearSinglePageTextLayer, createTextLayer, clearTextLayers, createTextLayerFromRust } from '../text/text-layer.js';
 import { createSinglePageLinkLayer, clearSinglePageLinkLayer, createLinkLayer, clearLinkLayers } from './link-layer.js';
 import { createSinglePageFormLayer, clearSinglePageFormLayer, createFormLayer, clearFormLayers, hideFormFieldsBar } from './form-layer.js';
 import { clearPdfVectorCache, prefetchPdfVectorGeometry } from '../tools/pdf-snap-extractor.js';
@@ -132,6 +132,42 @@ function setupCanvasHiDPI(canvas, width, height) {
 // Track current render task to cancel if needed
 let currentRenderTask = null;
 
+// ─── Page Prefetching ────────────────────────────────────────────────────
+// Pre-load annotations for adjacent pages to reduce delay when navigating.
+let _prefetchAbort = null;
+
+function prefetchAdjacentPages(currentPage) {
+  if (_prefetchAbort) _prefetchAbort.cancelled = true;
+  const abort = { cancelled: false };
+  _prefetchAbort = abort;
+
+  const doc = getActiveDocument();
+  if (!doc || !doc.pdfDoc || doc.viewMode === 'continuous') return;
+
+  const totalPages = doc.pdfDoc.numPages;
+  const pagesToPrefetch = [];
+  if (currentPage < totalPages) pagesToPrefetch.push(currentPage + 1);
+  if (currentPage > 1) pagesToPrefetch.push(currentPage - 1);
+
+  const doPrefetch = async () => {
+    for (const pageNum of pagesToPrefetch) {
+      if (abort.cancelled) return;
+      try {
+        const { ensureAnnotationsForPage } = await import('./loader.js');
+        await ensureAnnotationsForPage(pageNum);
+      } catch (e) {
+        // Silently ignore prefetch errors
+      }
+    }
+  };
+
+  if (typeof requestIdleCallback === 'function') {
+    requestIdleCallback(() => doPrefetch());
+  } else {
+    setTimeout(() => doPrefetch(), 200);
+  }
+}
+
 // Render PDF page (single page mode)
 export async function renderPage(pageNum) {
   // Clear search highlights immediately to prevent stale highlights
@@ -225,12 +261,19 @@ export async function renderPage(pageNum) {
           // Load page into viewport (triggers fitToViewport + first render)
           setPage(doc.filePath, pageNum, dims.w, dims.h, dims.x0 || 0, dims.y0 || 0, userRotation);
 
-          // Create text layer for text selection + search (one-time per page)
+          // Create text layer for text selection + search
+          // Try Rust-extracted text spans first (faster, no PDF.js dependency),
+          // fall back to PDF.js text layer if Rust extraction returns empty
           try {
-            const page = await pdfDoc.getPage(pageNum);
-            const textViewport = page.getViewport({ scale: 1.0 });
-            await createSinglePageTextLayer(page, textViewport);
-            // Force viewport re-render so text layer transform gets applied
+            const canvasContainer = document.getElementById('canvas-container');
+            const rustTextOk = await createTextLayerFromRust(
+              canvasContainer || container, pageNum, dims.w, dims.h
+            );
+            if (!rustTextOk) {
+              const page = await pdfDoc.getPage(pageNum);
+              const textViewport = page.getViewport({ scale: 1.0 });
+              await createSinglePageTextLayer(page, textViewport);
+            }
             if (window.__pdfViewport) window.__pdfViewport.dirty = true;
           } catch (e) {
             console.warn('[render] Text layer failed:', e);
@@ -365,6 +408,9 @@ export async function renderPage(pageNum) {
 
   // Update status bar
   updateAllStatus();
+
+  // Prefetch adjacent pages to reduce navigation delay
+  prefetchAdjacentPages(pageNum);
 }
 
 // Render page offscreen and swap canvases atomically to avoid zoom flicker.

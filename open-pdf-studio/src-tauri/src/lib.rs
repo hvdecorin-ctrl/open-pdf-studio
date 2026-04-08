@@ -982,6 +982,17 @@ fn extract_draw_commands(
     Ok(cmds.into_bytes())
 }
 
+#[tauri::command]
+fn extract_page_text(
+    path: String,
+    page_index: u32,
+    bytes_cache: tauri::State<PdfBytesCache>,
+    handle_cache: tauri::State<DocHandleCache>,
+) -> Result<String, String> {
+    let doc = get_or_load_doc(&path, &bytes_cache, &handle_cache)?;
+    doc.extract_text_positions(page_index as usize).map_err(|e| format!("{}", e))
+}
+
 /// Batch extract draw commands for multiple pages in parallel using rayon.
 /// Returns one Vec<u8> per requested page in the same order. Used for
 /// adjacent-page prefetch (warm pages 2..N in the background after page 1
@@ -1218,6 +1229,7 @@ pub fn run() {
             extract_draw_commands_batch,
             extract_text,
             extract_text_batch,
+            extract_page_text,
             render_thumbnail,
             allow_fs_scope
         ])

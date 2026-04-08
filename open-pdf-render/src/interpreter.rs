@@ -6,6 +6,28 @@ use crate::draw_commands::DrawCommandBuffer;
 use crate::color;
 use crate::RenderError;
 
+/// A text span with position, size, and Unicode text content.
+/// Used to build a synthetic text selection layer in the frontend.
+#[derive(Clone, Debug)]
+pub struct TextSpan {
+    pub x: f32,
+    pub y: f32,
+    pub width: f32,
+    pub height: f32,
+    pub font_size: f32,
+    pub text: String,
+}
+
+impl TextSpan {
+    pub fn to_json(&self) -> String {
+        format!(
+            r#"{{"x":{},"y":{},"width":{},"height":{},"fontSize":{},"text":"{}"}}"#,
+            self.x, self.y, self.width, self.height, self.font_size,
+            self.text.replace('\\', "\\\\").replace('"', "\\\"").replace('\n', "\\n").replace('\r', "\\r")
+        )
+    }
+}
+
 /// PDF Text State — follows PDF spec §9.3 and §9.4 exactly.
 ///
 /// Two matrices track text position:
@@ -217,6 +239,10 @@ impl Interpreter {
             _ => return,
         };
         let subtype = stream.dict.get(b"Subtype").ok().and_then(|s| s.as_name().ok());
+        if subtype == Some(b"Image" as &[u8]) {
+            Self::handle_image_execute(stream, renderer, state, doc);
+            return;
+        }
         if subtype != Some(b"Form" as &[u8]) {
             return;
         }
@@ -240,6 +266,125 @@ impl Interpreter {
         state.restore();
     }
 
+    fn handle_image_execute(
+        stream: &lopdf::Stream,
+        renderer: &mut SkiaRenderer,
+        state: &mut GraphicsStateStack,
+        doc: &Document,
+    ) {
+        let dict = &stream.dict;
+        let width = dict.get(b"Width").ok()
+            .and_then(|o| match o {
+                Object::Integer(i) => Some(*i as u32),
+                Object::Reference(id) => doc.get_object(*id).ok().and_then(|o| {
+                    if let Object::Integer(i) = o { Some(*i as u32) } else { None }
+                }),
+                _ => None,
+            }).unwrap_or(0);
+        let height = dict.get(b"Height").ok()
+            .and_then(|o| match o {
+                Object::Integer(i) => Some(*i as u32),
+                Object::Reference(id) => doc.get_object(*id).ok().and_then(|o| {
+                    if let Object::Integer(i) = o { Some(*i as u32) } else { None }
+                }),
+                _ => None,
+            }).unwrap_or(0);
+
+        if width == 0 || height == 0 { return; }
+
+        let filter = dict.get(b"Filter").ok().and_then(|o| match o {
+            Object::Name(n) => Some(n.clone()),
+            Object::Reference(id) => doc.get_object(*id).ok().and_then(|o| {
+                if let Object::Name(n) = o { Some(n.clone()) } else { None }
+            }),
+            Object::Array(arr) => arr.last().and_then(|o| match o {
+                Object::Name(n) => Some(n.clone()),
+                _ => None,
+            }),
+            _ => None,
+        });
+        let filter_name = filter.as_deref().unwrap_or(b"");
+
+        let rgba = if filter_name == b"DCTDecode" {
+            let raw = &stream.content;
+            match image::load_from_memory_with_format(raw, image::ImageFormat::Jpeg) {
+                Ok(img) => {
+                    let img = img.to_rgba8();
+                    if img.width() != width || img.height() != height {
+                        return;
+                    }
+                    img.into_raw()
+                }
+                Err(_) => return,
+            }
+        } else {
+            let bits = dict.get(b"BitsPerComponent").ok()
+                .and_then(|o| if let Object::Integer(i) = o { Some(*i as u8) } else { None })
+                .unwrap_or(8);
+            if bits != 8 { return; }
+
+            let cs_name = dict.get(b"ColorSpace").ok().and_then(|o| match o {
+                Object::Name(n) => Some(n.clone()),
+                Object::Reference(id) => doc.get_object(*id).ok().and_then(|o| {
+                    if let Object::Name(n) = o { Some(n.clone()) } else { None }
+                }),
+                Object::Array(arr) => arr.first().and_then(|o| match o {
+                    Object::Name(n) => Some(n.clone()),
+                    _ => None,
+                }),
+                _ => None,
+            });
+            let components: usize = match cs_name.as_deref() {
+                Some(b"DeviceCMYK") => 4,
+                Some(b"DeviceGray") | Some(b"CalGray") => 1,
+                _ => 3,
+            };
+
+            let raw_pixels = match stream.decompressed_content() {
+                Ok(p) => p,
+                Err(_) => return,
+            };
+            let expected = width as usize * height as usize * components;
+            if raw_pixels.len() < expected { return; }
+
+            let mut rgba = Vec::with_capacity(width as usize * height as usize * 4);
+            let mut idx = 0;
+            for _ in 0..(width as usize * height as usize) {
+                match components {
+                    1 => {
+                        let g = raw_pixels[idx];
+                        rgba.extend_from_slice(&[g, g, g, 255]);
+                        idx += 1;
+                    }
+                    3 => {
+                        rgba.extend_from_slice(&[raw_pixels[idx], raw_pixels[idx+1], raw_pixels[idx+2], 255]);
+                        idx += 3;
+                    }
+                    4 => {
+                        let c = raw_pixels[idx] as f32 / 255.0;
+                        let m = raw_pixels[idx+1] as f32 / 255.0;
+                        let y = raw_pixels[idx+2] as f32 / 255.0;
+                        let k = raw_pixels[idx+3] as f32 / 255.0;
+                        rgba.extend_from_slice(&[
+                            (255.0 * (1.0 - c) * (1.0 - k)) as u8,
+                            (255.0 * (1.0 - m) * (1.0 - k)) as u8,
+                            (255.0 * (1.0 - y) * (1.0 - k)) as u8,
+                            255,
+                        ]);
+                        idx += 4;
+                    }
+                    _ => { rgba.extend_from_slice(&[0, 0, 0, 255]); idx += components; }
+                }
+            }
+            rgba
+        };
+
+        state.save();
+        state.concat_matrix(1.0, 0.0, 0.0, -1.0, 0.0, 1.0);
+        renderer.draw_image(width, height, &rgba, &state.current);
+        state.restore();
+    }
+
     pub fn extract_commands(
         content_bytes: &[u8],
         buf: &mut DrawCommandBuffer,
@@ -247,6 +392,18 @@ impl Interpreter {
         doc: &Document,
         resources: &Dictionary,
         font_registry: &mut crate::fonts::FontRegistry,
+    ) -> Result<(), RenderError> {
+        Self::extract_commands_with_text(content_bytes, buf, state, doc, resources, font_registry, None)
+    }
+
+    pub fn extract_commands_with_text(
+        content_bytes: &[u8],
+        buf: &mut DrawCommandBuffer,
+        state: &mut GraphicsStateStack,
+        doc: &Document,
+        resources: &Dictionary,
+        font_registry: &mut crate::fonts::FontRegistry,
+        mut text_spans: Option<&mut Vec<TextSpan>>,
     ) -> Result<(), RenderError> {
         let content = Content::decode(content_bytes)
             .map_err(|e| RenderError::ParseError(format!("Content decode: {}", e)))?;
@@ -636,14 +793,69 @@ impl Interpreter {
                             if let Some(font_entry) = font_registry.get_font(
                                 &text_state.current_font_name, doc, resources,
                             ) {
-                                if font_entry.parsed.is_some() {
-                                    if font_entry.is_cid {
+                                // Capture position before rendering for text span
+                                let start_x = text_state.render_x();
+                                let start_y = text_state.render_y();
+                                if font_entry.is_cid && font_entry.parsed.is_some() {
+                                    if let Some(ref mut spans) = text_spans {
+                                        let decoded = Self::decode_cid_text(bytes, &*font_entry);
+                                        if !decoded.trim().is_empty() {
+                                            let pre_x = text_state.tm[4];
+                                            crate::text_renderer::render_cid_text_glyphs(
+                                                bytes, &*font_entry, text_state.font_size,
+                                                text_state.horizontal_scaling, text_state.char_spacing,
+                                                text_state.word_spacing, text_state.rise,
+                                                &mut text_state.tm, rgba, buf,
+                                            );
+                                            let width = (text_state.tm[4] - pre_x).abs();
+                                            spans.push(TextSpan {
+                                                x: start_x, y: start_y,
+                                                width, height: text_state.font_size.abs(),
+                                                font_size: text_state.font_size.abs(),
+                                                text: decoded,
+                                            });
+                                        } else {
+                                            crate::text_renderer::render_cid_text_glyphs(
+                                                bytes, &*font_entry, text_state.font_size,
+                                                text_state.horizontal_scaling, text_state.char_spacing,
+                                                text_state.word_spacing, text_state.rise,
+                                                &mut text_state.tm, rgba, buf,
+                                            );
+                                        }
+                                    } else {
                                         crate::text_renderer::render_cid_text_glyphs(
                                             bytes, &*font_entry, text_state.font_size,
                                             text_state.horizontal_scaling, text_state.char_spacing,
                                             text_state.word_spacing, text_state.rise,
                                             &mut text_state.tm, rgba, buf,
                                         );
+                                    }
+                                } else if font_entry.parsed.is_some() {
+                                    if let Some(ref mut spans) = text_spans {
+                                        let decoded = Self::decode_simple_text(bytes, &*font_entry);
+                                        if !decoded.trim().is_empty() {
+                                            let pre_x = text_state.tm[4];
+                                            crate::text_renderer::render_text_glyphs(
+                                                bytes, &*font_entry, text_state.font_size,
+                                                text_state.horizontal_scaling, text_state.char_spacing,
+                                                text_state.word_spacing, text_state.rise,
+                                                &mut text_state.tm, rgba, buf,
+                                            );
+                                            let width = (text_state.tm[4] - pre_x).abs();
+                                            spans.push(TextSpan {
+                                                x: start_x, y: start_y,
+                                                width, height: text_state.font_size.abs(),
+                                                font_size: text_state.font_size.abs(),
+                                                text: decoded,
+                                            });
+                                        } else {
+                                            crate::text_renderer::render_text_glyphs(
+                                                bytes, &*font_entry, text_state.font_size,
+                                                text_state.horizontal_scaling, text_state.char_spacing,
+                                                text_state.word_spacing, text_state.rise,
+                                                &mut text_state.tm, rgba, buf,
+                                            );
+                                        }
                                     } else {
                                         crate::text_renderer::render_text_glyphs(
                                             bytes, &*font_entry, text_state.font_size,
@@ -672,10 +884,24 @@ impl Interpreter {
                         if let Some(font_entry) = font_entry_opt {
                             if font_entry.parsed.is_some() {
                                 let is_cid = font_entry.is_cid;
+                                // For TJ arrays, collect all string parts into one span per run
+                                let collecting = text_spans.is_some();
+                                let mut run_text = if collecting { String::new() } else { String::new() };
+                                let run_start_x = text_state.render_x();
+                                let run_start_y = text_state.render_y();
+                                let pre_x = text_state.tm[4];
+
                                 for item in arr {
                                     match item {
                                         Object::String(bytes, _) => {
                                             if !bytes.is_empty() {
+                                                if collecting {
+                                                    if is_cid {
+                                                        run_text.push_str(&Self::decode_cid_text(bytes, &*font_entry));
+                                                    } else {
+                                                        run_text.push_str(&Self::decode_simple_text(bytes, &*font_entry));
+                                                    }
+                                                }
                                                 if is_cid {
                                                     crate::text_renderer::render_cid_text_glyphs(
                                                         bytes, &*font_entry, text_state.font_size,
@@ -700,6 +926,18 @@ impl Interpreter {
                                         _ => {}
                                     }
                                 }
+
+                                if let Some(ref mut spans) = text_spans {
+                                    if !run_text.trim().is_empty() {
+                                        let width = (text_state.tm[4] - pre_x).abs();
+                                        spans.push(TextSpan {
+                                            x: run_start_x, y: run_start_y,
+                                            width, height: text_state.font_size.abs(),
+                                            font_size: text_state.font_size.abs(),
+                                            text: run_text,
+                                        });
+                                    }
+                                }
                             }
                         }
                     }
@@ -714,18 +952,34 @@ impl Interpreter {
                             if let Some(font_entry) = font_registry.get_font(
                                 &text_state.current_font_name, doc, resources,
                             ) {
-                                crate::text_renderer::render_text_glyphs(
-                                    bytes,
-                                    &*font_entry,
-                                    text_state.font_size,
-                                    text_state.horizontal_scaling,
-                                    text_state.char_spacing,
-                                    text_state.word_spacing,
-                                    text_state.rise,
-                                    &mut text_state.tm,
-                                    rgba,
-                                    buf,
-                                );
+                                let start_x = text_state.render_x();
+                                let start_y = text_state.render_y();
+                                if let Some(ref mut spans) = text_spans {
+                                    let decoded = Self::decode_simple_text(bytes, &*font_entry);
+                                    let pre_x = text_state.tm[4];
+                                    crate::text_renderer::render_text_glyphs(
+                                        bytes, &*font_entry, text_state.font_size,
+                                        text_state.horizontal_scaling, text_state.char_spacing,
+                                        text_state.word_spacing, text_state.rise,
+                                        &mut text_state.tm, rgba, buf,
+                                    );
+                                    if !decoded.trim().is_empty() {
+                                        let width = (text_state.tm[4] - pre_x).abs();
+                                        spans.push(TextSpan {
+                                            x: start_x, y: start_y,
+                                            width, height: text_state.font_size.abs(),
+                                            font_size: text_state.font_size.abs(),
+                                            text: decoded,
+                                        });
+                                    }
+                                } else {
+                                    crate::text_renderer::render_text_glyphs(
+                                        bytes, &*font_entry, text_state.font_size,
+                                        text_state.horizontal_scaling, text_state.char_spacing,
+                                        text_state.word_spacing, text_state.rise,
+                                        &mut text_state.tm, rgba, buf,
+                                    );
+                                }
                             }
                         }
                     }
@@ -743,18 +997,34 @@ impl Interpreter {
                                 if let Some(font_entry) = font_registry.get_font(
                                     &text_state.current_font_name, doc, resources,
                                 ) {
-                                    crate::text_renderer::render_text_glyphs(
-                                        bytes,
-                                        &*font_entry,
-                                        text_state.font_size,
-                                        text_state.horizontal_scaling,
-                                        text_state.char_spacing,
-                                        text_state.word_spacing,
-                                        text_state.rise,
-                                        &mut text_state.tm,
-                                        rgba,
-                                        buf,
-                                    );
+                                    let start_x = text_state.render_x();
+                                    let start_y = text_state.render_y();
+                                    if let Some(ref mut spans) = text_spans {
+                                        let decoded = Self::decode_simple_text(bytes, &*font_entry);
+                                        let pre_x = text_state.tm[4];
+                                        crate::text_renderer::render_text_glyphs(
+                                            bytes, &*font_entry, text_state.font_size,
+                                            text_state.horizontal_scaling, text_state.char_spacing,
+                                            text_state.word_spacing, text_state.rise,
+                                            &mut text_state.tm, rgba, buf,
+                                        );
+                                        if !decoded.trim().is_empty() {
+                                            let width = (text_state.tm[4] - pre_x).abs();
+                                            spans.push(TextSpan {
+                                                x: start_x, y: start_y,
+                                                width, height: text_state.font_size.abs(),
+                                                font_size: text_state.font_size.abs(),
+                                                text: decoded,
+                                            });
+                                        }
+                                    } else {
+                                        crate::text_renderer::render_text_glyphs(
+                                            bytes, &*font_entry, text_state.font_size,
+                                            text_state.horizontal_scaling, text_state.char_spacing,
+                                            text_state.word_spacing, text_state.rise,
+                                            &mut text_state.tm, rgba, buf,
+                                        );
+                                    }
                                 }
                             }
                         }
@@ -782,13 +1052,62 @@ impl Interpreter {
                 }
                 "Tr" => {}
                 "Do" => {
-                    Self::handle_do_extract(&op.operands, buf, state, doc, resources, font_registry);
+                    Self::handle_do_extract_with_text(&op.operands, buf, state, doc, resources, font_registry, text_spans.as_deref_mut());
                 }
                 "gs" | "ri" | "i" => {}
                 _ => {}
             }
         }
         Ok(())
+    }
+
+    /// Decode single-byte text bytes to Unicode using font ToUnicode map or encoding
+    fn decode_simple_text(bytes: &[u8], font_entry: &crate::fonts::FontEntry) -> String {
+        let mut result = String::new();
+        for &b in bytes {
+            if let Some(&ch) = font_entry.to_unicode.get(&b) {
+                result.push(ch);
+            } else if font_entry.encoding_name.is_some() || !font_entry.differences.is_empty() {
+                let ch = crate::encoding::resolve_char_code(
+                    font_entry.encoding_name.as_deref(),
+                    &font_entry.differences,
+                    b,
+                );
+                result.push(ch);
+            } else {
+                // Fallback: interpret as Latin-1
+                result.push(b as char);
+            }
+        }
+        result
+    }
+
+    /// Decode CID (2-byte) text bytes to Unicode using font ToUnicode map
+    fn decode_cid_text(bytes: &[u8], font_entry: &crate::fonts::FontEntry) -> String {
+        let mut result = String::new();
+        let mut i = 0;
+        while i + 1 < bytes.len() {
+            let hi = bytes[i];
+            let lo = bytes[i + 1];
+            i += 2;
+            let cid = u16::from_be_bytes([hi, lo]);
+            // Try CID-specific ToUnicode map first (2-byte keys)
+            if let Some(&ch) = font_entry.cid_to_unicode.get(&cid) {
+                result.push(ch);
+            } else if let Some(&ch) = font_entry.to_unicode.get(&(cid as u8)) {
+                // Fallback to single-byte ToUnicode (for codes <= 255)
+                result.push(ch);
+            } else {
+                // Treat 2-byte value as Unicode codepoint directly (Identity-H)
+                let codepoint = cid as u32;
+                if let Some(ch) = char::from_u32(codepoint) {
+                    if !ch.is_control() || ch == ' ' {
+                        result.push(ch);
+                    }
+                }
+            }
+        }
+        result
     }
 
     #[allow(dead_code)]
@@ -827,6 +1146,18 @@ impl Interpreter {
         resources: &Dictionary,
         font_registry: &mut crate::fonts::FontRegistry,
     ) {
+        Self::handle_do_extract_with_text(operands, buf, state, doc, resources, font_registry, None);
+    }
+
+    fn handle_do_extract_with_text(
+        operands: &[Object],
+        buf: &mut DrawCommandBuffer,
+        state: &mut GraphicsStateStack,
+        doc: &Document,
+        resources: &Dictionary,
+        font_registry: &mut crate::fonts::FontRegistry,
+        text_spans: Option<&mut Vec<TextSpan>>,
+    ) {
         let name = match operands.first() {
             Some(Object::Name(n)) => n,
             _ => return,
@@ -854,7 +1185,6 @@ impl Interpreter {
         let subtype = stream.dict.get(b"Subtype").ok().and_then(|s| s.as_name().ok());
 
         if subtype == Some(b"Image" as &[u8]) {
-            // Image XObject — decode and emit as DrawImage command
             Self::handle_image_xobject(stream, buf, doc);
             return;
         }
@@ -881,7 +1211,7 @@ impl Interpreter {
         let form_resources = Self::extract_form_resources(&stream.dict, doc);
         let res = form_resources.as_ref().unwrap_or(resources);
         if let Ok(content_bytes) = stream.decompressed_content() {
-            let _ = Self::extract_commands(&content_bytes, buf, state, doc, res, font_registry);
+            let _ = Self::extract_commands_with_text(&content_bytes, buf, state, doc, res, font_registry, text_spans);
         }
         state.restore();
         buf.restore_state();

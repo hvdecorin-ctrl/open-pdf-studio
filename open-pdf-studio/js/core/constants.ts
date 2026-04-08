@@ -159,7 +159,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   measureCtrlSnap: 10,
 
   // Measure Distance defaults
-  measureDistStrokeColor: '#0000FF',
+  measureDistStrokeColor: '#FF0000',
   measureDistLineWidth: 1,
   measureDistBorderStyle: 'solid',
   measureDistOpacity: 100,
@@ -168,7 +168,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   measureDistHeadSize: 12,
   measureDistDimScale: 1,
   measureDistDimUnit: 'mm',
-  measureDistDimPrecision: 2,
+  measureDistDimPrecision: 0,
 
   // Measure Area defaults
   measureAreaStrokeColor: '#0000FF',

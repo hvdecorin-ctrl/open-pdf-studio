@@ -3,7 +3,7 @@ import { applyToolTransform, getEffectiveScale } from '../tool-context.js';
 
 /**
  * Select tool — click-select, rubber band, drag, resize, Ctrl+drag copy
- * Also used for selectComments tool (same behavior)
+ * Unified select tool — handles both annotation selection and text selection
  */
 export const selectTool = {
   name: 'select',
@@ -111,6 +111,16 @@ export const selectTool = {
         ctx.clearSelection();
         ctx.hideProperties();
         ctx.redraw();
+
+        // No annotation hit — temporarily enable text layer for text selection
+        const textLayers = document.querySelectorAll('.textLayer');
+        textLayers.forEach(layer => {
+          layer.style.pointerEvents = 'auto';
+          layer.querySelectorAll('span').forEach(span => {
+            span.style.pointerEvents = 'auto';
+            span.style.cursor = 'text';
+          });
+        });
       }
     }
   },
@@ -200,8 +210,38 @@ export const selectTool = {
         }
       }
       ctx.redraw();
+
+      // Restore text layer to non-interactive after rubber band
+      setTimeout(() => {
+        if (state.currentTool === 'select') {
+          const textLayers = document.querySelectorAll('.textLayer');
+          textLayers.forEach(layer => {
+            layer.style.pointerEvents = 'none';
+            layer.querySelectorAll('span').forEach(span => {
+              span.style.pointerEvents = 'none';
+              span.style.cursor = 'default';
+            });
+          });
+        }
+      }, 100);
+
       return true; // handled
     }
+
+    // Restore text layer to non-interactive after pointer up
+    setTimeout(() => {
+      if (state.currentTool === 'select') {
+        const textLayers = document.querySelectorAll('.textLayer');
+        textLayers.forEach(layer => {
+          layer.style.pointerEvents = 'none';
+          layer.querySelectorAll('span').forEach(span => {
+            span.style.pointerEvents = 'none';
+            span.style.cursor = 'default';
+          });
+        });
+      }
+    }, 100);
+
     return false; // not handled — let dispatcher do drag/resize finalization
   },
 };

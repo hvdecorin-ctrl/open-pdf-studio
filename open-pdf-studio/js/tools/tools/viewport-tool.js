@@ -72,6 +72,9 @@ export const viewportTool = {
     // Open dialog to set scale
     openDialog('viewport-scale', { annotationId: ann.id, pageNum });
 
+    // Auto-reset to select tool
+    import('../../tools/manager.js').then(m => m.setTool('select'));
+
     return true;
   },
 

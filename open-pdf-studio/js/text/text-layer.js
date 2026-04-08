@@ -1,4 +1,5 @@
 import { state, getActiveDocument } from '../core/state.js';
+import { isTauri, invoke } from '../core/platform.js';
 import * as pdfjsLib from 'pdfjs-dist';
 
 /**
@@ -393,4 +394,111 @@ export function clearTextLayers() {
 export function getTextLayer(pageNum) {
   const entry = textLayers.get(pageNum);
   return entry ? entry.element : null;
+}
+
+/**
+ * Creates a text layer from Rust-extracted text positions.
+ * Used when the vector renderer is active (no PDF.js rendering).
+ * Text spans are positioned in PDF user space and scaled to match the viewport.
+ *
+ * @param {HTMLElement} container - Container element for the text layer
+ * @param {number} pageNum - Page number (1-based)
+ * @param {number} pageWidth - Page width in PDF points
+ * @param {number} pageHeight - Page height in PDF points
+ * @returns {Promise<boolean>} True if text layer was created successfully
+ */
+export async function createTextLayerFromRust(container, pageNum, pageWidth, pageHeight) {
+  if (!isTauri()) return false;
+
+  try {
+    const doc = getActiveDocument();
+    if (!doc || !doc.filePath) return false;
+
+    const jsonStr = await invoke('extract_page_text', {
+      path: doc.filePath,
+      pageIndex: pageNum - 1,
+    });
+    const spans = JSON.parse(jsonStr);
+    if (!spans || spans.length === 0) return false;
+
+    let textLayerDiv = container.querySelector('.textLayer');
+    if (!textLayerDiv) {
+      textLayerDiv = document.createElement('div');
+      textLayerDiv.className = 'textLayer';
+      textLayerDiv.dataset.page = pageNum;
+      container.appendChild(textLayerDiv);
+    }
+    textLayerDiv.innerHTML = '';
+
+    // Text spans are in PDF user space (origin bottom-left, Y up).
+    // The text layer uses percentage-based positioning relative to page dimensions.
+    for (const span of spans) {
+      if (!span.text || !span.text.trim()) continue;
+
+      const el = document.createElement('span');
+      el.textContent = span.text;
+      el.setAttribute('role', 'presentation');
+      el.setAttribute('dir', 'ltr');
+
+      // Convert PDF coordinates to text layer positioning:
+      // left = x / pageWidth (as percentage)
+      // top = (pageHeight - y) / pageHeight (as percentage, flipped Y)
+      // Subtract font ascent to align with rendered glyphs
+      const ascentRatio = 0.8;
+      const left = span.x;
+      const top = pageHeight - span.y - span.fontSize * ascentRatio;
+
+      const leftPct = (100 * left / pageWidth).toFixed(4);
+      const topPct = (100 * top / pageHeight).toFixed(4);
+
+      el.style.position = '';
+      el.style.left = `${leftPct}%`;
+      el.style.top = `${topPct}%`;
+      el.style.fontFamily = 'sans-serif';
+      el.style.setProperty('--font-height', `${span.fontSize.toFixed(2)}px`);
+      el.style.lineHeight = '1';
+      el.style.color = 'transparent';
+
+      // Compute scale-x to match rendered width
+      if (span.width > 0 && span.fontSize > 0) {
+        // Estimate the CSS text width vs the PDF text width
+        // The text layer CSS uses --scale-x to adjust horizontal scaling
+        const charWidthEstimate = span.fontSize * 0.6 * span.text.length;
+        if (charWidthEstimate > 0) {
+          const scaleX = span.width / charWidthEstimate;
+          el.style.setProperty('--scale-x', `${scaleX.toFixed(4)}`);
+        }
+      }
+
+      // Store PDF transform data for compatibility with edit text tool
+      const transform = [span.fontSize, 0, 0, span.fontSize, span.x, span.y];
+      el.dataset.pdfTransform = JSON.stringify(transform);
+      el.dataset.pdfWidth = String(span.width);
+      el.dataset.pdfFontFamily = 'sans-serif';
+      el.dataset.pdfFontName = '';
+      el.dataset.pdfActualFontName = '';
+      el.dataset.pdfLoadedFontName = '';
+      el.dataset.pdfBold = 'false';
+      el.dataset.pdfItalic = 'false';
+
+      textLayerDiv.appendChild(el);
+    }
+
+    // Enable text selection when select or editText tool is active
+    const needsTextAccess = state.currentTool === 'select' || state.currentTool === 'editText';
+    if (needsTextAccess) {
+      textLayerDiv.style.pointerEvents = 'auto';
+    }
+    const spanEls = textLayerDiv.querySelectorAll('span:not(.markedContent)');
+    spanEls.forEach(s => {
+      s.style.pointerEvents = needsTextAccess ? 'auto' : 'none';
+      s.style.cursor = needsTextAccess ? 'text' : 'default';
+    });
+
+    textLayers.set(pageNum, { element: textLayerDiv, textLayer: null });
+    return true;
+  } catch (e) {
+    console.warn('[text-layer] Rust text extraction failed:', e);
+    return false;
+  }
 }

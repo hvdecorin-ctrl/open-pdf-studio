@@ -111,6 +111,9 @@ export const measureDistanceTool = {
       state.dimPoints = [];
       state.isDrawingDimension = false;
       ctx.redraw();
+
+      // Auto-reset to select tool
+      import('../../tools/manager.js').then(m => m.setTool('select'));
     }
   },
 
@@ -383,6 +386,9 @@ function _finishMeasureWithHoles(ctx) {
   state.measureOuterPoints = null;
   state.measureHoles = [];
   ctx.redraw();
+
+  // Auto-reset to select tool
+  import('../../tools/manager.js').then(m => m.setTool('select'));
 }
 
 // Collect all in-progress points for snap exclusion
@@ -607,6 +613,9 @@ function _finishMeasure(ctx, toolType) {
   state.measureOuterPoints = null;
   state.measureHoles = [];
   ctx.redraw();
+
+  // Auto-reset to select tool
+  import('../../tools/manager.js').then(m => m.setTool('select'));
 }
 
 function _measureDeactivate(ctx) {

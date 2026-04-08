@@ -414,6 +414,49 @@ export async function savePDF(saveAsPath = null) {
             break;
           }
 
+          case 'arc': {
+            // Approximate arc with polyline segments for PDF compatibility
+            const arcSteps = 36;
+            let arcSA = ann.startAngle, arcEA = ann.endAngle;
+            if (arcEA < arcSA) arcEA += 2 * Math.PI;
+            const arcVertices = [];
+            let arcMinX = Infinity, arcMinY = Infinity, arcMaxX = -Infinity, arcMaxY = -Infinity;
+            for (let i = 0; i <= arcSteps; i++) {
+              const angle = arcSA + (arcEA - arcSA) * i / arcSteps;
+              const px = convertX(ann.centerX + ann.radius * Math.cos(angle));
+              const py = convertY(ann.centerY + ann.radius * Math.sin(angle));
+              arcVertices.push(px, py);
+              arcMinX = Math.min(arcMinX, px); arcMaxX = Math.max(arcMaxX, px);
+              arcMinY = Math.min(arcMinY, py); arcMaxY = Math.max(arcMaxY, py);
+            }
+
+            const arcStrokeColor = ann.strokeColor ? hexToColorArray(ann.strokeColor) : colorArr;
+
+            const arcDict = {
+              Type: 'Annot',
+              Subtype: 'PolyLine',
+              Rect: [arcMinX - borderWidth, arcMinY - borderWidth, arcMaxX + borderWidth, arcMaxY + borderWidth],
+              Vertices: arcVertices,
+              C: arcStrokeColor,
+              CA: opacity,
+              T: PDFString.of(ann.author || 'User'),
+              Contents: PDFString.of(ann.subject || ''),
+              M: PDFString.of(new Date().toISOString()),
+              F: computeAnnotFlags(ann),
+              OPS_Subtype: PDFString.of('arc'),
+              OPS_CenterX: ann.centerX,
+              OPS_CenterY: ann.centerY,
+              OPS_Radius: ann.radius,
+              OPS_StartAngle: ann.startAngle,
+              OPS_EndAngle: ann.endAngle
+            };
+
+            arcDict.BS = buildBorderStyle(context, borderWidth, ann.borderStyle);
+
+            annotDict = context.obj(arcDict);
+            break;
+          }
+
           case 'polyline': {
             // PolyLine annotation
             if (!ann.points || ann.points.length < 2) continue;

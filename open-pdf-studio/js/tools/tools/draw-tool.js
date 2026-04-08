@@ -48,6 +48,10 @@ export const drawTool = {
       ctx.recordAdd(ann);
     }
     ctx.redraw();
+
+    // Auto-reset to select tool
+    import('../../tools/manager.js').then(m => m.setTool('select'));
+
     return true;
   },
 };

@@ -161,6 +161,17 @@ export function drawAnnotation(ctx, annotation) {
       break;
     }
 
+    case 'arc': {
+      ctx.beginPath();
+      ctx.arc(annotation.centerX, annotation.centerY, annotation.radius, annotation.startAngle, annotation.endAngle);
+      ctx.strokeStyle = strokeColor;
+      ctx.lineWidth = lw;
+      applyBorderStyle(ctx, annotation.borderStyle);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      break;
+    }
+
     case 'polyline':
       if (annotation.points && annotation.points.length >= 2) {
         ctx.strokeStyle = strokeColor;

@@ -39,6 +39,10 @@ export default function CommentTab() {
             <RibbonButton size="small" id="tool-polyline" title={t('comment.polylineTitle')} icon={polylineIcon} label={t('comment.polyline')}
               disabled={noPdf() || isPdfAReadOnly()} active={state.currentTool === 'polyline'} onClick={() => setTool('polyline')} />
           </RibbonButtonStack>
+          <RibbonButton id="tool-arc" title="Arc (3-point)"
+            icon={`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 20 Q 12 4 20 20"/></svg>`}
+            label="Arc" disabled={noPdf() || isPdfAReadOnly()}
+            active={state.currentTool === 'arc'} onClick={() => setTool('arc')} />
         </RibbonGroup>
 
         <RibbonGroup label={t('comment.shapes')}>

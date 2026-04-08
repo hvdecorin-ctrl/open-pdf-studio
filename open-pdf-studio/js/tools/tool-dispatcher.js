@@ -96,7 +96,7 @@ export function handlePointerDown(e) {
   }
 
   // Block annotation tools when PDF/A read-only
-  if (isPdfAReadOnly() && !['hand', 'select', 'selectComments', 'editText'].includes(state.currentTool)) {
+  if (isPdfAReadOnly() && !['hand', 'select', 'editText'].includes(state.currentTool)) {
     return;
   }
 
@@ -549,6 +549,9 @@ function _finishDrawing(ctx, e, coords) {
     recordAdd(ann);
   }
   redraw();
+
+  // Auto-reset to select tool
+  import('./manager.js').then(m => m.setTool('select'));
 
   if (ann && ['textbox', 'callout'].includes(ann.type)) {
     if (drawDoc) { drawDoc.selectedAnnotations = [ann]; drawDoc.selectedAnnotation = ann; }

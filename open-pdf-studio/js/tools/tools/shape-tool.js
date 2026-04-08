@@ -76,6 +76,10 @@ export const shapeTool = {
       ctx.showProperties(ann);
       ctx.startTextEditing(ann);
     }
+
+    // Auto-reset to select tool
+    import('../../tools/manager.js').then(m => m.setTool('select'));
+
     return true;
   },
 };

@@ -3,7 +3,7 @@ export type AnnotationType =
   | 'draw' | 'line' | 'arrow' | 'box' | 'circle'
   | 'textbox' | 'callout' | 'comment' | 'stamp' | 'image' | 'signature'
   | 'polygon' | 'cloud' | 'cloudPolyline' | 'polyline' | 'text'
-  | 'redaction'
+  | 'arc' | 'redaction'
   | 'measureDistance' | 'measureArea' | 'measurePerimeter' | 'measureAngle'
   | 'scaleBar';
 
@@ -176,6 +176,13 @@ export type Annotation = AnnotationBase & {
   pixelsPerUnit?: number;
   divisions?: number;
   totalUnits?: number;
+
+  // Arc
+  centerX?: number;
+  centerY?: number;
+  radius?: number;
+  startAngle?: number;
+  endAngle?: number;
 
   // Viewport
   name?: string;

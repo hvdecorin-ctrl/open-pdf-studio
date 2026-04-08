@@ -129,6 +129,8 @@ export const cloudPolylineTool = {
         state.cloudPolylinePoints = [];
         state.isDrawingCloudPolyline = false;
         ctx.redraw();
+        // Auto-reset to select tool
+        import('../../tools/manager.js').then(m => m.setTool('select'));
         return;
       }
     }
@@ -231,6 +233,9 @@ function _finishPolyline(ctx) {
   state.polylinePoints = [];
   state.isDrawingPolyline = false;
   ctx.redraw();
+
+  // Auto-reset to select tool
+  import('../../tools/manager.js').then(m => m.setTool('select'));
 }
 
 function _finishCloudPolyline(ctx) {
@@ -241,6 +246,9 @@ function _finishCloudPolyline(ctx) {
   state.cloudPolylinePoints = [];
   state.isDrawingCloudPolyline = false;
   ctx.redraw();
+
+  // Auto-reset to select tool
+  import('../../tools/manager.js').then(m => m.setTool('select'));
 }
 
 function _createCloudPolylineAnnotation(ctx, points) {

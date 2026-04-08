@@ -100,6 +100,19 @@ impl SkiaRenderer {
         }
     }
 
+    pub fn draw_image(&mut self, width: u32, height: u32, rgba_pixels: &[u8], gs: &GraphicsState) {
+        let img = match PixmapRef::from_bytes(rgba_pixels, width, height) {
+            Some(p) => p,
+            None => return,
+        };
+        let paint = PixmapPaint {
+            opacity: 1.0,
+            blend_mode: BlendMode::SourceOver,
+            quality: FilterQuality::Bilinear,
+        };
+        self.pixmap.draw_pixmap(0, 0, img, &paint, gs.ctm, None);
+    }
+
     pub fn into_rgba(self) -> Vec<u8> {
         self.pixmap.data().to_vec()
     }

@@ -9,6 +9,7 @@ import { symbolPaletteVisible } from '../../stores/symbolStore.js';
 import { getRegisteredPalettes } from '../../../plugins/palette-registry.js';
 import { toggleExtPalette, isExtPaletteVisible } from '../ExtensionToolPalette.jsx';
 import { setViewMode } from '../../../pdf/renderer.js';
+import { redrawAnnotations } from '../../../annotations/rendering.js';
 import { toggleLeftPanel } from '../../../ui/panels/left-panel.js';
 import { toggleAnnotationsListPanel } from '../../../ui/panels/annotations-list.js';
 import { togglePropertiesPanel } from '../../../ui/panels/properties-panel.js';
@@ -29,6 +30,23 @@ export default function ViewTab() {
           <RibbonButton id="continuous" title={t('view.continuousTitle')} icon={continuousIcon} label={t('view.continuous')}
             active={(state.documents[state.activeDocumentIndex]?.viewMode || 'single') === 'continuous'}
             disabled={true} style={{ opacity: '0.4', cursor: 'default' }} />
+        </RibbonGroup>
+
+        <RibbonGroup label={t('view.display') || 'Display'}>
+          <RibbonButton id="thin-lines-toggle"
+            title={t('view.thinLines') || 'Thin Lines'}
+            icon={`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><line x1="3" y1="6" x2="21" y2="6" stroke-width="0.5"/><line x1="3" y1="12" x2="21" y2="12" stroke-width="1.5"/><line x1="3" y1="18" x2="21" y2="18" stroke-width="0.5"/></svg>`}
+            label={t('view.thinLines') || 'Thin Lines'}
+            disabled={noPdf()}
+            active={state.preferences?.thinLines}
+            onClick={() => {
+              state.preferences.thinLines = !state.preferences.thinLines;
+              import('../../../pdf/renderer.js').then(m => {
+                const doc = state.documents[state.activeDocumentIndex];
+                if (doc) m.renderPage(doc.currentPage);
+              });
+              redrawAnnotations();
+            }} />
         </RibbonGroup>
 
         <RibbonGroup label={t('view.panels')}>

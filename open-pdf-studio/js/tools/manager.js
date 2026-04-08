@@ -8,15 +8,13 @@ import { getTool } from './tool-registry.js';
 import { buildToolContext, resolvePointerCoords } from './tool-context.js';
 
 // Tools that are always allowed (view-only, non-modifying)
-const READONLY_ALLOWED_TOOLS = new Set(['select', 'selectComments', 'hand']);
+const READONLY_ALLOWED_TOOLS = new Set(['select', 'hand']);
 
 // Get cursor for a given tool
 export function getCursorForTool(tool = state.currentTool) {
   switch (tool) {
     case 'select':
-      return 'default';  // Arrow cursor for annotation selection
-    case 'selectComments':
-      return 'text';     // I-beam cursor for text selection
+      return 'default';  // Arrow cursor for unified selection
     case 'hand':
       return 'grab';
     case 'text':
@@ -101,13 +99,13 @@ export function setTool(tool) {
   state.hoverHandle = null;
 
   // Hide properties panel when switching tools (keep visible for annotation tools)
-  if (tool !== 'select' && tool !== 'selectComments') {
+  if (tool !== 'select') {
     hideProperties();
   }
 
-  // Text selection: only for selectComments tool (select = annotation selection, not text)
+  // Text selection: enabled for unified select tool (text layer activates dynamically)
   if (tool !== 'editText') {
-    setTextSelectionEnabled(tool === 'selectComments');
+    setTextSelectionEnabled(tool === 'select');
   }
 
   // Activate edit text tool layer management
@@ -115,10 +113,9 @@ export function setTool(tool) {
     import('./text-edit-tool.js').then(m => m.activateEditTextTool());
   }
 
-  // Drop annotation canvas below text layer ONLY for text-related tools
-  // select = annotation selection (canvas ABOVE text layer)
-  // selectComments/editText = text access (canvas BELOW text layer)
-  setAnnotationCanvasForTextAccess(tool === 'selectComments' || tool === 'editText');
+  // Drop annotation canvas below text layer ONLY for editText tool
+  // select = unified tool (annotation canvas stays above, text layer activates dynamically)
+  setAnnotationCanvasForTextAccess(tool === 'editText');
 
   // Update status bar
   updateStatusTool();

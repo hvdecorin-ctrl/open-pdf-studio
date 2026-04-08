@@ -16,6 +16,8 @@ pub struct FontEntry {
     pub cid_to_gid_identity: bool,
     /// ToUnicode mapping: char_code → Unicode codepoint (from PDF ToUnicode CMap)
     pub to_unicode: HashMap<u8, char>,
+    /// ToUnicode mapping for CID fonts: 2-byte code → Unicode codepoint
+    pub cid_to_unicode: HashMap<u16, char>,
 }
 
 /// Registry that caches parsed fonts by their global PDF ObjectId.
@@ -116,6 +118,11 @@ impl FontRegistry {
 
         // Extract ToUnicode CMap (maps char codes to Unicode codepoints)
         let to_unicode = Self::extract_to_unicode(font_dict, doc);
+        let cid_to_unicode = if is_cid {
+            Self::extract_cid_to_unicode(font_dict, doc)
+        } else {
+            HashMap::new()
+        };
 
         // Try to extract and parse embedded font data
         let mut parsed = Self::extract_and_parse_font(font_dict, doc);
@@ -152,6 +159,7 @@ impl FontRegistry {
             is_cid,
             cid_to_gid_identity,
             to_unicode,
+            cid_to_unicode,
         }
     }
 
@@ -548,6 +556,63 @@ impl FontRegistry {
         map
     }
 
+    /// Extract ToUnicode CMap for CID fonts (2-byte source codes).
+    fn extract_cid_to_unicode(font_dict: &Dictionary, doc: &Document) -> HashMap<u16, char> {
+        let mut map = HashMap::new();
+        let tu_obj = match font_dict.get(b"ToUnicode") {
+            Ok(o) => Self::resolve_obj(o, doc),
+            _ => return map,
+        };
+        let cmap_data = match tu_obj {
+            Some(Object::Stream(stream)) => {
+                stream.decompressed_content().unwrap_or_default()
+            }
+            _ => return map,
+        };
+
+        let cmap_str = String::from_utf8_lossy(&cmap_data);
+        let mut in_bfchar = false;
+        let mut in_bfrange = false;
+
+        for line in cmap_str.lines() {
+            let line = line.trim();
+            if line.contains("beginbfchar") { in_bfchar = true; continue; }
+            if line.contains("endbfchar") { in_bfchar = false; continue; }
+            if line.contains("beginbfrange") { in_bfrange = true; continue; }
+            if line.contains("endbfrange") { in_bfrange = false; continue; }
+
+            if (in_bfchar || in_bfrange) && line.starts_with('<') {
+                let hex_values: Vec<u32> = line
+                    .split('>')
+                    .filter_map(|part| {
+                        let hex = part.trim().trim_start_matches('<');
+                        if hex.is_empty() { return None; }
+                        u32::from_str_radix(hex, 16).ok()
+                    })
+                    .collect();
+
+                if in_bfchar && hex_values.len() >= 2 {
+                    let code = hex_values[0] as u16;
+                    if let Some(ch) = char::from_u32(hex_values[1]) {
+                        map.insert(code, ch);
+                    }
+                } else if in_bfrange && hex_values.len() >= 3 {
+                    let lo = hex_values[0] as u16;
+                    let hi = hex_values[1] as u16;
+                    let dst_start = hex_values[2];
+                    for code in lo..=hi {
+                        let unicode = dst_start + (code - lo) as u32;
+                        if let Some(ch) = char::from_u32(unicode) {
+                            map.insert(code, ch);
+                        }
+                    }
+                }
+            }
+        }
+
+        map
+    }
+
     /// Get decompressed stream data from an object (possibly a reference).
     fn get_stream_data(obj: &Object, doc: &Document) -> Option<Vec<u8>> {
         let resolved = Self::resolve_obj(obj, doc)?;
@@ -586,6 +651,7 @@ mod tests {
             is_cid: false,
             cid_to_gid_identity: false,
             to_unicode: HashMap::new(),
+            cid_to_unicode: HashMap::new(),
         };
         assert_eq!(FontRegistry::char_to_glyph_id(&entry, b'A'), None);
     }

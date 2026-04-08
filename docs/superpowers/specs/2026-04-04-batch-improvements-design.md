@@ -17,10 +17,11 @@
 
 **Current state:** The Rust renderer already handles image XObjects (JPEG, FlateDecode, CMYK) via `handle_image_xobject()` in `interpreter.rs:893-1061`. DrawImage command (opcode 19) is emitted. However, the `render_page()` pipeline may not be executing DrawImage commands during rasterization. Inline images (BI/ID/EI) are not handled.
 
-**Changes:**
-- **`open-pdf-render/src/lib.rs`**: Verify `render_page()` processes DrawImage commands via tiny_skia. If images are only extracted as draw commands but not rasterized, add tiny_skia `Pixmap::draw_pixmap()` calls to composite decoded images onto the page bitmap.
-- **`open-pdf-render/src/interpreter.rs`**: Add BI/ID/EI inline image operator handling (parse inline image dict + data, emit DrawImage command).
-- **`open-pdf-render/src/image_decode.rs`**: Implement actual JPEG decode using the `image` crate (already a dependency) so raw RGBA pixels are available for tiny_skia compositing.
+**Root cause:** In `interpreter.rs:220`, `handle_do_execute()` has `if subtype != Some(b"Form") { return; }` which silently skips Image XObjects. The extract path (for web canvas) handles images correctly, but the execute path (for thumbnails) does not.
+
+**Fix (simple):**
+- **`open-pdf-render/src/interpreter.rs`**: In `handle_do_execute()`, before the Form check, detect `Subtype == "Image"` and decode the image using the same logic as `handle_image_xobject()`. Then use `image` crate to decode JPEG/raw pixels into RGBA, create a `tiny_skia::Pixmap` from the RGBA data, and composite onto the renderer pixmap via `pixmap.draw_pixmap()` with the current CTM transform.
+- **`open-pdf-render/src/renderer.rs`**: Add `draw_image(&mut self, img_pixmap: &Pixmap, gs: &GraphicsState)` method that composites an image pixmap onto the page using the current transform matrix.
 
 **Verification:** Render a thumbnail of a PDF with embedded raster images and confirm images appear.
 

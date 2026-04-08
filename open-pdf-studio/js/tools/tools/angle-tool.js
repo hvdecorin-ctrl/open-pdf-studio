@@ -75,6 +75,9 @@ export const measureAngleTool = {
       state.dimPoints = [];
       state.isDrawingDimension = false;
       ctx.redraw();
+
+      // Auto-reset to select tool
+      import('../../tools/manager.js').then(m => m.setTool('select'));
     }
   },
 

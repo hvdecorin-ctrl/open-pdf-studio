@@ -49,6 +49,12 @@ export function getAnnotationBounds(ann: Annotation): AnnotationBounds | null {
       const drawMaxX = Math.max(...ann.path.map(p => p.x));
       const drawMaxY = Math.max(...ann.path.map(p => p.y));
       return { x: drawMinX, y: drawMinY, width: drawMaxX - drawMinX, height: drawMaxY - drawMinY };
+    case 'arc': {
+      const arcR = ann.radius || 0;
+      const arcCX = ann.centerX || 0;
+      const arcCY = ann.centerY || 0;
+      return { x: arcCX - arcR, y: arcCY - arcR, width: arcR * 2, height: arcR * 2 };
+    }
     case 'line':
     case 'arrow':
       const lx = Math.min(ann.startX!, ann.endX!);

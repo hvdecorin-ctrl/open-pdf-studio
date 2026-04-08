@@ -8,6 +8,7 @@ import { drawTool } from './draw-tool.js';
 import { shapeTool } from './shape-tool.js';
 import { lineTool } from './line-tool.js';
 import { polylineTool, cloudPolylineTool } from './polyline-tool.js';
+import { arcTool } from './arc-tool.js';
 import { measureDistanceTool, measureAreaTool, measurePerimeterTool, addHoleTool } from './measurement-tool.js';
 import { measureAngleTool } from './angle-tool.js';
 import { commentTool, textTool, stampTool, signatureTool, editTextTool } from './text-tool.js';
@@ -16,12 +17,15 @@ import { pluginClickTool } from './plugin-tool.js';
 import { hoverTranslateTool } from './hover-translate-tool.js';
 import { viewportTool } from './viewport-tool.js';
 import { scaleBarTool } from './scalebar-tool.js';
+import { trimTool } from './trim-tool.js';
+import { extendTool } from './extend-tool.js';
+import { arrayTool } from './array-tool.js';
 
 export function registerAllTools() {
   // Navigation / selection
   registerTool('hand', handTool);
   registerTool('select', selectTool);
-  registerTool('selectComments', selectTool);
+
 
   // Freehand
   registerTool('draw', drawTool);
@@ -39,6 +43,7 @@ export function registerAllTools() {
   // Lines
   registerTool('line', lineTool);
   registerTool('arrow', lineTool);
+  registerTool('arc', arcTool);
 
   // Multi-click tools
   registerTool('polyline', polylineTool);
@@ -69,6 +74,11 @@ export function registerAllTools() {
 
   // Plugin fallback
   registerTool('_plugin_click', pluginClickTool);
+
+  // CAD tools
+  registerTool('trim', trimTool);
+  registerTool('extend', extendTool);
+  registerTool('array', arrayTool);
 
   // AI
   registerTool('hoverTranslate', hoverTranslateTool);

@@ -401,6 +401,30 @@ impl DocumentHandle {
         Ok(spans)
     }
 
+    /// Extract text span positions from a page.
+    /// Returns a JSON array string of text spans with x, y, width, height, fontSize, and text.
+    /// Coordinates are in PDF user space (origin bottom-left, Y up).
+    pub fn extract_text_positions(&self, page: usize) -> Result<String, RenderError> {
+        let page_id = self.get_page_id(page)?;
+        let (_x0, _y0, _w_pt, _h_pt) = self.extract_media_box_full(page_id)?;
+        let content_bytes = self.get_content_stream(page_id)?;
+        let resources = self.get_page_resources(page_id)?;
+
+        let mut state = crate::graphics_state::GraphicsStateStack::new();
+        let mut cmds = crate::draw_commands::DrawCommandBuffer::new();
+        let mut font_registry = self.font_registry.lock()
+            .map_err(|e| RenderError::RenderError(format!("Font registry poisoned: {}", e)))?;
+        let mut text_spans = Vec::new();
+
+        crate::interpreter::Interpreter::extract_commands_with_text(
+            &content_bytes, &mut cmds, &mut state, &self.doc, &resources,
+            &mut *font_registry, Some(&mut text_spans),
+        )?;
+
+        let json_spans: Vec<String> = text_spans.iter().map(|s| s.to_json()).collect();
+        Ok(format!("[{}]", json_spans.join(",")))
+    }
+
     /// Extract text spans for many pages in parallel using rayon.
     /// The font registry mutex serializes the font *parsing* work but the
     /// content-stream walks for different pages can run in parallel.

@@ -3,6 +3,38 @@ import { annotationCtx } from '../ui/dom-elements.js';
 import { distanceToLine, isPointNearRect, isPointNearEllipse } from '../utils/math.js';
 import { getAnnotationType } from '../plugins/annotation-type-registry.js';
 
+/**
+ * Find intersection of two infinite lines defined by (p1,p2) and (p3,p4).
+ * Returns { x, y, t, u } where t is parameter on line 1, u on line 2.
+ * Returns null if lines are parallel.
+ */
+export function lineLineIntersection(p1, p2, p3, p4) {
+  const d1x = p2.x - p1.x, d1y = p2.y - p1.y;
+  const d2x = p4.x - p3.x, d2y = p4.y - p3.y;
+  const denom = d1x * d2y - d1y * d2x;
+  if (Math.abs(denom) < 1e-10) return null;
+  const t = ((p3.x - p1.x) * d2y - (p3.y - p1.y) * d2x) / denom;
+  const u = ((p3.x - p1.x) * d1y - (p3.y - p1.y) * d1x) / denom;
+  return { x: p1.x + t * d1x, y: p1.y + t * d1y, t, u };
+}
+
+/**
+ * Ray-casting point-in-polygon test.
+ * Returns true if (x, y) is inside the polygon defined by points.
+ */
+function pointInPolygon(x, y, points) {
+  let inside = false;
+  for (let i = 0, j = points.length - 1; i < points.length; j = i++) {
+    const xi = points[i].x, yi = points[i].y;
+    const xj = points[j].x, yj = points[j].y;
+    if ((yi > y) !== (yj > y) &&
+        x < (xj - xi) * (y - yi) / (yj - yi) + xi) {
+      inside = !inside;
+    }
+  }
+  return inside;
+}
+
 // Transform a point by inverse rotation around a center point
 // This converts screen coordinates to the annotation's local (unrotated) coordinate system
 function transformPointByInverseRotation(x, y, centerX, centerY, rotationDegrees) {
@@ -43,6 +75,15 @@ function getAnnotationCenterAndSize(ann) {
         width: ann.width,
         height: ann.height
       };
+    case 'arc': {
+      const arcR = ann.radius || 0;
+      return {
+        centerX: ann.centerX,
+        centerY: ann.centerY,
+        width: arcR * 2,
+        height: arcR * 2
+      };
+    }
     case 'circle':
       const w = ann.width || ann.radius * 2;
       const h = ann.height || ann.radius * 2;
@@ -127,6 +168,20 @@ export function findAnnotationAt(x, y) {
           }
         }
         break;
+      case 'arc': {
+        const adx = x - ann.centerX;
+        const ady = y - ann.centerY;
+        const adist = Math.sqrt(adx * adx + ady * ady);
+        const aangle = Math.atan2(ady, adx);
+        function normalizeArcAngle(a) { return ((a % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI); }
+        const ans = normalizeArcAngle(ann.startAngle);
+        const ane = normalizeArcAngle(ann.endAngle);
+        const ana = normalizeArcAngle(aangle);
+        const aspan = normalizeArcAngle(ane - ans);
+        const ainSpan = normalizeArcAngle(ana - ans) <= aspan;
+        if (ainSpan && Math.abs(adist - ann.radius) < tol) return ann;
+        break;
+      }
       case 'circle':
         // Check if point is near ellipse boundary, or inside if has fill color
         const findCircW = ann.width || ann.radius * 2;
@@ -203,12 +258,23 @@ export function findAnnotationAt(x, y) {
         if (Math.sqrt(Math.pow(x - kneeX, 2) + Math.pow(y - kneeY, 2)) < tol * 1.5) return ann;
         break;
       case 'polygon':
-      case 'cloud':
-        // Transform click point by inverse rotation if annotation is rotated
-        const polyCenter = { x: ann.x + ann.width / 2, y: ann.y + ann.height / 2 };
-        const polyLocal = transformPointByInverseRotation(x, y, polyCenter.x, polyCenter.y, ann.rotation);
-        if (polyLocal.x >= ann.x && polyLocal.x <= ann.x + ann.width && polyLocal.y >= ann.y && polyLocal.y <= ann.y + ann.height) return ann;
+      case 'cloud': {
+        // Edge proximity check
+        if (ann.points && ann.points.length >= 2) {
+          for (let i = 0; i < ann.points.length - 1; i++) {
+            if (distanceToLine(x, y, ann.points[i].x, ann.points[i].y, ann.points[i+1].x, ann.points[i+1].y) < tol) return ann;
+          }
+          if (ann.points.length >= 3) {
+            const last = ann.points.length - 1;
+            if (distanceToLine(x, y, ann.points[last].x, ann.points[last].y, ann.points[0].x, ann.points[0].y) < tol) return ann;
+          }
+        }
+        // Point-in-polygon: click anywhere inside
+        if (ann.points && ann.points.length >= 3) {
+          if (pointInPolygon(x, y, ann.points)) return ann;
+        }
         break;
+      }
       case 'image':
       case 'stamp':
       case 'signature':
@@ -287,6 +353,22 @@ export function findAnnotationAt(x, y) {
                 const hd = distanceToLine(x, y, hole[hole.length-1].x, hole[hole.length-1].y, hole[0].x, hole[0].y);
                 if (hd < tol) return ann;
               }
+            }
+          }
+          // Point-in-polygon: click anywhere inside filled area
+          if (ann.type === 'measureArea' && ann.points.length >= 3) {
+            let insideOuter = pointInPolygon(x, y, ann.points);
+            if (insideOuter) {
+              let insideHole = false;
+              if (ann.holes) {
+                for (const hole of ann.holes) {
+                  if (hole && hole.length >= 3 && pointInPolygon(x, y, hole)) {
+                    insideHole = true;
+                    break;
+                  }
+                }
+              }
+              if (!insideHole) return ann;
             }
           }
         }
@@ -381,6 +463,13 @@ export function isPointInsideAnnotation(x, y, annotation) {
       // Normalized distance from center (1 means on the ellipse boundary)
       const normDist = Math.pow((localX - ellCX) / ellRX, 2) + Math.pow((localY - ellCY) / ellRY, 2);
       return normDist <= 1;
+
+    case 'arc': {
+      const arcDx = x - annotation.centerX;
+      const arcDy = y - annotation.centerY;
+      const arcDist = Math.sqrt(arcDx * arcDx + arcDy * arcDy);
+      return Math.abs(arcDist - annotation.radius) < 15;
+    }
 
     case 'line':
     case 'arrow':
