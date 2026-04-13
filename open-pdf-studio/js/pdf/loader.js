@@ -300,6 +300,7 @@ export async function loadPDF(filePath, docIndex, preloadedData = null) {
     // the first render. The rest load lazily page-by-page as the user navigates,
     // plus this background task pre-loads remaining pages without blocking the UI.
     loadExistingAnnotations(doc).then(async () => {
+      console.log(`[PERF-BG] loadExistingAnnotations .then() callback START`);
       if (isClosed()) return;
       // Sync doc.measureScale from any loaded scaleBar annotations
       const loadedScaleBar = doc.annotations.find(a => a.type === 'scaleBar');
@@ -309,10 +310,12 @@ export async function loadPDF(filePath, docIndex, preloadedData = null) {
       }
       // Redraw annotations on the current page now that background loading is done
       if (isActive() && doc.pdfDoc) {
+        console.log(`[PERF-BG] redrawAnnotations after bg load START`);
         const { redrawAnnotations } = await import('../annotations/rendering.js');
         redrawAnnotations();
+        console.log(`[PERF-BG] redrawAnnotations after bg load DONE`);
       }
-    }).catch(() => {});
+    }).catch((e) => { console.error('[PERF-BG] loadExistingAnnotations error:', e); });
 
   } catch (error) {
     // Suppress errors from document being closed during background loading
@@ -444,7 +447,10 @@ async function getSharedPdfLibDoc(doc) {
   if (doc._sharedPdfLibDocPromise) return doc._sharedPdfLibDocPromise;
   const pdfBytes = originalBytesCache.get(doc.filePath);
   if (!pdfBytes) return null;
+  const _pll0 = performance.now();
+  console.log(`[PERF] PDFDocument.load START (${(pdfBytes.length / 1024 / 1024).toFixed(1)} MB)`);
   doc._sharedPdfLibDocPromise = PDFDocument.load(pdfBytes, { ignoreEncryption: true }).then(pdfLibDoc => {
+    console.log(`[PERF] PDFDocument.load DONE: ${(performance.now() - _pll0).toFixed(0)}ms`);
     doc._sharedPdfLibDoc = pdfLibDoc;
     doc._sharedPdfLibDocPromise = null;
     return pdfLibDoc;
@@ -544,6 +550,8 @@ export async function loadExistingAnnotations(doc) {
   const pdfDoc = doc.pdfDoc;
   const numPages = pdfDoc.numPages;
   const BATCH_SIZE = 10;
+  const _bg0 = performance.now();
+  console.log(`[PERF-BG] loadExistingAnnotations START (${numPages} pages)`);
 
   for (let batchStart = 1; batchStart <= numPages; batchStart += BATCH_SIZE) {
     if (loadId !== doc._annotationLoadId) return;
@@ -569,6 +577,7 @@ export async function loadExistingAnnotations(doc) {
     }
 
     if (pagesToLoad.length === 0) continue;
+    console.log(`[PERF-BG] batch ${batchStart}-${batchEnd} (${pagesToLoad.length} pages to load): ${(performance.now() - _bg0).toFixed(0)}ms`);
 
     // Fetch all pages in this batch in parallel
     const pages = await Promise.all(pagesToLoad.map(p => pdfDoc.getPage(p)));
@@ -680,4 +689,5 @@ export async function loadExistingAnnotations(doc) {
       doc._pagesNeedingColorUpdate.clear();
     }
   }
+  console.log(`[PERF-BG] loadExistingAnnotations DONE (${doc.annotations.length} total annotations): ${(performance.now() - _bg0).toFixed(0)}ms`);
 }

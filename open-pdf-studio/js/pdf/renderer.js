@@ -168,6 +168,24 @@ function prefetchAdjacentPages(currentPage) {
   }
 }
 
+// ─── Main-thread jank detector ───────────────────────────────────────────
+// Fires every 500ms. If a tick takes >1s to arrive, the main thread was blocked.
+let _jankTimer = null;
+let _jankLast = 0;
+function _startJankDetector() {
+  if (_jankTimer) return;
+  _jankLast = performance.now();
+  _jankTimer = setInterval(() => {
+    const now = performance.now();
+    const gap = now - _jankLast;
+    if (gap > 1000) {
+      console.warn(`[JANK] Main thread was blocked for ${gap.toFixed(0)}ms!`);
+    }
+    _jankLast = now;
+  }, 500);
+}
+_startJankDetector();
+
 // Render PDF page (single page mode)
 export async function renderPage(pageNum) {
   const _rp0 = performance.now();
