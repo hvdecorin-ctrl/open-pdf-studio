@@ -286,22 +286,24 @@ export async function loadPDF(filePath, docIndex, preloadedData = null) {
       addRecentFile(filePath, extractFileName(filePath));
     }
 
-    // Load existing annotations in background (after first paint)
-    await loadExistingAnnotations(doc);
-    if (isClosed()) return;
-
-    // Sync doc.measureScale from any loaded scaleBar annotations
-    const loadedScaleBar = doc.annotations.find(a => a.type === 'scaleBar');
-    if (loadedScaleBar) {
-      const { syncDocScale } = await import('../annotations/scale-bar.js');
-      syncDocScale(loadedScaleBar);
-    }
-
-    // Redraw annotations on the current page now that they're loaded (including color updates)
-    if (isActive() && doc.pdfDoc) {
-      const { redrawAnnotations } = await import('../annotations/rendering.js');
-      redrawAnnotations();
-    }
+    // Load existing annotations in background (non-blocking).
+    // Page 1 annotations are already loaded by ensureAnnotationsForPage() during
+    // the first render. The rest load lazily page-by-page as the user navigates,
+    // plus this background task pre-loads remaining pages without blocking the UI.
+    loadExistingAnnotations(doc).then(async () => {
+      if (isClosed()) return;
+      // Sync doc.measureScale from any loaded scaleBar annotations
+      const loadedScaleBar = doc.annotations.find(a => a.type === 'scaleBar');
+      if (loadedScaleBar) {
+        const { syncDocScale } = await import('../annotations/scale-bar.js');
+        syncDocScale(loadedScaleBar);
+      }
+      // Redraw annotations on the current page now that background loading is done
+      if (isActive() && doc.pdfDoc) {
+        const { redrawAnnotations } = await import('../annotations/rendering.js');
+        redrawAnnotations();
+      }
+    }).catch(() => {});
 
   } catch (error) {
     // Suppress errors from document being closed during background loading
@@ -555,8 +557,18 @@ export async function loadExistingAnnotations(doc) {
     const annotResults = await Promise.all(pages.map(page => page.getAnnotations()));
     if (loadId !== doc._annotationLoadId || !state.documents.includes(doc)) return;
 
-    // Process each page's annotations
+    // Resolve pdf-lib doc once per batch (cached after first call)
+    const pdfLibDoc = await getSharedPdfLibDoc(doc);
+    if (loadId !== doc._annotationLoadId || !state.documents.includes(doc)) return;
+
+    // Process each page's annotations — yield after every page to keep UI responsive
     for (let i = 0; i < pages.length; i++) {
+      if (loadId !== doc._annotationLoadId || !state.documents.includes(doc)) return;
+
+      // Yield to the browser so UI stays responsive during background loading
+      await new Promise(r => setTimeout(r, 0));
+      if (loadId !== doc._annotationLoadId || !state.documents.includes(doc)) return;
+
       const pageNum = pagesToLoad[i];
       const page = pages[i];
       const viewport = page.getViewport({ scale: 1 });
@@ -569,10 +581,6 @@ export async function loadExistingAnnotations(doc) {
 
       let stampImageMap = null;
       let annotColorMap = null;
-
-      // Resolve pdf-lib doc for both stamp images (transparency) and colors
-      const pdfLibDoc = await getSharedPdfLibDoc(doc);
-      if (loadId !== doc._annotationLoadId || !state.documents.includes(doc)) return;
 
       if (stampAnnots.length > 0) {
         try {
@@ -604,6 +612,10 @@ export async function loadExistingAnnotations(doc) {
     const pdfLibDoc = await getSharedPdfLibDoc(doc);
     if (pdfLibDoc && loadId === doc._annotationLoadId && state.documents.includes(doc)) {
       for (const pageNum of doc._pagesNeedingColorUpdate) {
+        if (loadId !== doc._annotationLoadId || !state.documents.includes(doc)) break;
+
+        // Yield to keep UI responsive
+        await new Promise(r => setTimeout(r, 0));
         if (loadId !== doc._annotationLoadId || !state.documents.includes(doc)) break;
 
         // Remove old annotations for this page
