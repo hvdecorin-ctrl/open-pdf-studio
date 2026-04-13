@@ -2,6 +2,7 @@ import { state, getActiveDocument } from '../core/state.js';
 import { annotationCtx } from '../ui/dom-elements.js';
 import { distanceToLine, isPointNearRect, isPointNearEllipse } from '../utils/math.js';
 import { getAnnotationType } from '../plugins/annotation-type-registry.js';
+import { catmullRomSpline } from '../tools/tools/spline-tool.js';
 
 /**
  * Find intersection of two infinite lines defined by (p1,p2) and (p3,p4).
@@ -83,6 +84,23 @@ function getAnnotationCenterAndSize(ann) {
         width: arcR * 2,
         height: arcR * 2
       };
+    }
+    case 'spline': {
+      if (ann.controlPoints && ann.controlPoints.length >= 2) {
+        const xs = ann.controlPoints.map(p => p.x);
+        const ys = ann.controlPoints.map(p => p.y);
+        const sMinX = Math.min(...xs);
+        const sMaxX = Math.max(...xs);
+        const sMinY = Math.min(...ys);
+        const sMaxY = Math.max(...ys);
+        return {
+          centerX: (sMinX + sMaxX) / 2,
+          centerY: (sMinY + sMaxY) / 2,
+          width: sMaxX - sMinX || 1,
+          height: sMaxY - sMinY || 1
+        };
+      }
+      return { centerX: 0, centerY: 0, width: 0, height: 0 };
     }
     case 'circle':
       const w = ann.width || ann.radius * 2;
@@ -180,6 +198,16 @@ export function findAnnotationAt(x, y) {
         const aspan = normalizeArcAngle(ane - ans);
         const ainSpan = normalizeArcAngle(ana - ans) <= aspan;
         if (ainSpan && Math.abs(adist - ann.radius) < tol) return ann;
+        break;
+      }
+      case 'spline': {
+        if (ann.controlPoints && ann.controlPoints.length >= 3) {
+          const samples = catmullRomSpline(ann.controlPoints, 16);
+          for (let i = 0; i < samples.length - 1; i++) {
+            const d = distanceToLine(x, y, samples[i].x, samples[i].y, samples[i + 1].x, samples[i + 1].y);
+            if (d < tol) return ann;
+          }
+        }
         break;
       }
       case 'circle':
@@ -469,6 +497,17 @@ export function isPointInsideAnnotation(x, y, annotation) {
       const arcDy = y - annotation.centerY;
       const arcDist = Math.sqrt(arcDx * arcDx + arcDy * arcDy);
       return Math.abs(arcDist - annotation.radius) < 15;
+    }
+
+    case 'spline': {
+      if (annotation.controlPoints && annotation.controlPoints.length >= 3) {
+        const samples = catmullRomSpline(annotation.controlPoints, 16);
+        for (let i = 0; i < samples.length - 1; i++) {
+          const d = distanceToLine(localX, localY, samples[i].x, samples[i].y, samples[i + 1].x, samples[i + 1].y);
+          if (d < 15) return true;
+        }
+      }
+      return false;
     }
 
     case 'line':
