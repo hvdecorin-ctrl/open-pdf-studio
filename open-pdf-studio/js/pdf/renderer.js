@@ -170,6 +170,8 @@ function prefetchAdjacentPages(currentPage) {
 
 // Render PDF page (single page mode)
 export async function renderPage(pageNum) {
+  const _rp0 = performance.now();
+  console.log(`[PERF] renderPage(${pageNum}) START`);
   // Clear search highlights immediately to prevent stale highlights
   // from appearing at wrong positions during canvas resize
   clearHighlights();
@@ -222,20 +224,27 @@ export async function renderPage(pageNum) {
   // page coexists with its un-rotated version in cache.
   if (_canUseTauri && _hasFilePath) {
     try {
+      console.log(`[PERF] renderPage(${pageNum}) trying vector path: ${(performance.now() - _rp0).toFixed(0)}ms`);
       const vr = await import('./vector-renderer.js');
       const userRotation = getPageRotation(pageNum);
       if (!vr.hasCachedCommands(doc.filePath, pageNum, userRotation)) {
+        console.log(`[PERF] renderPage(${pageNum}) analyze_page_type START: ${(performance.now() - _rp0).toFixed(0)}ms`);
         const pageType = await invoke('analyze_page_type', { path: doc.filePath, pageIndex: pageNum - 1 });
+        console.log(`[PERF] renderPage(${pageNum}) analyze_page_type=${pageType}: ${(performance.now() - _rp0).toFixed(0)}ms`);
         if (pageType === 'vector') {
+          console.log(`[PERF] renderPage(${pageNum}) extract_draw_commands START: ${(performance.now() - _rp0).toFixed(0)}ms`);
           const cmdData = await invoke('extract_draw_commands', {
             path: doc.filePath,
             pageIndex: pageNum - 1,
             rotation: userRotation,
           });
           const cmdBytes = cmdData instanceof Uint8Array ? cmdData : new Uint8Array(cmdData);
+          console.log(`[PERF] renderPage(${pageNum}) extract_draw_commands DONE (${cmdBytes.length} bytes): ${(performance.now() - _rp0).toFixed(0)}ms`);
           vr.cacheCommands(doc.filePath, pageNum, cmdBytes, userRotation);
           // Pre-decode any images in the command buffer (async, must complete before render)
+          console.log(`[PERF] renderPage(${pageNum}) prepareImages START: ${(performance.now() - _rp0).toFixed(0)}ms`);
           await vr.prepareImages(doc.filePath, pageNum, userRotation);
+          console.log(`[PERF] renderPage(${pageNum}) prepareImages DONE: ${(performance.now() - _rp0).toFixed(0)}ms`);
         }
       }
 
@@ -393,7 +402,9 @@ export async function renderPage(pageNum) {
   // Ensure annotations for this page are loaded (on-demand if background hasn't reached it yet)
   // Skip heavy operations during vector zoom (only needed on first load / page change)
   if (!_skipBitmapRender || !document.querySelector('.textLayer')) {
+    console.log(`[PERF] renderPage(${pageNum}) ensureAnnotations START: ${(performance.now() - _rp0).toFixed(0)}ms`);
     await ensureAnnotationsForPage(pageNum);
+    console.log(`[PERF] renderPage(${pageNum}) ensureAnnotations DONE: ${(performance.now() - _rp0).toFixed(0)}ms`);
     if (state.preferences.snapToPdfContent) {
       prefetchPdfVectorGeometry(pageNum);
     }
@@ -411,6 +422,7 @@ export async function renderPage(pageNum) {
 
   // Prefetch adjacent pages to reduce navigation delay
   prefetchAdjacentPages(pageNum);
+  console.log(`[PERF] renderPage(${pageNum}) TOTAL: ${(performance.now() - _rp0).toFixed(0)}ms`);
 }
 
 // Render page offscreen and swap canvases atomically to avoid zoom flicker.

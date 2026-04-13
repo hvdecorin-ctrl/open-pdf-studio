@@ -132,6 +132,8 @@ export async function loadPDF(filePath, docIndex, preloadedData = null) {
   const isClosed = () => !state.documents.includes(doc);
 
   try {
+    const _t0 = performance.now();
+    console.log('[PERF] ===== loadPDF START =====', filePath);
     if (isActive()) showLoading('Loading PDF...');
 
     // Ensure Tauri FS scope access for this file path (needed for Rust backend)
@@ -167,6 +169,7 @@ export async function loadPDF(filePath, docIndex, preloadedData = null) {
       // to a web worker, which detaches the original Uint8Array making it length 0)
       originalBytesCache.set(filePath, typedArray.slice());
     }
+    console.log(`[PERF] File read done: ${(performance.now() - _t0).toFixed(0)}ms, size: ${typedArray.length} bytes`);
 
     // Load PDF using pdf.js (this transfers the buffer to a worker)
     doc.pdfDoc = await pdfjsLib.getDocument({
@@ -178,6 +181,7 @@ export async function loadPDF(filePath, docIndex, preloadedData = null) {
       verbosity: 0,
     }).promise;
     if (isClosed()) return;
+    console.log(`[PERF] PDF.js getDocument done: ${(performance.now() - _t0).toFixed(0)}ms, pages: ${doc.pdfDoc.numPages}`);
 
     doc.filePath = filePath;
     doc.fileName = filePath ? filePath.split(/[\\/]/).pop() : 'Untitled';
@@ -212,14 +216,17 @@ export async function loadPDF(filePath, docIndex, preloadedData = null) {
       if (pdfContainer) pdfContainer.classList.add('visible');
 
       // Render first page immediately (before annotation loading)
+      console.log(`[PERF] setViewMode START: ${(performance.now() - _t0).toFixed(0)}ms`);
       await setViewMode(doc.viewMode);
       if (isClosed()) return;
+      console.log(`[PERF] setViewMode DONE: ${(performance.now() - _t0).toFixed(0)}ms`);
       hideLoading();
 
       // Check for PDF/A compliance and show info bar if applicable
       checkPdfACompliance(doc);
 
       // Generate thumbnails for left panel
+      console.log(`[PERF] generateThumbnails START: ${(performance.now() - _t0).toFixed(0)}ms`);
       generateThumbnails();
     } else {
       // Not active — still check PDF/A but don't show bar
@@ -227,12 +234,14 @@ export async function loadPDF(filePath, docIndex, preloadedData = null) {
     }
 
     // Load bookmarks from PDF outline (data-only, always run)
+    console.log(`[PERF] bookmarks START: ${(performance.now() - _t0).toFixed(0)}ms`);
     {
       const { loadBookmarksFromPdf } = await import('../ui/panels/bookmarks.js');
       if (isClosed()) return;
       doc.bookmarks = await loadBookmarksFromPdf(doc.pdfDoc);
       if (isClosed()) return;
     }
+    console.log(`[PERF] bookmarks DONE: ${(performance.now() - _t0).toFixed(0)}ms`);
 
     // Load persisted measure scale for this document (data-only)
     {
@@ -447,11 +456,14 @@ async function getSharedPdfLibDoc(doc) {
 // If waitForColors=false, skips color extraction when pdf-lib isn't ready yet
 async function loadAnnotationsForSinglePage(doc, pageNum, waitForColors = false) {
   if (!doc || !doc.pdfDoc) return;
+  const _sp0 = performance.now();
 
   const page = await doc.pdfDoc.getPage(pageNum);
   const viewport = page.getViewport({ scale: 1 });
+  console.log(`[PERF] page ${pageNum}: getPage: ${(performance.now() - _sp0).toFixed(0)}ms`);
 
   const annotations = await page.getAnnotations();
+  console.log(`[PERF] page ${pageNum}: getAnnotations (${annotations.length} annots): ${(performance.now() - _sp0).toFixed(0)}ms`);
 
   if (annotations.length === 0) return;
 
@@ -464,13 +476,13 @@ async function loadAnnotationsForSinglePage(doc, pageNum, waitForColors = false)
   // Resolve pdf-lib doc early so both stamp images and colors can use it
   let pdfLibDoc = doc._sharedPdfLibDoc || null;
   if (!pdfLibDoc && waitForColors) {
+    const _pl0 = performance.now();
     pdfLibDoc = await getSharedPdfLibDoc(doc);
+    console.log(`[PERF] page ${pageNum}: getSharedPdfLibDoc: ${(performance.now() - _pl0).toFixed(0)}ms`);
   }
 
   if (stampAnnots.length > 0) {
-    // Hybrid extraction: pdf-lib XObject path first (clean, no annotation
-    // bake-in), PDF.js render+crop fallback for complex appearance streams.
-    // See extractStampImagesHybrid() in image-extraction.js for the why.
+    const _st0 = performance.now();
     try {
       const pdfPage = await doc.pdfDoc.getPage(pageNum);
       const extractViewport = pdfPage.getViewport({ scale: 1 });
@@ -480,23 +492,29 @@ async function loadAnnotationsForSinglePage(doc, pageNum, waitForColors = false)
     } catch (e) {
       console.warn('[loader] hybrid stamp extraction failed:', e);
     }
+    console.log(`[PERF] page ${pageNum}: stampExtraction (${stampAnnots.length} stamps): ${(performance.now() - _st0).toFixed(0)}ms`);
   }
 
   if (needsExtraData) {
     if (pdfLibDoc) {
+      const _ce0 = performance.now();
       annotColorMap = await extractAnnotationColors(pageNum, pdfLibDoc);
+      console.log(`[PERF] page ${pageNum}: colorExtraction: ${(performance.now() - _ce0).toFixed(0)}ms`);
     } else {
       // On-demand path: pdf-lib not ready, skip colors for now
       doc._pagesNeedingColorUpdate.add(pageNum);
     }
   }
 
+  const _cv0 = performance.now();
   for (const annot of annotations) {
     const converted = await convertPdfAnnotation(annot, pageNum, viewport, stampImageMap, annotColorMap);
     if (converted) {
       doc.annotations.push(converted);
     }
   }
+  console.log(`[PERF] page ${pageNum}: convertAnnotations (${annotations.length}): ${(performance.now() - _cv0).toFixed(0)}ms`);
+  console.log(`[PERF] page ${pageNum}: TOTAL: ${(performance.now() - _sp0).toFixed(0)}ms`);
 }
 
 // Ensure annotations are loaded for a given page (on-demand, called from renderer)
@@ -509,7 +527,10 @@ export async function ensureAnnotationsForPage(pageNum, doc) {
     return;
   }
   doc._loadedAnnotationPages.add(pageNum);
+  const _ea0 = performance.now();
+  console.log(`[PERF] ensureAnnotationsForPage(${pageNum}) START`);
   await loadAnnotationsForSinglePage(doc, pageNum, false);
+  console.log(`[PERF] ensureAnnotationsForPage(${pageNum}) DONE: ${(performance.now() - _ea0).toFixed(0)}ms`);
 }
 
 // Load existing annotations from PDF
