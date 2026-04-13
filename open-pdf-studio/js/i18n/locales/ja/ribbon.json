@@ -138,6 +138,8 @@
     "arrow": "矢印",
     "polylineTitle": "ポリライン（ダブルクリックで完了）",
     "polyline": "ポリライン",
+    "splineTitle": "スプライン（ダブルクリックで終了）",
+    "spline": "スプライン",
     "shapes": "図形",
     "rectangle": "四角形",
     "rect": "四角形",

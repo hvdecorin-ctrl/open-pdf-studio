@@ -152,6 +152,8 @@
     "arrow": "Arrow",
     "polylineTitle": "Polyline (double-click to finish)",
     "polyline": "Polyline",
+    "splineTitle": "Spline (double-click to finish)",
+    "spline": "Spline",
     "shapes": "Shapes",
     "rectangle": "Rectangle",
     "rect": "Rect",

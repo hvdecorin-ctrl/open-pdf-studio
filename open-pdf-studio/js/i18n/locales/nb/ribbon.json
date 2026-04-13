@@ -138,6 +138,8 @@
     "arrow": "Pil",
     "polylineTitle": "Polylinje (dobbeltklikk for å fullføre)",
     "polyline": "Polylinje",
+    "splineTitle": "Spline (dobbeltklikk for å avslutte)",
+    "spline": "Spline",
     "shapes": "Figurer",
     "rectangle": "Rektangel",
     "rect": "Rekt",

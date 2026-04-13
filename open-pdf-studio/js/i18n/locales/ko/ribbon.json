@@ -138,6 +138,8 @@
     "arrow": "화살표",
     "polylineTitle": "폴리라인 (더블 클릭으로 완료)",
     "polyline": "폴리라인",
+    "splineTitle": "스플라인 (더블클릭으로 완료)",
+    "spline": "스플라인",
     "shapes": "도형",
     "rectangle": "사각형",
     "rect": "사각형",
