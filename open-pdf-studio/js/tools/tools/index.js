@@ -9,6 +9,7 @@ import { shapeTool } from './shape-tool.js';
 import { lineTool } from './line-tool.js';
 import { polylineTool, cloudPolylineTool } from './polyline-tool.js';
 import { arcTool } from './arc-tool.js';
+import { splineTool } from './spline-tool.js';
 import { measureDistanceTool, measureAreaTool, measurePerimeterTool, addHoleTool } from './measurement-tool.js';
 import { measureAngleTool } from './angle-tool.js';
 import { commentTool, textTool, stampTool, signatureTool, editTextTool } from './text-tool.js';
@@ -44,6 +45,7 @@ export function registerAllTools() {
   registerTool('line', lineTool);
   registerTool('arrow', lineTool);
   registerTool('arc', arcTool);
+  registerTool('spline', splineTool);
 
   // Multi-click tools
   registerTool('polyline', polylineTool);
