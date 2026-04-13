@@ -41,6 +41,17 @@ impl DocumentHandle {
     /// app (e.g. user-applied rotation via the rotate-left/right buttons).
     /// Both rotations are clockwise-when-displayed, in degrees.
     pub fn render_page(&self, page: usize, scale: f32, extra_rotation: i32) -> Result<RenderedPage, RenderError> {
+        self.render_page_internal(page, scale, extra_rotation, false)
+    }
+
+    /// Render a page without decoding embedded images. Produces vector-only
+    /// output suitable for thumbnails — runs in milliseconds instead of
+    /// seconds for image-heavy pages.
+    pub fn render_page_no_images(&self, page: usize, scale: f32, extra_rotation: i32) -> Result<RenderedPage, RenderError> {
+        self.render_page_internal(page, scale, extra_rotation, true)
+    }
+
+    fn render_page_internal(&self, page: usize, scale: f32, extra_rotation: i32, skip_images: bool) -> Result<RenderedPage, RenderError> {
         let page_id = self.get_page_id(page)?;
         let (x0, y0, w_pt, h_pt) = self.extract_media_box_full(page_id)?;
 
@@ -78,7 +89,11 @@ impl DocumentHandle {
 
         let content_bytes = self.get_content_stream(page_id)?;
         let resources = self.get_page_resources(page_id)?;
-        crate::interpreter::Interpreter::execute(&content_bytes, &mut renderer, &mut state, &self.doc, &resources)?;
+        if skip_images {
+            crate::interpreter::Interpreter::execute_skip_images(&content_bytes, &mut renderer, &mut state, &self.doc, &resources)?;
+        } else {
+            crate::interpreter::Interpreter::execute(&content_bytes, &mut renderer, &mut state, &self.doc, &resources)?;
+        }
 
         Ok(RenderedPage { width, height, rgba: renderer.into_rgba() })
     }

@@ -111,12 +111,36 @@ impl TextState {
 pub struct Interpreter;
 
 impl Interpreter {
+    /// Execute content stream, rendering all content including images.
     pub fn execute(
         content_bytes: &[u8],
         renderer: &mut SkiaRenderer,
         state: &mut GraphicsStateStack,
         doc: &Document,
         resources: &Dictionary,
+    ) -> Result<(), RenderError> {
+        Self::execute_internal(content_bytes, renderer, state, doc, resources, false)
+    }
+
+    /// Execute content stream but skip image XObjects. Used for fast
+    /// thumbnail rendering where image decoding would take seconds.
+    pub fn execute_skip_images(
+        content_bytes: &[u8],
+        renderer: &mut SkiaRenderer,
+        state: &mut GraphicsStateStack,
+        doc: &Document,
+        resources: &Dictionary,
+    ) -> Result<(), RenderError> {
+        Self::execute_internal(content_bytes, renderer, state, doc, resources, true)
+    }
+
+    fn execute_internal(
+        content_bytes: &[u8],
+        renderer: &mut SkiaRenderer,
+        state: &mut GraphicsStateStack,
+        doc: &Document,
+        resources: &Dictionary,
+        skip_images: bool,
     ) -> Result<(), RenderError> {
         let content = Content::decode(content_bytes)
             .map_err(|e| RenderError::ParseError(format!("Content decode: {}", e)))?;
@@ -198,7 +222,7 @@ impl Interpreter {
                 "W" | "W*" => {}
                 "BT" | "ET" | "Tf" | "Td" | "TD" | "Tm" | "Tj" | "TJ" | "T*" | "'" | "\"" | "Tc" | "Tw" | "Tz" | "TL" | "Ts" | "Tr" => {}
                 "Do" => {
-                    Self::handle_do_execute(&op.operands, renderer, state, doc, resources);
+                    Self::handle_do_execute(&op.operands, renderer, state, doc, resources, skip_images);
                 }
                 "gs" | "ri" | "i" => {}
                 _ => {}
@@ -213,6 +237,7 @@ impl Interpreter {
         state: &mut GraphicsStateStack,
         doc: &Document,
         resources: &Dictionary,
+        skip_images: bool,
     ) {
         let name = match operands.first() {
             Some(Object::Name(n)) => n,
@@ -240,7 +265,9 @@ impl Interpreter {
         };
         let subtype = stream.dict.get(b"Subtype").ok().and_then(|s| s.as_name().ok());
         if subtype == Some(b"Image" as &[u8]) {
-            Self::handle_image_execute(stream, renderer, state, doc);
+            if !skip_images {
+                Self::handle_image_execute(stream, renderer, state, doc);
+            }
             return;
         }
         if subtype != Some(b"Form" as &[u8]) {
@@ -261,7 +288,7 @@ impl Interpreter {
         let form_resources = Self::extract_form_resources(&stream.dict, doc);
         let res = form_resources.as_ref().unwrap_or(resources);
         if let Ok(content_bytes) = stream.decompressed_content() {
-            let _ = Self::execute(&content_bytes, renderer, state, doc, res);
+            let _ = Self::execute_internal(&content_bytes, renderer, state, doc, res, skip_images);
         }
         state.restore();
     }

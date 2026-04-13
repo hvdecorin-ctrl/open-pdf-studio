@@ -413,22 +413,24 @@ async function renderThumbnailToDataURL(pdfDoc, pageNum) {
   if (!pdfDoc || pageNum > pdfDoc.numPages) return null;
   const _th0 = performance.now();
 
-  // Try Rust thumbnail rendering first (10-50ms vs 5-10 sec with PDF.js)
+  // Try Rust thumbnail rendering first — uses skip_images=true so only
+  // vector content is rendered (fast). Image decoding is skipped because
+  // it can take 17+ seconds per page for complex PDFs, blocking the Rust
+  // backend and preventing page navigation.
   const doc = getActiveDocument();
   if (doc?.filePath && window.__TAURI__) {
     try {
-      console.log(`[PERF-THUMB] page ${pageNum}: Rust render START`);
       const { invoke } = window.__TAURI__.core;
       const result = await invoke('render_thumbnail', {
         path: doc.filePath,
         pageIndex: pageNum - 1,
         maxWidth: 200,
+        skipImages: true,
       });
       const data = JSON.parse(result);
-      console.log(`[PERF-THUMB] page ${pageNum}: Rust render DONE: ${(performance.now() - _th0).toFixed(0)}ms`);
       return { dataURL: data.dataURL, width: data.width, height: data.height };
     } catch (e) {
-      console.warn(`[PERF-THUMB] page ${pageNum}: Rust render FAILED (${(performance.now() - _th0).toFixed(0)}ms):`, e);
+      console.warn(`[Thumbnails] Rust render failed for page ${pageNum}:`, e);
       // Fall through to PDF.js fallback
     }
   }

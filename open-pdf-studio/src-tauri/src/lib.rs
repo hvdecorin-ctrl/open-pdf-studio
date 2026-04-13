@@ -911,11 +911,13 @@ fn render_thumbnail(
     page_index: u32,
     max_width: u32,
     rotation: Option<i32>,
+    skip_images: Option<bool>,
     bytes_cache: tauri::State<PdfBytesCache>,
     handle_cache: tauri::State<DocHandleCache>,
 ) -> Result<String, String> {
     let doc = get_or_load_doc(&path, &bytes_cache, &handle_cache)?;
     let extra_rot = rotation.unwrap_or(0);
+    let skip_img = skip_images.unwrap_or(false);
 
     // Get page dimensions to calculate thumbnail scale
     let (w_pt, h_pt) = doc.page_dimensions(page_index as usize)
@@ -924,8 +926,13 @@ fn render_thumbnail(
     // Scale so the longest side fits within max_width pixels
     let scale = max_width as f32 / w_pt.max(h_pt);
 
-    // Render at thumbnail scale
-    let page = doc.render_page(page_index as usize, scale, extra_rot).map_err(|e| format!("{}", e))?;
+    // Render at thumbnail scale — skip_images=true skips heavy image
+    // decoding so thumbnails render in milliseconds instead of seconds.
+    let page = if skip_img {
+        doc.render_page_no_images(page_index as usize, scale, extra_rot)
+    } else {
+        doc.render_page(page_index as usize, scale, extra_rot)
+    }.map_err(|e| format!("{}", e))?;
 
     // Convert RGBA to RGB (JPEG doesn't support alpha)
     let pixel_count = (page.width * page.height) as usize;
