@@ -926,10 +926,11 @@ fn render_thumbnail(
     // Scale so the longest side fits within max_width pixels
     let scale = max_width as f32 / w_pt.max(h_pt);
 
-    // Render at thumbnail scale — skip_images=true skips heavy image
-    // decoding so thumbnails render in milliseconds instead of seconds.
+    // Render at thumbnail scale. When skipImages is set, cap image decode
+    // at 250k pixels (≈500×500) so large embedded images are downsampled
+    // rather than decoded at full resolution (which can take 17+ seconds).
     let page = if skip_img {
-        doc.render_page_no_images(page_index as usize, scale, extra_rot)
+        doc.render_page_with_image_limit(page_index as usize, scale, extra_rot, 250_000)
     } else {
         doc.render_page(page_index as usize, scale, extra_rot)
     }.map_err(|e| format!("{}", e))?;

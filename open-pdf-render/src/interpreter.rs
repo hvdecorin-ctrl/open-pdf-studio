@@ -111,7 +111,7 @@ impl TextState {
 pub struct Interpreter;
 
 impl Interpreter {
-    /// Execute content stream, rendering all content including images.
+    /// Execute content stream, rendering all content including full-resolution images.
     pub fn execute(
         content_bytes: &[u8],
         renderer: &mut SkiaRenderer,
@@ -119,19 +119,21 @@ impl Interpreter {
         doc: &Document,
         resources: &Dictionary,
     ) -> Result<(), RenderError> {
-        Self::execute_internal(content_bytes, renderer, state, doc, resources, false)
+        Self::execute_internal(content_bytes, renderer, state, doc, resources, 0)
     }
 
-    /// Execute content stream but skip image XObjects. Used for fast
-    /// thumbnail rendering where image decoding would take seconds.
-    pub fn execute_skip_images(
+    /// Execute content stream with a pixel budget for images. Images larger
+    /// than `max_pixels` are downsampled after decode. Use for thumbnails
+    /// to keep rendering fast without skipping images entirely.
+    pub fn execute_with_image_limit(
         content_bytes: &[u8],
         renderer: &mut SkiaRenderer,
         state: &mut GraphicsStateStack,
         doc: &Document,
         resources: &Dictionary,
+        max_pixels: u32,
     ) -> Result<(), RenderError> {
-        Self::execute_internal(content_bytes, renderer, state, doc, resources, true)
+        Self::execute_internal(content_bytes, renderer, state, doc, resources, max_pixels)
     }
 
     fn execute_internal(
@@ -140,7 +142,7 @@ impl Interpreter {
         state: &mut GraphicsStateStack,
         doc: &Document,
         resources: &Dictionary,
-        skip_images: bool,
+        max_image_pixels: u32,
     ) -> Result<(), RenderError> {
         let content = Content::decode(content_bytes)
             .map_err(|e| RenderError::ParseError(format!("Content decode: {}", e)))?;
@@ -222,7 +224,7 @@ impl Interpreter {
                 "W" | "W*" => {}
                 "BT" | "ET" | "Tf" | "Td" | "TD" | "Tm" | "Tj" | "TJ" | "T*" | "'" | "\"" | "Tc" | "Tw" | "Tz" | "TL" | "Ts" | "Tr" => {}
                 "Do" => {
-                    Self::handle_do_execute(&op.operands, renderer, state, doc, resources, skip_images);
+                    Self::handle_do_execute(&op.operands, renderer, state, doc, resources, max_image_pixels);
                 }
                 "gs" | "ri" | "i" => {}
                 _ => {}
@@ -237,7 +239,7 @@ impl Interpreter {
         state: &mut GraphicsStateStack,
         doc: &Document,
         resources: &Dictionary,
-        skip_images: bool,
+        max_image_pixels: u32,
     ) {
         let name = match operands.first() {
             Some(Object::Name(n)) => n,
@@ -265,9 +267,7 @@ impl Interpreter {
         };
         let subtype = stream.dict.get(b"Subtype").ok().and_then(|s| s.as_name().ok());
         if subtype == Some(b"Image" as &[u8]) {
-            if !skip_images {
-                Self::handle_image_execute(stream, renderer, state, doc);
-            }
+            Self::handle_image_execute(stream, renderer, state, doc, max_image_pixels);
             return;
         }
         if subtype != Some(b"Form" as &[u8]) {
@@ -288,16 +288,20 @@ impl Interpreter {
         let form_resources = Self::extract_form_resources(&stream.dict, doc);
         let res = form_resources.as_ref().unwrap_or(resources);
         if let Ok(content_bytes) = stream.decompressed_content() {
-            let _ = Self::execute_internal(&content_bytes, renderer, state, doc, res, skip_images);
+            let _ = Self::execute_internal(&content_bytes, renderer, state, doc, res, max_image_pixels);
         }
         state.restore();
     }
 
+    /// Decode and draw an image XObject. When `max_decode_pixels` is set,
+    /// images larger than that limit are downsampled after decode to cap
+    /// memory usage and speed up rendering (used for thumbnails).
     fn handle_image_execute(
         stream: &lopdf::Stream,
         renderer: &mut SkiaRenderer,
         state: &mut GraphicsStateStack,
         doc: &Document,
+        max_decode_pixels: u32,
     ) {
         let dict = &stream.dict;
         let width = dict.get(b"Width").ok()
@@ -332,15 +336,15 @@ impl Interpreter {
         });
         let filter_name = filter.as_deref().unwrap_or(b"");
 
-        let rgba = if filter_name == b"DCTDecode" {
+        // Decode image to RGBA
+        let (mut img_w, mut img_h, mut rgba) = if filter_name == b"DCTDecode" {
             let raw = &stream.content;
             match image::load_from_memory_with_format(raw, image::ImageFormat::Jpeg) {
                 Ok(img) => {
                     let img = img.to_rgba8();
-                    if img.width() != width || img.height() != height {
-                        return;
-                    }
-                    img.into_raw()
+                    let w = img.width();
+                    let h = img.height();
+                    (w, h, img.into_raw())
                 }
                 Err(_) => return,
             }
@@ -374,17 +378,17 @@ impl Interpreter {
             let expected = width as usize * height as usize * components;
             if raw_pixels.len() < expected { return; }
 
-            let mut rgba = Vec::with_capacity(width as usize * height as usize * 4);
+            let mut out = Vec::with_capacity(width as usize * height as usize * 4);
             let mut idx = 0;
             for _ in 0..(width as usize * height as usize) {
                 match components {
                     1 => {
                         let g = raw_pixels[idx];
-                        rgba.extend_from_slice(&[g, g, g, 255]);
+                        out.extend_from_slice(&[g, g, g, 255]);
                         idx += 1;
                     }
                     3 => {
-                        rgba.extend_from_slice(&[raw_pixels[idx], raw_pixels[idx+1], raw_pixels[idx+2], 255]);
+                        out.extend_from_slice(&[raw_pixels[idx], raw_pixels[idx+1], raw_pixels[idx+2], 255]);
                         idx += 3;
                     }
                     4 => {
@@ -392,7 +396,7 @@ impl Interpreter {
                         let m = raw_pixels[idx+1] as f32 / 255.0;
                         let y = raw_pixels[idx+2] as f32 / 255.0;
                         let k = raw_pixels[idx+3] as f32 / 255.0;
-                        rgba.extend_from_slice(&[
+                        out.extend_from_slice(&[
                             (255.0 * (1.0 - c) * (1.0 - k)) as u8,
                             (255.0 * (1.0 - m) * (1.0 - k)) as u8,
                             (255.0 * (1.0 - y) * (1.0 - k)) as u8,
@@ -400,15 +404,41 @@ impl Interpreter {
                         ]);
                         idx += 4;
                     }
-                    _ => { rgba.extend_from_slice(&[0, 0, 0, 255]); idx += components; }
+                    _ => { out.extend_from_slice(&[0, 0, 0, 255]); idx += components; }
                 }
             }
-            rgba
+            (width, height, out)
         };
+
+        // Downsample if image exceeds the pixel budget (fast box filter).
+        // For thumbnails this turns a 5000×5000 decode into a 200×200 draw.
+        if max_decode_pixels > 0 && img_w * img_h > max_decode_pixels {
+            let ratio = (max_decode_pixels as f64 / (img_w as f64 * img_h as f64)).sqrt();
+            let new_w = ((img_w as f64 * ratio).ceil() as u32).max(1);
+            let new_h = ((img_h as f64 * ratio).ceil() as u32).max(1);
+            let sx = img_w as f64 / new_w as f64;
+            let sy = img_h as f64 / new_h as f64;
+            let mut small = Vec::with_capacity((new_w * new_h * 4) as usize);
+            for dy in 0..new_h {
+                for dx in 0..new_w {
+                    let src_x = (dx as f64 * sx) as usize;
+                    let src_y = (dy as f64 * sy) as usize;
+                    let src_idx = (src_y * img_w as usize + src_x) * 4;
+                    if src_idx + 3 < rgba.len() {
+                        small.extend_from_slice(&rgba[src_idx..src_idx + 4]);
+                    } else {
+                        small.extend_from_slice(&[0, 0, 0, 255]);
+                    }
+                }
+            }
+            img_w = new_w;
+            img_h = new_h;
+            rgba = small;
+        }
 
         state.save();
         state.concat_matrix(1.0, 0.0, 0.0, -1.0, 0.0, 1.0);
-        renderer.draw_image(width, height, &rgba, &state.current);
+        renderer.draw_image(img_w, img_h, &rgba, &state.current);
         state.restore();
     }
 
