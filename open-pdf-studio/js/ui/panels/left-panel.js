@@ -388,11 +388,13 @@ async function processDocumentThumbnail(docId) {
 // Render a single page thumbnail — uses Rust backend for speed when available
 async function renderThumbnailToDataURL(pdfDoc, pageNum) {
   if (!pdfDoc || pageNum > pdfDoc.numPages) return null;
+  const _th0 = performance.now();
 
   // Try Rust thumbnail rendering first (10-50ms vs 5-10 sec with PDF.js)
   const doc = getActiveDocument();
   if (doc?.filePath && window.__TAURI__) {
     try {
+      console.log(`[PERF-THUMB] page ${pageNum}: Rust render START`);
       const { invoke } = window.__TAURI__.core;
       const result = await invoke('render_thumbnail', {
         path: doc.filePath,
@@ -400,14 +402,16 @@ async function renderThumbnailToDataURL(pdfDoc, pageNum) {
         maxWidth: 200,
       });
       const data = JSON.parse(result);
+      console.log(`[PERF-THUMB] page ${pageNum}: Rust render DONE: ${(performance.now() - _th0).toFixed(0)}ms`);
       return { dataURL: data.dataURL, width: data.width, height: data.height };
     } catch (e) {
-      console.warn(`[Thumbnails] Rust render failed for page ${pageNum}:`, e);
+      console.warn(`[PERF-THUMB] page ${pageNum}: Rust render FAILED (${(performance.now() - _th0).toFixed(0)}ms):`, e);
       // Fall through to PDF.js fallback
     }
   }
 
   // Fallback: PDF.js rendering
+  console.log(`[PERF-THUMB] page ${pageNum}: PDF.js fallback START`);
   const timeoutPromise = new Promise((_, reject) => {
     setTimeout(() => reject(new Error('Render timeout')), 10000);
   });
@@ -438,9 +442,11 @@ async function renderThumbnailToDataURL(pdfDoc, pageNum) {
       };
     })();
 
-    return await Promise.race([renderPromise, timeoutPromise]);
+    const result = await Promise.race([renderPromise, timeoutPromise]);
+    console.log(`[PERF-THUMB] page ${pageNum}: PDF.js fallback DONE: ${(performance.now() - _th0).toFixed(0)}ms`);
+    return result;
   } catch (err) {
-    console.warn(`[Thumbnails] Render failed for page ${pageNum}:`, err.message);
+    console.warn(`[PERF-THUMB] page ${pageNum}: PDF.js fallback FAILED (${(performance.now() - _th0).toFixed(0)}ms):`, err.message);
     return null;
   }
 }
