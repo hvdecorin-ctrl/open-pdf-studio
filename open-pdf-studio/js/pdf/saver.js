@@ -16,6 +16,7 @@ import { hexToRgb, buildBorderStyle, computeAnnotFlags, mapFontToPdfName,
 import { saveTextEditsToPages } from './saver/text-edits.js';
 import { saveWatermarksToPages } from './saver/watermarks.js';
 import { saveBookmarksToOutline } from './saver/bookmarks.js';
+import { catmullRomSpline } from '../tools/tools/spline-tool.js';
 
 // Save PDF with annotations
 export async function savePDF(saveAsPath = null) {
@@ -454,6 +455,50 @@ export async function savePDF(saveAsPath = null) {
             arcDict.BS = buildBorderStyle(context, borderWidth, ann.borderStyle);
 
             annotDict = context.obj(arcDict);
+            break;
+          }
+
+          case 'spline': {
+            if (!ann.controlPoints || ann.controlPoints.length < 3) continue;
+
+            const samples = catmullRomSpline(ann.controlPoints, 16);
+
+            const splineVertices = [];
+            let spMinX = Infinity, spMinY = Infinity, spMaxX = -Infinity, spMaxY = -Infinity;
+            for (const sample of samples) {
+              const px = convertX(sample.x);
+              const py = convertY(sample.y);
+              splineVertices.push(px, py);
+              spMinX = Math.min(spMinX, px); spMaxX = Math.max(spMaxX, px);
+              spMinY = Math.min(spMinY, py); spMaxY = Math.max(spMaxY, py);
+            }
+
+            const spStrokeColor = ann.strokeColor ? hexToColorArray(ann.strokeColor) : colorArr;
+
+            // Serialize control points as flat array for OPS_Points
+            const opsPointsArr = [];
+            for (const cp of ann.controlPoints) {
+              opsPointsArr.push(convertX(cp.x), convertY(cp.y));
+            }
+
+            const splineDict = {
+              Type: 'Annot',
+              Subtype: 'PolyLine',
+              Rect: [spMinX - borderWidth, spMinY - borderWidth, spMaxX + borderWidth, spMaxY + borderWidth],
+              Vertices: splineVertices,
+              C: spStrokeColor,
+              CA: opacity,
+              T: PDFString.of(ann.author || 'User'),
+              Contents: PDFString.of(ann.subject || ''),
+              M: PDFString.of(new Date().toISOString()),
+              F: computeAnnotFlags(ann),
+              OPS_Subtype: PDFString.of('spline'),
+              OPS_Points: context.obj(opsPointsArr),
+            };
+
+            splineDict.BS = buildBorderStyle(context, borderWidth, ann.borderStyle);
+
+            annotDict = context.obj(splineDict);
             break;
           }
 
