@@ -7,6 +7,7 @@ import { renderWatermarksBehind, renderWatermarksInFront } from '../watermark/wa
 // Import from sub-modules
 import { drawPolygonShape, drawCloudShape, buildPolygonPath, buildCloudPath, buildCloudPolylinePath, drawTextboxContent } from './rendering/shapes.js';
 import { drawArrowheadOnCanvas, applyBorderStyle, drawDimensionLineEnding } from './rendering/decorations.js';
+import { catmullRomSpline } from '../tools/tools/spline-tool.js';
 import { drawDimension, drawMeasureAreaShape, drawCentroidLabel, drawMeasurePerimeterShape } from './rendering/measurements.js';
 import { applyHatchFill } from './rendering/hatch-patterns.js';
 import { getAnnotationType } from '../plugins/annotation-type-registry.js';
@@ -169,6 +170,25 @@ export function drawAnnotation(ctx, annotation) {
       applyBorderStyle(ctx, annotation.borderStyle);
       ctx.stroke();
       ctx.setLineDash([]);
+      break;
+    }
+
+    case 'spline': {
+      if (annotation.controlPoints && annotation.controlPoints.length >= 3) {
+        const samples = catmullRomSpline(annotation.controlPoints, 16);
+        ctx.strokeStyle = strokeColor;
+        ctx.lineWidth = lw;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        applyBorderStyle(ctx, annotation.borderStyle);
+        ctx.beginPath();
+        ctx.moveTo(samples[0].x, samples[0].y);
+        for (let i = 1; i < samples.length; i++) {
+          ctx.lineTo(samples[i].x, samples[i].y);
+        }
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
       break;
     }
 
