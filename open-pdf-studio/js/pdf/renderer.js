@@ -7,7 +7,7 @@ import { redrawAnnotations, renderAnnotationsForPage } from '../annotations/rend
 import { ensureAnnotationsForPage, hidePdfABar } from './loader.js';
 import { updateAllStatus } from '../ui/chrome/status-bar.js';
 import { hideProperties } from '../ui/panels/properties-panel.js';
-import { updateActiveThumbnail } from '../ui/panels/left-panel.js';
+import { updateActiveThumbnail, pauseThumbnails } from '../ui/panels/left-panel.js';
 import { createSinglePageTextLayer, clearSinglePageTextLayer, createTextLayer, clearTextLayers, createTextLayerFromRust } from '../text/text-layer.js';
 import { createSinglePageLinkLayer, clearSinglePageLinkLayer, createLinkLayer, clearLinkLayers } from './link-layer.js';
 import { createSinglePageFormLayer, clearSinglePageFormLayer, createFormLayer, clearFormLayers, hideFormFieldsBar } from './form-layer.js';
@@ -242,6 +242,8 @@ export async function renderPage(pageNum) {
   // page coexists with its un-rotated version in cache.
   if (_canUseTauri && _hasFilePath) {
     try {
+      // Pause thumbnail rendering so Rust backend is free for page rendering
+      pauseThumbnails();
       console.log(`[PERF] renderPage(${pageNum}) trying vector path: ${(performance.now() - _rp0).toFixed(0)}ms`);
       const vr = await import('./vector-renderer.js');
       const userRotation = getPageRotation(pageNum);

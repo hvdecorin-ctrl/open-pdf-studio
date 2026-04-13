@@ -250,15 +250,38 @@ export async function generateThumbnails() {
   startProcessor();
 }
 
-// Start the thumbnail processor
+// Pause/resume mechanism: when the user navigates pages, pause thumbnail
+// rendering so Rust IPC calls for page rendering aren't blocked.
+let _thumbnailsPaused = false;
+let _thumbnailPauseTimer = null;
+
+export function pauseThumbnails() {
+  _thumbnailsPaused = true;
+  if (_thumbnailPauseTimer) clearTimeout(_thumbnailPauseTimer);
+  // Auto-resume after 3 seconds of no navigation
+  _thumbnailPauseTimer = setTimeout(() => {
+    _thumbnailsPaused = false;
+    _thumbnailPauseTimer = null;
+    startProcessor();
+  }, 3000);
+}
+
+// Start the thumbnail processor (with initial delay to not compete with first page render)
 function startProcessor() {
   if (processorRunning) return;
   processorRunning = true;
-  processNextThumbnail();
+  // Delay first thumbnail so Rust backend can finish rendering the current page
+  setTimeout(processNextThumbnail, 2000);
 }
 
 // Process the next thumbnail (prioritizes visible pages, then active document)
 async function processNextThumbnail() {
+  // If paused (user is navigating), wait and retry
+  if (_thumbnailsPaused) {
+    processorRunning = false;
+    return;
+  }
+
   try {
     const activeDoc = getActiveDocument();
     const activeDocId = activeDoc?.id;
@@ -266,7 +289,7 @@ async function processNextThumbnail() {
     if (activeDocId && priorityPages.size > 0) {
       const processed = await processPriorityThumbnail(activeDocId);
       if (processed) {
-        setTimeout(processNextThumbnail, 0);
+        setTimeout(processNextThumbnail, 100);
         return;
       }
     }
@@ -274,7 +297,7 @@ async function processNextThumbnail() {
     if (activeDocId && documentState.has(activeDocId)) {
       const processed = await processDocumentThumbnail(activeDocId);
       if (processed) {
-        setTimeout(processNextThumbnail, 0);
+        setTimeout(processNextThumbnail, 100);
         return;
       }
     }
@@ -284,7 +307,7 @@ async function processNextThumbnail() {
 
       const processed = await processDocumentThumbnail(docId);
       if (processed) {
-        setTimeout(processNextThumbnail, 0);
+        setTimeout(processNextThumbnail, 100);
         return;
       }
     }
