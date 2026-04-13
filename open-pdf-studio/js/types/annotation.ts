@@ -3,7 +3,7 @@ export type AnnotationType =
   | 'draw' | 'line' | 'arrow' | 'box' | 'circle'
   | 'textbox' | 'callout' | 'comment' | 'stamp' | 'image' | 'signature'
   | 'polygon' | 'cloud' | 'cloudPolyline' | 'polyline' | 'text'
-  | 'arc' | 'redaction'
+  | 'arc' | 'spline' | 'redaction'
   | 'measureDistance' | 'measureArea' | 'measurePerimeter' | 'measureAngle'
   | 'scaleBar';
 
@@ -124,6 +124,7 @@ export type Annotation = AnnotationBase & {
   endY?: number;
   path?: Point[];
   points?: Point[];
+  controlPoints?: Point[];  // Spline control points
   holes?: Point[][];  // Cutout polygons for measureArea
   // Text
   text?: string;

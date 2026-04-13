@@ -86,7 +86,7 @@ function getAnnotationCenterAndSize(ann) {
       };
     }
     case 'spline': {
-      if (ann.controlPoints && ann.controlPoints.length >= 2) {
+      if (ann.controlPoints && ann.controlPoints.length >= 3) {
         const xs = ann.controlPoints.map(p => p.x);
         const ys = ann.controlPoints.map(p => p.y);
         const sMinX = Math.min(...xs);

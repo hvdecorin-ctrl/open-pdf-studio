@@ -55,6 +55,14 @@ export function getAnnotationBounds(ann: Annotation): AnnotationBounds | null {
       const arcCY = ann.centerY || 0;
       return { x: arcCX - arcR, y: arcCY - arcR, width: arcR * 2, height: arcR * 2 };
     }
+    case 'spline': {
+      if (!ann.controlPoints || ann.controlPoints.length === 0) return null;
+      const spMinX = Math.min(...ann.controlPoints.map(p => p.x));
+      const spMinY = Math.min(...ann.controlPoints.map(p => p.y));
+      const spMaxX = Math.max(...ann.controlPoints.map(p => p.x));
+      const spMaxY = Math.max(...ann.controlPoints.map(p => p.y));
+      return { x: spMinX, y: spMinY, width: spMaxX - spMinX || 1, height: spMaxY - spMinY || 1 };
+    }
     case 'line':
     case 'arrow':
       const lx = Math.min(ann.startX!, ann.endX!);
