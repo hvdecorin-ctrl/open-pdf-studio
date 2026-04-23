@@ -68,7 +68,10 @@
     "planPro": "Pro",
     "planStudio": "Studio",
     "upgrade": "अपग्रेड",
-    "manageAccount": "खाता प्रबंधित करें"
+    "manageAccount": "खाता प्रबंधित करें",
+    "signInToUseAI": "Sign in to use AI features",
+    "signInSub": "PDF editing works offline. AI features (summarize, translate, Q&A, chat) use your Impertio account.",
+    "signInCancelled": "Sign-in cancelled."
   },
   "measure": {
     "scale": "Scale",

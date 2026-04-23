@@ -366,6 +366,9 @@ DEFAULTS = {
     "planStudio": "Studio",
     "upgrade": "Upgrade",
     "manageAccount": "Manage account",
+    "signInToUseAI": "Sign in to use AI features",
+    "signInSub": "PDF editing works offline. AI features (summarize, translate, Q&A, chat) use your Impertio account.",
+    "signInCancelled": "Sign-in cancelled.",
 }
 
 NEW_KEYS = list(DEFAULTS)

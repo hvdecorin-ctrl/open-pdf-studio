@@ -114,6 +114,68 @@
   flex-shrink: 0;
 }
 
+/* ── AI-tab sign-in gate (shown when user not signed in) ────── */
+.ribbon-signin-prompt {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 0 16px;
+  height: 100%;
+  width: 100%;
+  background: var(--theme-ribbon-content-bg);
+}
+.ribbon-signin-icon {
+  width: 36px;
+  height: 36px;
+  color: var(--theme-accent, #0078d4);
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.ribbon-signin-icon svg { width: 100%; height: 100%; }
+.ribbon-signin-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+  max-width: 520px;
+}
+.ribbon-signin-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--theme-text, #1f1f1f);
+  line-height: 1.25;
+}
+.ribbon-signin-sub {
+  font-size: 11px;
+  color: var(--theme-text-secondary, #6b6b6b);
+  line-height: 1.35;
+  margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+.ribbon-signin-btn {
+  flex-shrink: 0;
+  padding: 6px 18px;
+  background: var(--theme-accent, #0078d4);
+  color: #fff;
+  border: 1px solid var(--theme-accent, #0078d4);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: default;
+}
+.ribbon-signin-btn:hover { background: var(--theme-accent-hover, #106ebe); }
+.ribbon-signin-hint {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: #b91c1c;
+  margin-left: 4px;
+}
+
 .ribbon-group {
   display: flex;
   flex-direction: column;

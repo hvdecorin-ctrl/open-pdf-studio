@@ -133,6 +133,7 @@ export default function AccountDropdown() {
               <Show when={info()?.credits}>
                 <div class="account-credits-row">
                   <span class="account-credits-n">{creditsTotal()}</span>
+                  {' '}
                   <span class="account-credits-label">{t('ai.credits') || 'credits'}</span>
                 </div>
                 <Show when={resetsLabel()}>

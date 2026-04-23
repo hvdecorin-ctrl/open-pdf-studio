@@ -27,6 +27,17 @@ const [isAuthenticated, setIsAuthenticated] = createSignal(false);
 const subscription = () => info()?.subscription || null;
 const usage = () => info()?.credits || null;
 
+// Transient message surfaced next to the Sign-in button when the user
+// cancels the browser flow, so silent cancellations don't look like the
+// app ignored them. Auto-clears after a few seconds.
+const [signInHint, setSignInHintValue] = createSignal('');
+let _hintTimer = null;
+function setSignInHint(msg) {
+  setSignInHintValue(msg || '');
+  if (_hintTimer) clearTimeout(_hintTimer);
+  if (msg) _hintTimer = setTimeout(() => setSignInHintValue(''), 4000);
+}
+
 // ── Chat ──
 const [messages, setMessages] = createSignal([]);
 const [isLoading, setIsLoading] = createSignal(false);
@@ -105,9 +116,12 @@ async function requireSignIn() {
   if (isAuthenticated()) return true;
   try {
     await login();
-    return isAuthenticated();
+    const ok = isAuthenticated();
+    if (ok) setSignInHint('');
+    return ok;
   } catch (e) {
     console.warn('[AI] sign-in cancelled or failed:', e);
+    setSignInHint('cancelled'); // UI translates the key
     return false;
   }
 }
@@ -197,6 +211,7 @@ export {
   online,
   aiPanelVisible, setAiPanelVisible,
   user, info, isAuthenticated, usage, subscription,
+  signInHint,
   messages, isLoading, streamingContent,
   login, logout, requireSignIn, refreshUserData,
   sendAction, sendChat, clearChat, addMessage,

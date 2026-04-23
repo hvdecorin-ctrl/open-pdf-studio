@@ -1,10 +1,13 @@
-import { createSignal } from 'solid-js';
+import { createSignal, Show } from 'solid-js';
 import RibbonGroup from './RibbonGroup.jsx';
 import RibbonButton from './RibbonButton.jsx';
 import RibbonButtonStack from './RibbonButtonStack.jsx';
 import PrefSelect from '../preferences/PrefSelect.jsx';
 import { getActiveDocument, noPdf } from '../../../core/state.js';
-import { aiPanelVisible, setAiPanelVisible, isAuthenticated, requireSignIn, sendAction } from '../../stores/aiStore.js';
+import {
+  aiPanelVisible, setAiPanelVisible, isAuthenticated, requireSignIn,
+  signInHint, sendAction,
+} from '../../stores/aiStore.js';
 import { openDialog } from '../../stores/dialogStore.js';
 import { useTranslation } from '../../../i18n/useTranslation.js';
 import { state } from '../../../core/state.js';
@@ -75,8 +78,29 @@ export default function AITab() {
   }
 
 
+  async function handleSignIn() {
+    await requireSignIn();
+  }
+
   return (
     <div class="ribbon-content active" id="tab-ai">
+      <Show when={!isAuthenticated()}>
+        <div class="ribbon-signin-prompt">
+          <div class="ribbon-signin-icon" innerHTML={icons.ai} />
+          <div class="ribbon-signin-text">
+            <div class="ribbon-signin-title">{t('ai.signInToUseAI') || 'Sign in to use AI features'}</div>
+            <div class="ribbon-signin-sub">{t('ai.signInSub') || 'PDF editing works offline. AI features (summarize, translate, Q&A, chat) use your Impertio account.'}</div>
+          </div>
+          <button class="ribbon-signin-btn" onClick={handleSignIn}>
+            {t('ai.signIn') || 'Sign in'}
+          </button>
+          <Show when={signInHint() === 'cancelled'}>
+            <div class="ribbon-signin-hint">{t('ai.signInCancelled') || 'Sign-in cancelled.'}</div>
+          </Show>
+        </div>
+      </Show>
+
+      <Show when={isAuthenticated()}>
       <div class="ribbon-groups">
         <RibbonGroup label={t('ai.panel') || 'Panel'}>
           <RibbonButton id="btn-ai-panel" title={t('ai.openPanel') || 'AI Assistant'}
@@ -149,6 +173,7 @@ export default function AITab() {
             }} />
         </RibbonGroup>
       </div>
+      </Show>
     </div>
   );
 }

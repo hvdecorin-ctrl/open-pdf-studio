@@ -1,6 +1,6 @@
 [package]
 name = "open-pdf-studio"
-version = "1.44.0"
+version = "1.45.0"
 description = "A free, open-source PDF annotation editor"
 authors = ["OpenAEC Foundation"]
 license = "MIT"
@@ -35,7 +35,7 @@ zip = "2"
 tauri-plugin-deep-link = "2"
 tauri-plugin-single-instance = "2"
 tauri-plugin-store = "2"
-reqwest = { version = "0.12", features = ["rustls-tls"], default-features = false }
+reqwest = { version = "0.12", features = ["rustls-tls", "json"], default-features = false }
 open-pdf-render = { path = "../../open-pdf-render" }
 image = { version = "0.25", default-features = false, features = ["jpeg"] }
 

@@ -68,7 +68,10 @@
     "planPro": "Pro",
     "planStudio": "Studio",
     "upgrade": "Päivitä",
-    "manageAccount": "Hallitse tiliä"
+    "manageAccount": "Hallitse tiliä",
+    "signInToUseAI": "Sign in to use AI features",
+    "signInSub": "PDF editing works offline. AI features (summarize, translate, Q&A, chat) use your Impertio account.",
+    "signInCancelled": "Sign-in cancelled."
   },
   "measure": {
     "scale": "Scale",
