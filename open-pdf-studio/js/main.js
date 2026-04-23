@@ -182,19 +182,14 @@ async function init() {
   // Load installed plugins (extension palettes, custom annotation types, etc.)
   initPlugins();
 
-  // Show the window after the browser has painted the first frame.
-  // Double requestAnimationFrame ensures layout + paint have completed.
+  // Show the window after frontend init. The previous double-rAF paint-wait
+  // gate permanently hides the window on WebKitGTK builds where accelerated
+  // compositing stalls before the first paint (observed on Linux Mint 22.3 +
+  // Mesa + Intel CML iGPU); rAF never resolves so show() is never called.
   if (isTauri() && window.__TAURI__?.window) {
-    await new Promise(resolve => {
-      requestAnimationFrame(() => requestAnimationFrame(resolve));
-    });
-    try {
-      const appWindow = window.__TAURI__.window.getCurrentWindow();
-      await appWindow.show();
-      await appWindow.setFocus();
-    } catch (e) {
-      console.warn('Failed to show window:', e);
-    }
+    const appWindow = window.__TAURI__.window.getCurrentWindow();
+    await appWindow.show();
+    await appWindow.setFocus();
   }
 
   // Now that Solid has rendered, grab canvas and container refs
