@@ -61,7 +61,14 @@
     "expand": "Expand",
     "pinToSide": "Pin to side",
     "unpin": "Unpin",
-    "copy": "Copy"
+    "copy": "Copy",
+    "credits": "kreditek",
+    "creditsResetsAt": "Visszaállítás: {{date}}",
+    "planFree": "Ingyenes",
+    "planPro": "Pro",
+    "planStudio": "Studio",
+    "upgrade": "Frissítés",
+    "manageAccount": "Fiók kezelése"
   },
   "measure": {
     "scale": "Scale",

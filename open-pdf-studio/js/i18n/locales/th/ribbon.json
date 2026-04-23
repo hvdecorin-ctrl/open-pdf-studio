@@ -61,7 +61,14 @@
     "expand": "Expand",
     "pinToSide": "Pin to side",
     "unpin": "Unpin",
-    "copy": "Copy"
+    "copy": "Copy",
+    "credits": "เครดิต",
+    "creditsResetsAt": "รีเซ็ต {{date}}",
+    "planFree": "ฟรี",
+    "planPro": "Pro",
+    "planStudio": "Studio",
+    "upgrade": "อัปเกรด",
+    "manageAccount": "จัดการบัญชี"
   },
   "measure": {
     "scale": "Scale",

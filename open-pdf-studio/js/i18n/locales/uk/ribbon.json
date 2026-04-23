@@ -61,7 +61,14 @@
     "expand": "Expand",
     "pinToSide": "Pin to side",
     "unpin": "Unpin",
-    "copy": "Copy"
+    "copy": "Copy",
+    "credits": "кредити",
+    "creditsResetsAt": "Оновлення {{date}}",
+    "planFree": "Безкоштовний",
+    "planPro": "Pro",
+    "planStudio": "Studio",
+    "upgrade": "Оновити",
+    "manageAccount": "Керувати обліковим записом"
   },
   "measure": {
     "scale": "Scale",

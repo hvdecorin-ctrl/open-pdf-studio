@@ -61,7 +61,14 @@
     "expand": "Expand",
     "pinToSide": "Pin to side",
     "unpin": "Unpin",
-    "copy": "Copy"
+    "copy": "Copy",
+    "credits": "kredit",
+    "creditsResetsAt": "Ditetapkan semula pada {{date}}",
+    "planFree": "Percuma",
+    "planPro": "Pro",
+    "planStudio": "Studio",
+    "upgrade": "Naik taraf",
+    "manageAccount": "Urus akaun"
   },
   "measure": {
     "scale": "Scale",

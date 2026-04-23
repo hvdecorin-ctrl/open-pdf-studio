@@ -61,7 +61,14 @@
     "expand": "Expand",
     "pinToSide": "Pin to side",
     "unpin": "Unpin",
-    "copy": "Copy"
+    "copy": "Copy",
+    "credits": "kredyty",
+    "creditsResetsAt": "Reset {{date}}",
+    "planFree": "Darmowy",
+    "planPro": "Pro",
+    "planStudio": "Studio",
+    "upgrade": "Ulepsz",
+    "manageAccount": "Zarządzaj kontem"
   },
   "measure": {
     "scale": "Scale",

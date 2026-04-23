@@ -61,7 +61,14 @@
     "expand": "Expand",
     "pinToSide": "Pin to side",
     "unpin": "Unpin",
-    "copy": "Copy"
+    "copy": "Copy",
+    "credits": "اعتبار",
+    "creditsResetsAt": "بازنشانی در {{date}}",
+    "planFree": "رایگان",
+    "planPro": "Pro",
+    "planStudio": "Studio",
+    "upgrade": "ارتقا",
+    "manageAccount": "مدیریت حساب"
   },
   "measure": {
     "scale": "Scale",

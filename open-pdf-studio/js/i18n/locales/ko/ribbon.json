@@ -61,7 +61,14 @@
     "expand": "Expand",
     "pinToSide": "Pin to side",
     "unpin": "Unpin",
-    "copy": "Copy"
+    "copy": "Copy",
+    "credits": "크레딧",
+    "creditsResetsAt": "{{date}}에 재설정",
+    "planFree": "무료",
+    "planPro": "Pro",
+    "planStudio": "Studio",
+    "upgrade": "업그레이드",
+    "manageAccount": "계정 관리"
   },
   "measure": {
     "scale": "Scale",

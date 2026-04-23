@@ -61,7 +61,14 @@
     "expand": "Expand",
     "pinToSide": "Pin to side",
     "unpin": "Unpin",
-    "copy": "Copy"
+    "copy": "Copy",
+    "credits": "クレジット",
+    "creditsResetsAt": "{{date}} にリセット",
+    "planFree": "無料",
+    "planPro": "Pro",
+    "planStudio": "Studio",
+    "upgrade": "アップグレード",
+    "manageAccount": "アカウント管理"
   },
   "measure": {
     "scale": "Scale",

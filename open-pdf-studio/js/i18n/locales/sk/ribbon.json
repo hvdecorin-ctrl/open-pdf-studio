@@ -61,7 +61,14 @@
     "expand": "Expand",
     "pinToSide": "Pin to side",
     "unpin": "Unpin",
-    "copy": "Copy"
+    "copy": "Copy",
+    "credits": "kredity",
+    "creditsResetsAt": "Obnovenie {{date}}",
+    "planFree": "Zdarma",
+    "planPro": "Pro",
+    "planStudio": "Studio",
+    "upgrade": "Vylepšiť",
+    "manageAccount": "Spravovať účet"
   },
   "measure": {
     "scale": "Scale",

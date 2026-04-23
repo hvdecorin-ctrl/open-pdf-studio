@@ -446,14 +446,10 @@ export default function AIPanel() {
             <Show when={usage()}>
               <div class="ai-usage-bar">
                 <div class="ai-usage-text">
-                  {usage().credits_remaining} of {usage().credits_limit} credits remaining
-                  <Show when={subscription()}>
-                    <span class="ai-plan-badge">{subscription().plan_name}</span>
+                  {usage().total} credits
+                  <Show when={subscription()?.tier}>
+                    <span class={`ai-plan-badge ai-plan-${subscription().tier}`}>{subscription().tier}</span>
                   </Show>
-                </div>
-                <div class="ai-usage-track">
-                  <div class="ai-usage-fill"
-                    style={{ width: `${Math.min(100, (usage().credits_used / usage().credits_limit) * 100)}%` }} />
                 </div>
               </div>
             </Show>

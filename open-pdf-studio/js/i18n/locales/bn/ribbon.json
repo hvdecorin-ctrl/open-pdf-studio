@@ -61,7 +61,14 @@
     "expand": "Expand",
     "pinToSide": "Pin to side",
     "unpin": "Unpin",
-    "copy": "Copy"
+    "copy": "Copy",
+    "credits": "ক্রেডিট",
+    "creditsResetsAt": "{{date}} এ রিসেট",
+    "planFree": "ফ্রি",
+    "planPro": "Pro",
+    "planStudio": "Studio",
+    "upgrade": "আপগ্রেড",
+    "manageAccount": "অ্যাকাউন্ট পরিচালনা"
   },
   "measure": {
     "scale": "Scale",

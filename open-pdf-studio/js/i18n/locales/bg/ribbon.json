@@ -61,7 +61,14 @@
     "expand": "Expand",
     "pinToSide": "Pin to side",
     "unpin": "Unpin",
-    "copy": "Copy"
+    "copy": "Copy",
+    "credits": "кредити",
+    "creditsResetsAt": "Нулиране {{date}}",
+    "planFree": "Безплатен",
+    "planPro": "Pro",
+    "planStudio": "Studio",
+    "upgrade": "Надстройте",
+    "manageAccount": "Управление на акаунта"
   },
   "measure": {
     "scale": "Scale",

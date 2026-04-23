@@ -61,7 +61,14 @@
     "expand": "Expand",
     "pinToSide": "Pin to side",
     "unpin": "Unpin",
-    "copy": "Copy"
+    "copy": "Copy",
+    "credits": "tín dụng",
+    "creditsResetsAt": "Đặt lại vào {{date}}",
+    "planFree": "Miễn phí",
+    "planPro": "Pro",
+    "planStudio": "Studio",
+    "upgrade": "Nâng cấp",
+    "manageAccount": "Quản lý tài khoản"
   },
   "measure": {
     "scale": "Scale",

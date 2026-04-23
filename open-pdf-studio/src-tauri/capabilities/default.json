@@ -29,6 +29,7 @@
     "fs:allow-exists",
     "fs:allow-stat",
     "shell:allow-open",
+    "store:default",
     "os:default",
     "updater:default",
     "process:allow-restart",

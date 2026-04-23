@@ -61,7 +61,14 @@
     "expand": "Expand",
     "pinToSide": "Pin to side",
     "unpin": "Unpin",
-    "copy": "Copy"
+    "copy": "Copy",
+    "credits": "קרדיטים",
+    "creditsResetsAt": "מתאפס ב-{{date}}",
+    "planFree": "חינם",
+    "planPro": "Pro",
+    "planStudio": "Studio",
+    "upgrade": "שדרג",
+    "manageAccount": "ניהול חשבון"
   },
   "measure": {
     "scale": "Scale",

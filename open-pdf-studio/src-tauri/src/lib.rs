@@ -1,3 +1,5 @@
+mod auth;
+
 use std::fs;
 use std::fs::File;
 use std::collections::HashMap;
@@ -1152,7 +1154,8 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_os::init())
         .plugin(tauri_plugin_process::init())
-        .plugin(tauri_plugin_deep_link::init());
+        .plugin(tauri_plugin_deep_link::init())
+        .plugin(tauri_plugin_store::Builder::default().build());
 
     // Single-instance and updater plugins are desktop-only
     #[cfg(not(target_os = "android"))]
@@ -1239,7 +1242,13 @@ pub fn run() {
             extract_text_batch,
             extract_page_text,
             render_thumbnail,
-            allow_fs_scope
+            allow_fs_scope,
+            auth::auth_is_configured,
+            auth::auth_login,
+            auth::auth_logout,
+            auth::auth_current_user,
+            auth::auth_get_access_token,
+            auth::auth_userinfo,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

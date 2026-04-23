@@ -61,7 +61,14 @@
     "expand": "Expand",
     "pinToSide": "Pin to side",
     "unpin": "Unpin",
-    "copy": "Copy"
+    "copy": "Copy",
+    "credits": "krediittejä",
+    "creditsResetsAt": "Nollautuu {{date}}",
+    "planFree": "Ilmainen",
+    "planPro": "Pro",
+    "planStudio": "Studio",
+    "upgrade": "Päivitä",
+    "manageAccount": "Hallitse tiliä"
   },
   "measure": {
     "scale": "Scale",

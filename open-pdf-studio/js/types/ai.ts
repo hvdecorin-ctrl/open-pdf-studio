@@ -1,37 +1,40 @@
-export interface AIUser {
-  id: string;
-  email: string;
-  full_name: string | null;
-  is_verified: boolean;
-  created_at: string;
-}
+// These types describe the shape of values served by the OIDC-backed AI
+// store. Identity + billing live on account.impertio.app — this app only
+// consumes claims coming back from /oauth/userinfo and the JWT profile.
 
-export interface AIPlan {
-  name: string;
-  monthly_token_limit: number;
-  monthly_request_limit: number;
-  price_cents: number;
-  features: string | null;
+// Minimum claims the desktop app decodes from the stored JWT. Same shape
+// as UserProfile in src-tauri/src/auth.rs.
+export interface AIUser {
+  sub: string;
+  email: string | null;
+  name: string | null;
+  picture: string | null;
 }
 
 export interface AISubscription {
-  plan_name: string;
-  status: string;
-  tokens_used: number;
-  tokens_limit: number;
-  requests_used: number;
-  requests_limit: number;
-  current_period_end: string | null;
+  tier?: 'free' | 'pro' | 'studio' | string;
+  status?: 'active' | 'canceled' | 'past_due' | 'unpaid' | 'trialing' | 'incomplete' | string;
 }
 
-export interface AIUsage {
-  tokens_used: number;
-  tokens_limit: number;
-  tokens_remaining: number;
-  requests_used: number;
-  requests_limit: number;
-  requests_remaining: number;
-  plan_name: string;
+export interface AICredits {
+  total: number;
+  monthly: number;
+  topup: number;
+  resets_at: string | null;
+}
+
+// Alias so existing imports keep compiling.
+export type AIUsage = AICredits;
+
+// The full /oauth/userinfo payload.
+export interface AIUserInfo {
+  sub: string;
+  email: string | null;
+  email_verified: boolean | null;
+  name: string | null;
+  picture: string | null;
+  subscription: AISubscription | null;
+  credits: AICredits | null;
 }
 
 export interface AIMessage {
@@ -45,10 +48,6 @@ export interface AIChatResponse {
   content: string;
   cached: boolean;
   usage: { prompt_tokens: number; completion_tokens: number; total_tokens: number } | null;
-}
-
-export interface AICheckoutResponse {
-  checkout_url: string;
 }
 
 export type AIAction = 'summarize' | 'qa' | 'translate' | 'rewrite' | 'explain' | 'extract' | 'chat';

@@ -61,7 +61,14 @@
     "expand": "Expand",
     "pinToSide": "Pin to side",
     "unpin": "Unpin",
-    "copy": "Copy"
+    "copy": "Copy",
+    "credits": "kredi",
+    "creditsResetsAt": "Sıfırlanma: {{date}}",
+    "planFree": "Ücretsiz",
+    "planPro": "Pro",
+    "planStudio": "Studio",
+    "upgrade": "Yükselt",
+    "manageAccount": "Hesabı yönet"
   },
   "measure": {
     "scale": "Scale",

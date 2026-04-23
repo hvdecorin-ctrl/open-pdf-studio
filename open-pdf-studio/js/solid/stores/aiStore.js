@@ -1,7 +1,7 @@
 import { createSignal } from 'solid-js';
 import {
-  loadTokens, clearTokens, isLoggedIn, getMe, getUsage, getSubscription,
-  chatStream, login as apiLogin, register as apiRegister
+  clearTokens, currentUser, getUserInfo,
+  chatStream, login as apiLogin,
 } from '../../services/ai-api.js';
 import { isOnline, onConnectivityChange, OfflineError } from '../../services/connectivity.js';
 
@@ -15,63 +15,77 @@ onConnectivityChange((status) => {
   if (status && isAuthenticated()) refreshUserData();
 });
 
-// ── Auth ──
+// ── Auth + profile ──
+// `user` is the minimal profile decoded from the stored JWT (sub/email/name/picture).
+// `info` is the fresh /oauth/userinfo payload (same claims + subscription + credits).
+// `subscription` and `usage` are thin aliases over info for back-compat with
+// existing components that already read those signals.
 const [user, setUser] = createSignal(null);
+const [info, setInfo] = createSignal(null);
 const [isAuthenticated, setIsAuthenticated] = createSignal(false);
 
-// ── Usage ──
-const [usage, setUsage] = createSignal(null);
-const [subscription, setSubscription] = createSignal(null);
+const subscription = () => info()?.subscription || null;
+const usage = () => info()?.credits || null;
 
 // ── Chat ──
 const [messages, setMessages] = createSignal([]);
 const [isLoading, setIsLoading] = createSignal(false);
 const [streamingContent, setStreamingContent] = createSignal('');
 
-// ── Initialization (async — runs after module loads) ──
+// ── Initialization ──
 let _initialized = false;
 
 async function initAI() {
   if (_initialized) return;
   _initialized = true;
   try {
-    await loadTokens();
-    if (isLoggedIn()) {
+    const u = await currentUser();
+    if (u) {
+      setUser(u);
       setIsAuthenticated(true);
       refreshUserData();
     }
   } catch (e) {
-    console.warn('[AI] Init error:', e);
+    console.warn('[AI] init error:', e);
   }
 }
 
-// Trigger init immediately (non-blocking)
+// Non-blocking hydrate on module load.
 initAI();
 
+// Debounced refresh — /userinfo is rate-limited to 120 req/min/IP by the
+// accounts server, and we only need roughly-live data.
+const USERINFO_DEBOUNCE_MS = 5000;
+let _lastInfoFetch = 0;
+
 async function refreshUserData() {
+  if (!isAuthenticated()) return;
+  const now = Date.now();
+  if (now - _lastInfoFetch < USERINFO_DEBOUNCE_MS) return;
+  _lastInfoFetch = now;
   try {
-    const [me, sub, usg] = await Promise.all([
-      getMe(), getSubscription(), getUsage()
-    ]);
-    if (me) setUser(me);
-    if (sub) setSubscription(sub);
-    if (usg) setUsage(usg);
+    const i = await getUserInfo();
+    if (i) {
+      setInfo(i);
+      // /userinfo is the source of truth for name/picture between sessions;
+      // patch the lightweight profile so avatar + display name stay fresh.
+      const cur = user();
+      if (cur) {
+        setUser({ ...cur, name: i.name ?? cur.name, picture: i.picture ?? cur.picture, email: i.email ?? cur.email });
+      }
+    }
   } catch (e) {
     console.warn('[AI] refreshUserData error:', e);
   }
 }
 
-async function login(email, password) {
+// Triggers the OIDC PKCE flow (Rust opens a browser + waits on a loopback).
+async function login() {
   await initAI();
-  await apiLogin(email, password);
+  const u = await apiLogin();
+  setUser(u);
   setIsAuthenticated(true);
-  await refreshUserData();
-}
-
-async function register(email, password, fullName) {
-  await initAI();
-  await apiRegister(email, password, fullName);
-  setIsAuthenticated(true);
+  _lastInfoFetch = 0;
   await refreshUserData();
 }
 
@@ -79,10 +93,23 @@ async function logout() {
   await clearTokens();
   setIsAuthenticated(false);
   setUser(null);
-  setUsage(null);
-  setSubscription(null);
+  setInfo(null);
   setMessages([]);
   setAiPanelVisible(false);
+}
+
+// For gated actions (AI features): ensure the user is signed in, kicking
+// off the OIDC flow if not. Returns true on success, false if the user
+// dismissed the browser flow or it errored.
+async function requireSignIn() {
+  if (isAuthenticated()) return true;
+  try {
+    await login();
+    return isAuthenticated();
+  } catch (e) {
+    console.warn('[AI] sign-in cancelled or failed:', e);
+    return false;
+  }
 }
 
 function addMessage(role, content, action) {
@@ -110,11 +137,11 @@ async function sendAction(action, text, options = {}) {
 
     addMessage('assistant', full, action);
     setStreamingContent('');
-    getUsage().then(u => { if (u) setUsage(u); });
+    _lastInfoFetch = 0; // force fresh credits on next dropdown open
+    refreshUserData();
     return full;
   } catch (err) {
     console.error('[AI] sendAction error:', err);
-    // Keep partial response if stream was interrupted
     const partial = streamingContent();
     if (partial) {
       addMessage('assistant', partial + '\n\n---\n*Connection lost. Response may be incomplete.*', action);
@@ -147,7 +174,8 @@ async function sendChat(text) {
     }
     addMessage('assistant', full, 'chat');
     setStreamingContent('');
-    getUsage().then(u => { if (u) setUsage(u); });
+    _lastInfoFetch = 0;
+    refreshUserData();
     return full;
   } catch (err) {
     console.error('[AI] sendChat error:', err);
@@ -168,8 +196,8 @@ async function sendChat(text) {
 export {
   online,
   aiPanelVisible, setAiPanelVisible,
-  user, isAuthenticated, usage, subscription,
+  user, info, isAuthenticated, usage, subscription,
   messages, isLoading, streamingContent,
-  login, register, logout, refreshUserData,
+  login, logout, requireSignIn, refreshUserData,
   sendAction, sendChat, clearChat, addMessage,
 };

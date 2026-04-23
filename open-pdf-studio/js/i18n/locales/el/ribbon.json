@@ -61,7 +61,14 @@
     "expand": "Expand",
     "pinToSide": "Pin to side",
     "unpin": "Unpin",
-    "copy": "Copy"
+    "copy": "Copy",
+    "credits": "πιστώσεις",
+    "creditsResetsAt": "Επαναφορά {{date}}",
+    "planFree": "Δωρεάν",
+    "planPro": "Pro",
+    "planStudio": "Studio",
+    "upgrade": "Αναβάθμιση",
+    "manageAccount": "Διαχείριση λογαριασμού"
   },
   "measure": {
     "scale": "Scale",

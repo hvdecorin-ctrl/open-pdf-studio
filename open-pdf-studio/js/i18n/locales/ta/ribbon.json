@@ -61,7 +61,14 @@
     "expand": "Expand",
     "pinToSide": "Pin to side",
     "unpin": "Unpin",
-    "copy": "Copy"
+    "copy": "Copy",
+    "credits": "கிரெடிட்கள்",
+    "creditsResetsAt": "{{date}} அன்று மீட்டமை",
+    "planFree": "இலவசம்",
+    "planPro": "Pro",
+    "planStudio": "Studio",
+    "upgrade": "மேம்படுத்து",
+    "manageAccount": "கணக்கை நிர்வகி"
   },
   "measure": {
     "scale": "Scale",

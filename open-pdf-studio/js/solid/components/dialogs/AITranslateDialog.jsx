@@ -4,8 +4,7 @@ import PrefSelect from '../preferences/PrefSelect.jsx';
 import { closeDialog } from '../../stores/dialogStore.js';
 import { getActiveDocument } from '../../../core/state.js';
 import { translatePage, translateDocument, undoTranslations } from '../../../services/ai-translate.js';
-import { isAuthenticated } from '../../stores/aiStore.js';
-import { openDialog } from '../../stores/dialogStore.js';
+import { requireSignIn } from '../../stores/aiStore.js';
 import { useTranslation } from '../../../i18n/useTranslation.js';
 
 const LANGUAGES = [
@@ -28,11 +27,7 @@ export default function AITranslateDialog(props) {
   const [error, setError] = createSignal('');
 
   async function handleTranslate() {
-    if (!isAuthenticated()) {
-      closeDialog('ai-translate');
-      openDialog('ai-login');
-      return;
-    }
+    if (!(await requireSignIn())) return;
 
     const doc = getActiveDocument();
     if (!doc || !doc.pdfDoc) {

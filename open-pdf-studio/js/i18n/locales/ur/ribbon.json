@@ -61,7 +61,14 @@
     "expand": "Expand",
     "pinToSide": "Pin to side",
     "unpin": "Unpin",
-    "copy": "Copy"
+    "copy": "Copy",
+    "credits": "کریڈٹس",
+    "creditsResetsAt": "{{date}} کو ری سیٹ",
+    "planFree": "مفت",
+    "planPro": "Pro",
+    "planStudio": "Studio",
+    "upgrade": "اپ گریڈ",
+    "manageAccount": "اکاؤنٹ کا انتظام"
   },
   "measure": {
     "scale": "Scale",

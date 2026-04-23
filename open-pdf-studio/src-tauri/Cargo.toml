@@ -1,6 +1,6 @@
 [package]
 name = "open-pdf-studio"
-version = "1.43.0"
+version = "1.44.0"
 description = "A free, open-source PDF annotation editor"
 authors = ["OpenAEC Foundation"]
 license = "MIT"
@@ -34,9 +34,17 @@ zip = "2"
 
 tauri-plugin-deep-link = "2"
 tauri-plugin-single-instance = "2"
+tauri-plugin-store = "2"
 reqwest = { version = "0.12", features = ["rustls-tls"], default-features = false }
 open-pdf-render = { path = "../../open-pdf-render" }
 image = { version = "0.25", default-features = false, features = ["jpeg"] }
+
+# OIDC sign-in (Impertio Accounts): Authorization Code + PKCE with a
+# loopback redirect on 127.0.0.1:53683.
+oauth2 = { version = "4", default-features = false, features = ["reqwest", "rustls-tls"] }
+tiny_http = "0.12"
+url = "2"
+tokio = { version = "1", features = ["sync"] }
 
 [target.'cfg(not(target_os = "android"))'.dependencies]
 tauri-plugin-updater = "2"

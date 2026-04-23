@@ -61,7 +61,14 @@
     "expand": "Expand",
     "pinToSide": "Pin to side",
     "unpin": "Unpin",
-    "copy": "Copy"
+    "copy": "Copy",
+    "credits": "积分",
+    "creditsResetsAt": "{{date}} 重置",
+    "planFree": "免费",
+    "planPro": "Pro",
+    "planStudio": "Studio",
+    "upgrade": "升级",
+    "manageAccount": "管理账户"
   },
   "measure": {
     "scale": "Scale",

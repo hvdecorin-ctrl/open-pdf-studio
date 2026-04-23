@@ -731,32 +731,32 @@ function TextSelectionMenuContent() {
         <MenuItem label={t('textSelection.aiSummarize') || 'Summarize'} onClick={async () => {
           const text = getSelectedText();
           if (!text) return;
-          const { isAuthenticated, sendAction, setAiPanelVisible } = await import('../stores/aiStore.js');
-          if (!isAuthenticated()) { const { openDialog } = await import('../stores/dialogStore.js'); openDialog('ai-login'); return; }
+          const { requireSignIn, sendAction, setAiPanelVisible } = await import('../stores/aiStore.js');
+          if (!(await requireSignIn())) return;
           setAiPanelVisible(true);
           sendAction('summarize', text);
         }} />
         <MenuItem label={t('textSelection.aiExplain') || 'Explain'} onClick={async () => {
           const text = getSelectedText();
           if (!text) return;
-          const { isAuthenticated, sendAction, setAiPanelVisible } = await import('../stores/aiStore.js');
-          if (!isAuthenticated()) { const { openDialog } = await import('../stores/dialogStore.js'); openDialog('ai-login'); return; }
+          const { requireSignIn, sendAction, setAiPanelVisible } = await import('../stores/aiStore.js');
+          if (!(await requireSignIn())) return;
           setAiPanelVisible(true);
           sendAction('explain', text);
         }} />
         <MenuItem label={t('textSelection.aiTranslate') || 'Translate'} onClick={async () => {
           const text = getSelectedText();
           if (!text) return;
-          const { isAuthenticated, sendAction, setAiPanelVisible } = await import('../stores/aiStore.js');
-          if (!isAuthenticated()) { const { openDialog } = await import('../stores/dialogStore.js'); openDialog('ai-login'); return; }
+          const { requireSignIn, sendAction, setAiPanelVisible } = await import('../stores/aiStore.js');
+          if (!(await requireSignIn())) return;
           setAiPanelVisible(true);
           sendAction('translate', text, { language: navigator.language.split('-')[0] });
         }} />
         <MenuItem label={t('textSelection.aiRewrite') || 'Rewrite'} onClick={async () => {
           const text = getSelectedText();
           if (!text) return;
-          const { isAuthenticated, sendAction, setAiPanelVisible } = await import('../stores/aiStore.js');
-          if (!isAuthenticated()) { const { openDialog } = await import('../stores/dialogStore.js'); openDialog('ai-login'); return; }
+          const { requireSignIn, sendAction, setAiPanelVisible } = await import('../stores/aiStore.js');
+          if (!(await requireSignIn())) return;
           setAiPanelVisible(true);
           sendAction('rewrite', text);
         }} />

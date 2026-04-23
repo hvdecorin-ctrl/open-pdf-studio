@@ -4,7 +4,7 @@ import RibbonButton from './RibbonButton.jsx';
 import RibbonButtonStack from './RibbonButtonStack.jsx';
 import PrefSelect from '../preferences/PrefSelect.jsx';
 import { getActiveDocument, noPdf } from '../../../core/state.js';
-import { aiPanelVisible, setAiPanelVisible, isAuthenticated, sendAction } from '../../stores/aiStore.js';
+import { aiPanelVisible, setAiPanelVisible, isAuthenticated, requireSignIn, sendAction } from '../../stores/aiStore.js';
 import { openDialog } from '../../stores/dialogStore.js';
 import { useTranslation } from '../../../i18n/useTranslation.js';
 import { state } from '../../../core/state.js';
@@ -55,21 +55,18 @@ function extractAllText() {
   return Promise.all(promises).then(parts => parts.join('\n\n'));
 }
 
-function requireAuth(fn) {
-  if (!isAuthenticated()) {
-    openDialog('ai-login');
-    return;
-  }
+async function requireAuth(fn) {
+  if (!(await requireSignIn())) return;
   setAiPanelVisible(true);
-  Promise.resolve().then(fn).catch(err => console.error('[AI]', err));
+  try { await fn(); } catch (err) { console.error('[AI]', err); }
 }
 
 export default function AITab() {
   const { t } = useTranslation('ribbon');
   const [hoverLang, setHoverLang] = createSignal(getHoverTargetLang());
 
-  function handleHoverToggle() {
-    if (!isAuthenticated()) { openDialog('ai-login'); return; }
+  async function handleHoverToggle() {
+    if (!(await requireSignIn())) return;
     if (state.currentTool === 'hoverTranslate') {
       setTool('hand');
     } else {
@@ -85,8 +82,8 @@ export default function AITab() {
           <RibbonButton id="btn-ai-panel" title={t('ai.openPanel') || 'AI Assistant'}
             icon={icons.ai} label={t('ai.assistant') || 'AI Assistant'}
             active={aiPanelVisible()}
-            onClick={() => {
-              if (!isAuthenticated()) { openDialog('ai-login'); return; }
+            onClick={async () => {
+              if (!(await requireSignIn())) return;
               setAiPanelVisible(!aiPanelVisible());
             }} />
         </RibbonGroup>
@@ -108,8 +105,8 @@ export default function AITab() {
             <RibbonButton size="small" id="btn-ai-translate" title={t('ai.translateDoc') || 'Translate PDF'}
               icon={icons.translate} label={t('ai.translate') || 'Translate'}
               disabled={noPdf()}
-              onClick={() => {
-                if (!isAuthenticated()) { openDialog('ai-login'); return; }
+              onClick={async () => {
+                if (!(await requireSignIn())) return;
                 openDialog('ai-translate', { scope: 'page' });
               }} />
           </RibbonButtonStack>
@@ -146,8 +143,8 @@ export default function AITab() {
         <RibbonGroup label={t('ai.chat') || 'Chat'}>
           <RibbonButton id="btn-ai-chat" title={t('ai.openChat') || 'Open AI chat'}
             icon={icons.chat} label={t('ai.chat') || 'Chat'}
-            onClick={() => {
-              if (!isAuthenticated()) { openDialog('ai-login'); return; }
+            onClick={async () => {
+              if (!(await requireSignIn())) return;
               setAiPanelVisible(true);
             }} />
         </RibbonGroup>

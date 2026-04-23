@@ -61,7 +61,14 @@
     "expand": "Expand",
     "pinToSide": "Pin to side",
     "unpin": "Unpin",
-    "copy": "Copy"
+    "copy": "Copy",
+    "credits": "رصيد",
+    "creditsResetsAt": "إعادة تعيين {{date}}",
+    "planFree": "مجاني",
+    "planPro": "Pro",
+    "planStudio": "Studio",
+    "upgrade": "ترقية",
+    "manageAccount": "إدارة الحساب"
   },
   "measure": {
     "scale": "Scale",

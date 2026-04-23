@@ -16,7 +16,7 @@ import { switchRibbonTab as switchToTab } from '../bridge.js';
 import { openFindBar, closeFindBar, onFindNext } from '../search/find-bar.js';
 import { closeActiveTab } from '../ui/chrome/tabs.js';
 import { hideProperties, showProperties, showMultiSelectionProperties, togglePropertiesPanel } from '../ui/panels/properties-panel.js';
-import { openDialog, aiPanelVisible, setAiPanelVisible, aiIsAuthenticated } from '../bridge.js';
+import { openDialog, aiPanelVisible, setAiPanelVisible, aiIsAuthenticated, aiRequireSignIn } from '../bridge.js';
 import { getTool } from './tool-registry.js';
 
 function redraw() {
@@ -217,7 +217,7 @@ export async function handleKeydown(e) {
     }
   } else if (ctrl && shift && e.key === 'A') {
     e.preventDefault();
-    if (!aiIsAuthenticated()) { openDialog('ai-login'); return; }
+    if (!(await aiRequireSignIn())) return;
     setAiPanelVisible(!aiPanelVisible());
 
   } else if (ctrl && !shift && e.key === 'c') {
