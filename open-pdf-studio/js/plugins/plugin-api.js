@@ -119,6 +119,39 @@ export function createPluginApi(pluginId) {
       return doc ? doc.currentPage : 1;
     },
 
+    /**
+     * Returns the active document's annotation array (read-only snapshot).
+     * Plugins use this for analytics-style widgets (counts, dashboards) that
+     * need to inspect existing annotations without subscribing to every
+     * mutation. Polling is expected — the returned array is the live store
+     * reference, so plugins must not mutate it.
+     *
+     * Each annotation has a `page` field (1-indexed). When no document is
+     * open, returns []. The activeDocument's `numPages` (page-count) can be
+     * derived via `getPageCount()`.
+     */
+    getAnnotations() {
+      const doc = getActiveDocument();
+      return doc && Array.isArray(doc.annotations) ? doc.annotations : [];
+    },
+
+    /**
+     * Returns the active document's total page-count (>= 1) or 0 if no
+     * document is open. Combined with `getAnnotations()` and `getCurrentPage()`
+     * this gives plugins everything they need for per-page analytics.
+     */
+    getPageCount() {
+      const doc = getActiveDocument();
+      if (!doc) return 0;
+      // Prefer numPages (canonical), fallback to pdfDoc.numPages, otherwise 0.
+      if (typeof doc.numPages === 'number' && doc.numPages > 0) return doc.numPages;
+      const pdfDoc = doc.pdfDoc;
+      if (pdfDoc && typeof pdfDoc.numPages === 'number' && pdfDoc.numPages > 0) {
+        return pdfDoc.numPages;
+      }
+      return 0;
+    },
+
     // --- Annotation helpers ---
     createAnnotation(props) {
       return createAnnotation(props);
