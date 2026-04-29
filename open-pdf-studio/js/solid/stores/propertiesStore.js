@@ -7,6 +7,7 @@ import { computeTextboxContentHeight } from '../../annotations/rendering/shapes.
 import { formatDate, getTypeDisplayName } from '../../utils/helpers.js';
 import { getAnnotationType } from '../../plugins/annotation-type-registry.js';
 import { getPropertyPanel } from '../../plugins/property-panel-registry.js';
+import { fireSelectionChange } from '../../plugins/selection-listener-registry.js';
 import i18next from '../../i18n/config.js';
 import { syncDocScale } from '../../annotations/scale-bar.js';
 import { recalculateAllMeasurements, calculateArea, calculatePerimeter, formatMeasurement } from '../../annotations/measurement.js';
@@ -125,6 +126,12 @@ const [customFieldsDef, setCustomFieldsDef] = createSignal([]);
 // When non-null, plugin renders the entire panel-body for its annotation type.
 const [customPanelRender, setCustomPanelRender] = createSignal(null);
 
+// Plugin-driven hide of the native eigenschappen-paneel. When true, the host
+// PropertiesPanel renders nothing — plugin owns all controls (e.g. inside
+// its own tool-palette). Always restored to false on plugin-deactivate.
+const [nativePanelHidden, setNativePanelHidden] = createSignal(false);
+export { nativePanelHidden, setNativePanelHidden };
+
 // Current annotation reference for write-back
 let currentAnnotation = null;
 
@@ -192,6 +199,9 @@ function computeSectionVisibility(type) {
 // Show properties for a single annotation
 export function storeShowProperties(annotation) {
   currentAnnotation = annotation;
+  // Fire plugin selection-listeners (separate from property-panel-registry):
+  // gives plugins a direct channel to react to selection without scraping DOM.
+  fireSelectionChange(annotation);
   const isLocked = annotation.locked || false;
 
   setAnnotProps({
@@ -269,6 +279,7 @@ export function storeShowProperties(annotation) {
 // Hide properties (deselect annotation, show doc info)
 export function storeHideProperties() {
   currentAnnotation = null;
+  fireSelectionChange(null);
   setPanelMode('none');
   setCustomPanelRender(null);
 
@@ -304,6 +315,7 @@ export function storeHideProperties() {
 // Close the panel entirely
 export function storeClosePanel() {
   currentAnnotation = null;
+  fireSelectionChange(null);
   setPanelVisible(false);
 }
 
@@ -320,6 +332,8 @@ function sharedValue(selected, getter, fallback) {
 export function storeShowMultiSelection(selected) {
   if (!selected || selected.length < 2) return;
   currentAnnotation = null;
+  // Multi-selection clears single-select listeners (plugins react to single).
+  fireSelectionChange(null);
 
   const sharedType = sharedValue(selected, a => a.type, '');
   const sharedAuthor = sharedValue(selected, a => a.author || state.defaultAuthor, '');

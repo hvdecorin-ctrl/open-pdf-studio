@@ -12,7 +12,9 @@
  *     translationKey: string | null,
  *     tools: ToolDefinition[],
  *     defaultVisible: boolean,
- *     defaultMode: 'docked-left' | 'docked-right' | 'float'
+ *     defaultMode: 'docked-left' | 'docked-right' | 'float',
+ *     cssClass?: string         // extra class added to the palette root (.tp-docked / .tp-float)
+ *                               // so plugin-CSS can target without DOM scraping
  *   }
  *
  * ToolDefinition:

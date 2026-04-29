@@ -13,11 +13,22 @@ import { customPanelRender, updateAnnotProp, getCurrentAnnotation, storeHideProp
 export default function CustomPluginPanel() {
   let containerRef;
 
+  // Track last-active renderFn so we can fire a deselect-signal (renderFn(null))
+  // when annotation goes away. Plugins that mount DOM elsewhere (e.g. into a
+  // tool-palette) need this to know when to clean up.
+  let lastRenderFn = null;
+
   createEffect(() => {
     const renderFn = customPanelRender();
     const annotation = getCurrentAnnotation();
     if (!containerRef || !renderFn || !annotation) {
       if (containerRef) containerRef.innerHTML = '';
+      // Deselect-signal: fire renderFn(null) so plugin can unmount external DOM.
+      if (lastRenderFn) {
+        try { lastRenderFn(null, updateAnnotProp, () => {}, storeHideProperties); }
+        catch (err) { console.error('[CustomPluginPanel] deselect signal threw', err); }
+      }
+      lastRenderFn = renderFn;
       return;
     }
     containerRef.innerHTML = '';
@@ -27,10 +38,16 @@ export default function CustomPluginPanel() {
     } catch (err) {
       console.error('[CustomPluginPanel] renderFn threw', err);
     }
+    lastRenderFn = renderFn;
   });
 
   onCleanup(() => {
     if (containerRef) containerRef.innerHTML = '';
+    if (lastRenderFn) {
+      try { lastRenderFn(null, updateAnnotProp, () => {}, storeHideProperties); }
+      catch (err) { console.error('[CustomPluginPanel] cleanup signal threw', err); }
+      lastRenderFn = null;
+    }
   });
 
   return (
