@@ -6,6 +6,7 @@
  */
 
 import { createSignal, createEffect, Show, For, onMount, onCleanup } from 'solid-js';
+import { Portal } from 'solid-js/web';
 
 import { state, noPdf } from '../../core/state.js';
 import { setTool } from '../../tools/manager.js';
@@ -174,16 +175,21 @@ function startExtDrag(id, e, fromDocked) {
   document.addEventListener('mouseup', onUp);
 }
 
+// Compare two override-objects for shallow equality. Treats null/undefined as
+// equivalent to "no overrides" so an absent map equals an empty/null map.
+function overridesEqual(a, b) {
+  if (!a && !b) return true;
+  if (!a || !b) return false;
+  const ka = Object.keys(a);
+  return ka.length === Object.keys(b).length && ka.every(k => a[k] === b[k]);
+}
+
 // --- Tool button ---
 function ExtToolBtn(props) {
   const toolDisabled = () => noPdf() || isPdfAReadOnly();
   const isActive = () => {
     if (state.currentTool !== props.tool) return false;
-    if (!props.overrides && !state.toolOverrides) return true;
-    if (!props.overrides || !state.toolOverrides) return false;
-    const keys = Object.keys(props.overrides);
-    return keys.length === Object.keys(state.toolOverrides).length &&
-      keys.every(k => state.toolOverrides[k] === props.overrides[k]);
+    return overridesEqual(props.overrides || null, state.toolOverrides || null);
   };
   return (
     <button
@@ -204,19 +210,11 @@ function ExtToolGroupBtn(props) {
   const groupDef = () => props.groupDef;
   const activeSub = () => getActiveSubTool(groupDef());
 
-  const subOverridesEqual = (a, b) => {
-    if (!a && !b) return true;
-    if (!a || !b) return false;
-    const ka = Object.keys(a);
-    const kb = Object.keys(b);
-    return ka.length === kb.length && ka.every(k => a[k] === b[k]);
-  };
-
   // Main button is "active" when current tool/overrides match the active sub-tool.
   const isActive = () => {
     const sub = activeSub();
     if (state.currentTool !== sub.tool) return false;
-    return subOverridesEqual(sub.overrides || null, state.toolOverrides || null);
+    return overridesEqual(sub.overrides || null, state.toolOverrides || null);
   };
 
   const isOpen = () => openGroupId() === groupDef().id;
@@ -227,9 +225,29 @@ function ExtToolGroupBtn(props) {
     state.toolOverrides = sub.overrides || null;
   };
 
+  // Sub-menu lives in a Portal (escapes docked-palette overflow:hidden), so we
+  // compute viewport-fixed coordinates from the wrap's bounding rect on open.
+  let wrapRef;
+  let menuRef;
+  const [pos, setPos] = createSignal({ top: 0, left: 0 });
+
+  const recomputePos = () => {
+    if (!wrapRef) return;
+    const rect = wrapRef.getBoundingClientRect();
+    if (props.side === 'right') {
+      // Docked-right palette: anchor menu to the right of the viewport so it
+      // grows leftward from the wrap's left edge. Menu width is unknown here.
+      setPos({ top: rect.top, right: window.innerWidth - rect.left + 6 });
+    } else {
+      // Docked-left or float: pop out to the right of the wrap.
+      setPos({ top: rect.top, left: rect.right + 6 });
+    }
+  };
+
   const onMainClick = () => {
     const sub = activeSub();
     activateSub(sub);
+    if (!isOpen()) recomputePos();
     setOpenGroupId(isOpen() ? null : groupDef().id);
   };
 
@@ -240,12 +258,11 @@ function ExtToolGroupBtn(props) {
   };
 
   // Outside-click + Escape handling, mounted only while the menu is open.
-  let menuRef;
   const onDocMouseDown = (e) => {
-    if (!menuRef) return;
-    if (menuRef.contains(e.target)) return;
-    // Also ignore clicks on the main button itself; its onClick handles toggle.
-    if (e.target.closest && e.target.closest(`[data-tool-group-id="${groupDef().id}"]`)) return;
+    // Click inside the portal'd menu: keep open.
+    if (menuRef && menuRef.contains(e.target)) return;
+    // Click on main button (inside the wrap): its own onClick handles toggle.
+    if (wrapRef && wrapRef.contains(e.target)) return;
     setOpenGroupId(null);
   };
   const onDocKey = (e) => {
@@ -264,14 +281,22 @@ function ExtToolGroupBtn(props) {
     document.removeEventListener('keydown', onDocKey);
     listenersAttached = false;
   };
-  // Reactively attach/detach listeners when the menu opens/closes.
+  // Reactively attach/detach listeners when the menu opens/closes. Also
+  // re-compute position on window resize while the menu is open.
   createEffect(() => {
-    if (isOpen()) ensureListeners();
-    else removeListeners();
+    if (isOpen()) {
+      ensureListeners();
+      const onResize = () => recomputePos();
+      window.addEventListener('resize', onResize);
+      onCleanup(() => window.removeEventListener('resize', onResize));
+    } else {
+      removeListeners();
+    }
   });
   onCleanup(removeListeners);
 
-  // Sub-menu position class based on palette docked side.
+  // Sub-menu position class based on palette docked side (kept for any
+  // future side-specific visual tweaks; positioning itself is now inline).
   const sideClass = () => {
     const s = props.side;
     if (s === 'left') return 'from-docked-left';
@@ -287,35 +312,47 @@ function ExtToolGroupBtn(props) {
     return sub.label || sub.id;
   };
 
+  const submenuStyle = () => {
+    const p = pos();
+    const s = { position: 'fixed', top: `${p.top}px` };
+    if (p.left !== undefined) s.left = `${p.left}px`;
+    if (p.right !== undefined) s.right = `${p.right}px`;
+    return s;
+  };
+
   return (
-    <div class="tp-btn-group-wrap" data-tool-group-id={groupDef().id} style="position:relative; display:inline-flex;">
+    <div ref={wrapRef} class="tp-btn-group-wrap">
       <button
         class={`tp-btn has-sub ${isActive() ? 'active' : ''}`}
         disabled={toolDisabled()}
         onClick={onMainClick}
         title={props.title}
+        aria-haspopup="menu"
+        aria-expanded={isOpen() ? 'true' : 'false'}
         innerHTML={activeSub().icon}
       />
       <span class="tp-btn-chevron" aria-hidden="true">▸</span>
       <Show when={isOpen()}>
-        <div ref={menuRef} class={`tp-submenu ${sideClass()}`}>
-          <For each={groupDef().subTools}>
-            {(sub) => {
-              const subActive = () =>
-                state.currentTool === sub.tool &&
-                subOverridesEqual(sub.overrides || null, state.toolOverrides || null);
-              return (
-                <button
-                  class={`tp-btn ${subActive() ? 'active' : ''}`}
-                  disabled={toolDisabled()}
-                  onClick={() => onSubClick(sub)}
-                  title={subTitle(sub)}
-                  innerHTML={sub.icon}
-                />
-              );
-            }}
-          </For>
-        </div>
+        <Portal>
+          <div ref={menuRef} class={`tp-submenu ${sideClass()}`} style={submenuStyle()}>
+            <For each={groupDef().subTools}>
+              {(sub) => {
+                const subActive = () =>
+                  state.currentTool === sub.tool &&
+                  overridesEqual(sub.overrides || null, state.toolOverrides || null);
+                return (
+                  <button
+                    class={`tp-btn ${subActive() ? 'active' : ''}`}
+                    disabled={toolDisabled()}
+                    onClick={() => onSubClick(sub)}
+                    title={subTitle(sub)}
+                    innerHTML={sub.icon}
+                  />
+                );
+              }}
+            </For>
+          </div>
+        </Portal>
       </Show>
     </div>
   );
