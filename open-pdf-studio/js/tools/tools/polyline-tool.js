@@ -26,6 +26,15 @@ export const polylineTool = {
       return;
     }
 
+    // Close-contour-snap: als pending, sluit polyline als polygon en stop.
+    if (state._closeContourPending) {
+      state._polylineClosedRequested = true;
+      _finishPolyline(ctx);
+      state._closeContourPending = false;
+      state._polylineClosedRequested = false;
+      return;
+    }
+
     // Single click — add point (with snap)
     const snap = ctx.snap(x, y, null, state.polylinePoints);
     let ptX = snap.snapped ? snap.x : x;
@@ -88,6 +97,23 @@ export const polylineTool = {
       }
     }
 
+    // Close-contour-snap: als cursor < 8 screen-pixels van eerste vertex (en >= 3 vertices),
+    // snap cursor naar eerste vertex en zet visuele indicator.
+    const closeTol = 8 / scale;
+    if (state.polylinePoints.length >= 3) {
+      const first = state.polylinePoints[0];
+      const dToFirst = Math.hypot(snapX - first.x, snapY - first.y);
+      if (dToFirst < closeTol) {
+        snapX = first.x;
+        snapY = first.y;
+        state._closeContourPending = true;
+      } else {
+        state._closeContourPending = false;
+      }
+    } else {
+      state._closeContourPending = false;
+    }
+
     ctx.redraw();
     canvasCtx.save();
     applyToolTransform(canvasCtx);
@@ -102,8 +128,19 @@ export const polylineTool = {
     });
     canvasCtx.lineTo(snapX, snapY);
     canvasCtx.stroke();
+
+    // Close-contour indicator: cyan cirkel rond eerste vertex als snap actief is.
+    if (state._closeContourPending) {
+      const first = state.polylinePoints[0];
+      canvasCtx.strokeStyle = '#1D90E0';
+      canvasCtx.lineWidth = 2 / scale;
+      canvasCtx.beginPath();
+      canvasCtx.arc(first.x, first.y, closeTol, 0, 2 * Math.PI);
+      canvasCtx.stroke();
+    }
+
     canvasCtx.restore();
-    if (snap.snapped) {
+    if (snap.snapped && !state._closeContourPending) {
       ctx.drawSnapIndicator(snap);
     }
   },
@@ -259,6 +296,7 @@ function _finishPolyline(ctx) {
         pageWidth: dims?.widthPt,
         pageHeight: dims?.heightPt,
         currentPage,
+        closed: state._polylineClosedRequested === true,
       };
       const annProps = typeHandler.create(0, 0, 0, 0, null, enrichedState);
       if (annProps) {
