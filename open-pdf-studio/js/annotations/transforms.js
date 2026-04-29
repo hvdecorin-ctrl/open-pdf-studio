@@ -1012,6 +1012,37 @@ export function applyMove(annotation, deltaX, deltaY) {
         });
       }
       break;
+
+    default:
+      // Generic move for plugin-registered types (e.g. symitech.schade,
+      // symitech.scheur, symitech.vloer-contour). Without this branch any
+      // annotation whose type isn't in the built-in switch would silently
+      // refuse to move when dragged with the hand-tool.
+      // Strategy: shift any of the well-known position-bearing fields that
+      // are present on the annotation. Plugins that need custom semantics
+      // can still opt out by setting `annotation.locked = true` (handled
+      // at the top of this function).
+      if (typeof annotation.x === 'number') annotation.x += deltaX;
+      if (typeof annotation.y === 'number') annotation.y += deltaY;
+      if (typeof annotation.startX === 'number') annotation.startX += deltaX;
+      if (typeof annotation.startY === 'number') annotation.startY += deltaY;
+      if (typeof annotation.endX === 'number') annotation.endX += deltaX;
+      if (typeof annotation.endY === 'number') annotation.endY += deltaY;
+      if (Array.isArray(annotation.points)) {
+        annotation.points = annotation.points.map(p => ({
+          ...p,
+          x: typeof p.x === 'number' ? p.x + deltaX : p.x,
+          y: typeof p.y === 'number' ? p.y + deltaY : p.y,
+        }));
+      }
+      if (Array.isArray(annotation.path)) {
+        annotation.path = annotation.path.map(p => ({
+          ...p,
+          x: typeof p.x === 'number' ? p.x + deltaX : p.x,
+          y: typeof p.y === 'number' ? p.y + deltaY : p.y,
+        }));
+      }
+      break;
   }
 
   annotation.modifiedAt = new Date().toISOString();
