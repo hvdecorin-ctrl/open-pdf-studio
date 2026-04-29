@@ -14,9 +14,13 @@ export const polylineTool = {
     const { x, y, state, canvasCtx, scale } = ctx;
     const prefs = state.preferences;
 
-    // Right-click finishes
+    // Right-click finishes. Mark _suppressNextContextmenu zodat de
+    // contextmenu-event die direct na deze pointerdown vuurt, niet ook
+    // het selectie-menu opent. User-eis: 1e rechtermuisklik = polyline
+    // sluiten, 2e rechtermuisklik (na sluiten) = menu zoals normaal.
     if (e.button === 2) {
       _finishPolyline(ctx);
+      state._suppressNextContextmenu = true;
       return;
     }
 

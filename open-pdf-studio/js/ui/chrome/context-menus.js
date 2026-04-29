@@ -60,6 +60,15 @@ export function initContextMenus() {
         e.preventDefault();
         return;
       }
+      // Tool just finished via right-click (polyline sluit-operatie). Slik
+      // dit ene contextmenu-event in zodat de gebruiker niet onmiddellijk
+      // het selectie-menu krijgt nadat hij de scheur/polygoon afsloot.
+      // Volgende rechtermuisklik werkt weer normaal.
+      if (state._suppressNextContextmenu) {
+        state._suppressNextContextmenu = false;
+        e.preventDefault();
+        return;
+      }
 
       const rect = annotationCanvas.getBoundingClientRect();
       const doc = getActiveDocument();
