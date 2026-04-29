@@ -6,6 +6,7 @@ import { redrawAnnotations, redrawContinuous } from '../../annotations/rendering
 import { computeTextboxContentHeight } from '../../annotations/rendering/shapes.js';
 import { formatDate, getTypeDisplayName } from '../../utils/helpers.js';
 import { getAnnotationType } from '../../plugins/annotation-type-registry.js';
+import { getPropertyPanel } from '../../plugins/property-panel-registry.js';
 import i18next from '../../i18n/config.js';
 import { syncDocScale } from '../../annotations/scale-bar.js';
 import { recalculateAllMeasurements, calculateArea, calculatePerimeter, formatMeasurement } from '../../annotations/measurement.js';
@@ -119,6 +120,10 @@ const [docInfo, setDocInfo] = createStore({
 
 // Custom fields from plugin annotation types
 const [customFieldsDef, setCustomFieldsDef] = createSignal([]);
+
+// Custom plugin property-panel renderer (full DOM-based, ipv text-only fields).
+// When non-null, plugin renders the entire panel-body for its annotation type.
+const [customPanelRender, setCustomPanelRender] = createSignal(null);
 
 // Current annotation reference for write-back
 let currentAnnotation = null;
@@ -251,6 +256,12 @@ export function storeShowProperties(annotation) {
   });
 
   computeSectionVisibility(annotation.type);
+
+  // Plugin custom panel: if a renderer is registered for this annotation type,
+  // store it so PropertiesPanel.jsx can mount the plugin DOM.
+  const customRenderer = getPropertyPanel(annotation.type);
+  setCustomPanelRender(customRenderer ? () => customRenderer : null);
+
   setPanelMode('annotation');
   setPanelVisible(true);
 }
@@ -259,6 +270,7 @@ export function storeShowProperties(annotation) {
 export function storeHideProperties() {
   currentAnnotation = null;
   setPanelMode('none');
+  setCustomPanelRender(null);
 
   // Hide all annotation sections
   setSectionVis({
@@ -966,4 +978,5 @@ export {
   sectionVis, setSectionVis,
   docInfo,
   customFieldsDef,
+  customPanelRender,
 };

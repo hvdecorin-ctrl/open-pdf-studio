@@ -16,6 +16,7 @@ import ContentSection from './ContentSection.jsx';
 import ImageSection from './ImageSection.jsx';
 import ActionsSection from './ActionsSection.jsx';
 import CustomFieldsSection from './CustomFieldsSection.jsx';
+import CustomPluginPanel from './CustomPluginPanel.jsx';
 import CollapsibleSection from './CollapsibleSection.jsx';
 
 export default function PropertiesPanel() {
@@ -130,6 +131,7 @@ export default function PropertiesPanel() {
             <ContentSection />
             <ImageSection />
             <CustomFieldsSection />
+            <CustomPluginPanel />
             <ActionsSection />
           </div>
         </Show>

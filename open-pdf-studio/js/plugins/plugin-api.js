@@ -7,6 +7,7 @@
 
 import { registerAnnotationType, unregisterAnnotationType } from './annotation-type-registry.js';
 import { registerToolPalette, unregisterToolPalette } from './palette-registry.js';
+import { registerPropertyPanel as _registerPropertyPanel, unregisterPropertyPanel as _unregisterPropertyPanel } from './property-panel-registry.js';
 import { state, getActiveDocument } from '../core/state.js';
 import { setTool } from '../tools/manager.js';
 import { createAnnotation } from '../annotations/factory.js';
@@ -15,6 +16,7 @@ import { redrawAnnotations } from '../annotations/rendering.js';
 export function createPluginApi(pluginId) {
   const registeredTypes = [];
   const registeredPalettes = [];
+  const registeredPanels = [];
 
   return {
     pluginId,
@@ -42,6 +44,18 @@ export function createPluginApi(pluginId) {
       unregisterToolPalette(id);
       const idx = registeredPalettes.indexOf(id);
       if (idx >= 0) registeredPalettes.splice(idx, 1);
+    },
+
+    // --- Property panel registration (custom edit-form for plugin annotations) ---
+    registerPropertyPanel(typeName, renderFn) {
+      _registerPropertyPanel(typeName, renderFn);
+      registeredPanels.push(typeName);
+    },
+
+    unregisterPropertyPanel(typeName) {
+      _unregisterPropertyPanel(typeName);
+      const idx = registeredPanels.indexOf(typeName);
+      if (idx >= 0) registeredPanels.splice(idx, 1);
     },
 
     // --- Tool management ---
@@ -80,8 +94,10 @@ export function createPluginApi(pluginId) {
     _cleanup() {
       registeredTypes.forEach(t => unregisterAnnotationType(t));
       registeredPalettes.forEach(id => unregisterToolPalette(id));
+      registeredPanels.forEach(t => _unregisterPropertyPanel(t));
       registeredTypes.length = 0;
       registeredPalettes.length = 0;
+      registeredPanels.length = 0;
     }
   };
 }
