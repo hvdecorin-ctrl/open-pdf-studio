@@ -277,6 +277,18 @@ export function getAnnotationHandles(annotation, scale = 1) {
       // Text markup annotations use per-rect selection outlines (drawn in selection.js)
       // No bounding-box handles — they can only be moved or deleted
       break;
+
+    default:
+      // Fallback for plugin annotation types (e.g. symitech.scheur, symitech.vloer-contour,
+      // symitech.doorvoer-polyline-closed, symitech.doorvoer-line-contour,
+      // symitech.niet-onderzocht-polyline-closed): any annotation that exposes a
+      // points: Array<{x,y}> field gets per-vertex polyline_node handles automatically.
+      if (annotation.points && Array.isArray(annotation.points) && annotation.points.length > 0) {
+        annotation.points.forEach((p, i) => {
+          handles.push({ type: HANDLE_TYPES.POLYLINE_NODE, x: p.x - hs/2, y: p.y - hs/2, nodeIndex: i });
+        });
+      }
+      break;
   }
 
   // If the annotation is rotated, rotate all handle positions around the annotation center
