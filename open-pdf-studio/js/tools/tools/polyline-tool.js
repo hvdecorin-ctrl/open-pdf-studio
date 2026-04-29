@@ -41,11 +41,14 @@ export const polylineTool = {
     let ptY = snap.snapped ? snap.y : y;
 
     // Plugin shift-snap: when shift held + handler exposes snapHook, snap to last vertex.
+    // 5th arg = full prior-points list so the handler can compute snaps relative
+    // to the last segment direction (e.g. perpendicular/parallel for rect-drawing
+    // at non-axis-aligned starting angles).
     if (e?.shiftKey && state.polylinePoints.length > 0) {
       const handler = getAnnotationType(state.currentTool);
       if (handler && typeof handler.snapHook === 'function') {
         const last = state.polylinePoints[state.polylinePoints.length - 1];
-        const snapped = handler.snapHook(last.x, last.y, ptX, ptY);
+        const snapped = handler.snapHook(last.x, last.y, ptX, ptY, state.polylinePoints);
         ptX = snapped.x;
         ptY = snapped.y;
       }
@@ -91,7 +94,7 @@ export const polylineTool = {
       const handler = getAnnotationType(state.currentTool);
       if (handler && typeof handler.snapHook === 'function') {
         const last = state.polylinePoints[state.polylinePoints.length - 1];
-        const snapped = handler.snapHook(last.x, last.y, snapX, snapY);
+        const snapped = handler.snapHook(last.x, last.y, snapX, snapY, state.polylinePoints);
         snapX = snapped.x;
         snapY = snapped.y;
       }
