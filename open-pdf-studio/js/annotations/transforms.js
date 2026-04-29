@@ -842,6 +842,41 @@ export function applyResize(annotation, handleType, deltaX, deltaY, originalAnn,
       if (annotation.width < 20) annotation.width = 20;
       if (annotation.height < 20) annotation.height = 20;
       break;
+
+    default:
+      // Plugin polyline fallback: any annotation-type with a points array supports
+      // polyline_node_<i> handle-drag identically to the builtin polyline case.
+      if (typeof handleType === 'string' && handleType.startsWith('polyline_node_') &&
+          originalAnn.points && Array.isArray(originalAnn.points)) {
+        const nodeIdx = parseInt(handleType.split('_').pop(), 10);
+        if (!isNaN(nodeIdx) && nodeIdx < originalAnn.points.length) {
+          annotation.points = originalAnn.points.map((p, i) => {
+            if (i === nodeIdx) {
+              let nx = p.x + deltaX, ny = p.y + deltaY;
+              if (shiftKey) {
+                const len = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+                if (len > 0) {
+                  const ang = snapAngle(Math.atan2(deltaY, deltaX) * (180 / Math.PI), 45) * (Math.PI / 180);
+                  nx = p.x + len * Math.cos(ang);
+                  ny = p.y + len * Math.sin(ang);
+                }
+              }
+              return { x: nx, y: ny };
+            }
+            return { x: p.x, y: p.y };
+          });
+          // Recalculate bounding box if annotation tracks x/y/width/height
+          if (typeof annotation.x === 'number') {
+            const xs = annotation.points.map(p => p.x);
+            const ys = annotation.points.map(p => p.y);
+            annotation.x = Math.min(...xs);
+            annotation.y = Math.min(...ys);
+            annotation.width = Math.max(...xs) - annotation.x;
+            annotation.height = Math.max(...ys) - annotation.y;
+          }
+        }
+      }
+      break;
   }
 
   annotation.modifiedAt = new Date().toISOString();
