@@ -6,6 +6,8 @@ import { redrawAnnotations, redrawContinuous } from '../../annotations/rendering
 import { computeTextboxContentHeight } from '../../annotations/rendering/shapes.js';
 import { formatDate, getTypeDisplayName } from '../../utils/helpers.js';
 import { getAnnotationType } from '../../plugins/annotation-type-registry.js';
+import { getPropertyPanel } from '../../plugins/property-panel-registry.js';
+import { fireSelectionChange } from '../../plugins/selection-listener-registry.js';
 import i18next from '../../i18n/config.js';
 import { syncDocScale } from '../../annotations/scale-bar.js';
 import { recalculateAllMeasurements, calculateArea, calculatePerimeter, formatMeasurement } from '../../annotations/measurement.js';
@@ -120,6 +122,16 @@ const [docInfo, setDocInfo] = createStore({
 // Custom fields from plugin annotation types
 const [customFieldsDef, setCustomFieldsDef] = createSignal([]);
 
+// Custom plugin property-panel renderer (full DOM-based, ipv text-only fields).
+// When non-null, plugin renders the entire panel-body for its annotation type.
+const [customPanelRender, setCustomPanelRender] = createSignal(null);
+
+// Plugin-driven hide of the native eigenschappen-paneel. When true, the host
+// PropertiesPanel renders nothing — plugin owns all controls (e.g. inside
+// its own tool-palette). Always restored to false on plugin-deactivate.
+const [nativePanelHidden, setNativePanelHidden] = createSignal(false);
+export { nativePanelHidden, setNativePanelHidden };
+
 // Current annotation reference for write-back
 let currentAnnotation = null;
 
@@ -187,6 +199,9 @@ function computeSectionVisibility(type) {
 // Show properties for a single annotation
 export function storeShowProperties(annotation) {
   currentAnnotation = annotation;
+  // Fire plugin selection-listeners (separate from property-panel-registry):
+  // gives plugins a direct channel to react to selection without scraping DOM.
+  fireSelectionChange(annotation);
   const isLocked = annotation.locked || false;
 
   setAnnotProps({
@@ -251,6 +266,12 @@ export function storeShowProperties(annotation) {
   });
 
   computeSectionVisibility(annotation.type);
+
+  // Plugin custom panel: if a renderer is registered for this annotation type,
+  // store it so PropertiesPanel.jsx can mount the plugin DOM.
+  const customRenderer = getPropertyPanel(annotation.type);
+  setCustomPanelRender(customRenderer ? () => customRenderer : null);
+
   setPanelMode('annotation');
   setPanelVisible(true);
 }
@@ -258,7 +279,9 @@ export function storeShowProperties(annotation) {
 // Hide properties (deselect annotation, show doc info)
 export function storeHideProperties() {
   currentAnnotation = null;
+  fireSelectionChange(null);
   setPanelMode('none');
+  setCustomPanelRender(null);
 
   // Hide all annotation sections
   setSectionVis({
@@ -292,6 +315,7 @@ export function storeHideProperties() {
 // Close the panel entirely
 export function storeClosePanel() {
   currentAnnotation = null;
+  fireSelectionChange(null);
   setPanelVisible(false);
 }
 
@@ -308,6 +332,8 @@ function sharedValue(selected, getter, fallback) {
 export function storeShowMultiSelection(selected) {
   if (!selected || selected.length < 2) return;
   currentAnnotation = null;
+  // Multi-selection clears single-select listeners (plugins react to single).
+  fireSelectionChange(null);
 
   const sharedType = sharedValue(selected, a => a.type, '');
   const sharedAuthor = sharedValue(selected, a => a.author || state.defaultAuthor, '');
@@ -676,7 +702,20 @@ function recomputeMeasureText(ann) {
   }
 }
 
-// Update a single annotation property (write to store + annotation + undo + redraw)
+/**
+ * Update a single annotation property (write to store + annotation + undo + redraw).
+ *
+ * Plugin dot-path support: keys containing `.` (e.g. `data.address.email`) walk
+ * the annotation object, creating intermediate objects as needed. This means
+ * plugin annotation-keys MUST NOT contain a literal `.` character — a key like
+ * `version1.0` would be interpreted as `version1` -> `0`. Use snake_case or
+ * camelCase for plugin field names. Dot-path writes do NOT mirror into the
+ * flat Solid `annotProps` store — plugin panels are expected to read from
+ * their own form-state, not from `annotProps`.
+ *
+ * @param {string} key   Property name. May be a dot-path for nested writes.
+ * @param {*}      value New value.
+ */
 export function updateAnnotProp(key, value) {
   // Multi-selection mode: apply to all selected annotations
   if (annotProps.multiCount > 0) {
@@ -875,11 +914,31 @@ export function updateAnnotProp(key, value) {
       recalculateAllMeasurements();
       break;
     }
-    default: currentAnnotation[key] = value; break;
+    default: {
+      // Dot-path support for plugin nested writes (e.g., 'data.address.email').
+      // Walks the chain creating intermediate objects when missing.
+      if (key.includes('.')) {
+        const parts = key.split('.');
+        let target = currentAnnotation;
+        for (let i = 0; i < parts.length - 1; i++) {
+          const seg = parts[i];
+          if (target[seg] == null || typeof target[seg] !== 'object') {
+            target[seg] = {};
+          }
+          target = target[seg];
+        }
+        target[parts[parts.length - 1]] = value;
+      } else {
+        currentAnnotation[key] = value;
+      }
+      break;
+    }
   }
 
   // Update store (skip custom fields — they read directly from annotation)
-  if (!key.startsWith('tb')) {
+  // Skip dot-paths too: plugin-nested writes don't need to mirror into the
+  // flat Solid store; plugin panels read from their own form-state.
+  if (!key.startsWith('tb') && !key.includes('.')) {
     setAnnotProps(key, value);
   }
 
@@ -966,4 +1025,5 @@ export {
   sectionVis, setSectionVis,
   docInfo,
   customFieldsDef,
+  customPanelRender,
 };

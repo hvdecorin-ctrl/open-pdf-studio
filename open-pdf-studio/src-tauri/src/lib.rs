@@ -168,14 +168,31 @@ async fn is_default_pdf_app() -> bool {
             stdout2.contains("openpdfstudio") || stdout2.contains(&our_exe.replace('\\', "\\\\"))
         }
 
-        #[cfg(not(target_os = "windows"))]
+        #[cfg(target_os = "linux")]
+        {
+            // Use xdg-mime: works on any XDG-compliant desktop (GNOME, KDE,
+            // Cinnamon, MATE, XFCE) across distros (Mint, Ubuntu, Fedora, Arch).
+            let output = match std::process::Command::new("xdg-mime")
+                .args(&["query", "default", "application/pdf"])
+                .output()
+            {
+                Ok(o) => o,
+                Err(_) => return false,
+            };
+            let default_desktop = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            default_desktop == "Open PDF Studio.desktop" || default_desktop == "open-pdf-studio.desktop"
+        }
+
+        #[cfg(not(any(target_os = "windows", target_os = "linux")))]
         {
             false
         }
     }).await.unwrap_or(false)
 }
 
-/// Open Windows "Default Apps" settings page so user can set default PDF app.
+/// Make this app the default handler for .pdf files.
+/// On Windows, opens the system default-apps settings page. On Linux, sets the
+/// xdg-mime default directly (no system UI for this exists on most desktops).
 #[tauri::command]
 fn open_default_apps_settings() -> Result<bool, String> {
     #[cfg(target_os = "windows")]
@@ -188,7 +205,31 @@ fn open_default_apps_settings() -> Result<bool, String> {
         Ok(true)
     }
 
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(target_os = "linux")]
+    {
+        // xdg-mime is the desktop-environment agnostic way to set the default
+        // handler. The .desktop filename must match what tauri-bundler wrote in
+        // /usr/share/applications (the bundle uses the app's productName).
+        let status = std::process::Command::new("xdg-mime")
+            .args(&["default", "Open PDF Studio.desktop", "application/pdf"])
+            .status()
+            .map_err(|e| {
+                if e.kind() == std::io::ErrorKind::NotFound {
+                    "xdg-mime not found. Install xdg-utils (e.g. `sudo apt install xdg-utils`) and try again.".to_string()
+                } else {
+                    format!("Failed to run xdg-mime: {}", e)
+                }
+            })?;
+        if !status.success() {
+            return Err(format!(
+                "xdg-mime exited with status {}. The .desktop file may not be registered — install Open PDF Studio via the bundled .deb/.AppImage so /usr/share/applications/Open PDF Studio.desktop exists.",
+                status
+            ));
+        }
+        Ok(true)
+    }
+
+    #[cfg(not(any(target_os = "windows", target_os = "linux")))]
     {
         Ok(false)
     }
@@ -1136,8 +1177,34 @@ fn get_page_dimensions(
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    // Check for PDF files in command line arguments
     let args: Vec<String> = std::env::args().collect();
+
+    // Handle --version / --help before Tauri::Builder::default().run() so these
+    // flags print and exit instead of hanging in the event loop. Running the
+    // full builder also squats the single-instance DBus name, which blocks
+    // subsequent normal launches until the name is released.
+    for arg in args.iter().skip(1) {
+        match arg.as_str() {
+            "--version" | "-V" => {
+                println!("{} {}", env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"));
+                std::process::exit(0);
+            }
+            "--help" | "-h" => {
+                println!("Usage: {} [OPTIONS] [FILE...]", env!("CARGO_PKG_NAME"));
+                println!();
+                println!("Options:");
+                println!("  -h, --help       Print this help and exit");
+                println!("  -V, --version    Print version and exit");
+                println!();
+                println!("Files:");
+                println!("  One or more .pdf files to open.");
+                std::process::exit(0);
+            }
+            _ => {}
+        }
+    }
+
+    // Collect any PDF file paths passed on the command line (for file associations)
     let opened_files: Vec<String> = args.iter()
         .skip(1)
         .filter(|arg| arg.to_lowercase().ends_with(".pdf") && !arg.starts_with('-'))

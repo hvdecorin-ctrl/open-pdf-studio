@@ -1375,7 +1375,7 @@
 
 .new-doc-select {
   flex: 1;
-  padding: 3px 6px;
+  padding: 3px 24px 3px 6px;
   border: 1px solid var(--theme-border, #acacac);
   border-radius: 0;
   font-size: 11px;
@@ -1383,6 +1383,23 @@
   background-color: var(--theme-surface, white);
   color: var(--theme-text, inherit);
   cursor: pointer;
+  /* Linux/Chromium <select> negeert background-color en color en valt terug
+     op de OS-native widget. Forceer custom rendering met appearance:none plus
+     een handmatig getekende dropdown-pijl, zodat dark-theme correct werkt. */
+  appearance: none;
+  -webkit-appearance: none;
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--theme-text, #fafaf9) 50%),
+    linear-gradient(135deg, var(--theme-text, #fafaf9) 50%, transparent 50%);
+  background-position: calc(100% - 14px) center, calc(100% - 9px) center;
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+}
+
+.new-doc-select option,
+.new-doc-select optgroup {
+  background-color: var(--theme-surface, white);
+  color: var(--theme-text, inherit);
 }
 
 .new-doc-select:focus {

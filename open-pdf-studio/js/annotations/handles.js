@@ -277,6 +277,39 @@ export function getAnnotationHandles(annotation, scale = 1) {
       // Text markup annotations use per-rect selection outlines (drawn in selection.js)
       // No bounding-box handles — they can only be moved or deleted
       break;
+
+    default:
+      // Fallback for plugin annotation types (e.g. symitech.scheur, symitech.vloer-contour,
+      // symitech.doorvoer-polyline-closed, symitech.doorvoer-line-contour,
+      // symitech.niet-onderzocht-polyline-closed): any annotation that exposes a
+      // points: Array<{x,y}> field gets per-vertex polyline_node handles automatically.
+      if (annotation.points && Array.isArray(annotation.points) && annotation.points.length > 0) {
+        annotation.points.forEach((p, i) => {
+          handles.push({ type: HANDLE_TYPES.POLYLINE_NODE, x: p.x - hs/2, y: p.y - hs/2, nodeIndex: i });
+        });
+      } else if (
+        typeof annotation.x === 'number'
+        && typeof annotation.y === 'number'
+        && typeof annotation.w === 'number'
+        && typeof annotation.h === 'number'
+      ) {
+        // Plugin rect/oval-area types (symitech.doorvoer.rect-area,
+        // symitech.doorvoer.oval-area, symitech.niet-onderzocht.rect-area,
+        // symitech.niet-onderzocht.oval-area) store geometry as
+        // {x, y, w, h} (not width/height). Emit the same 4 corner + 4 edge
+        // handles built-in box/circle types use, so users can resize after
+        // placement by dragging any handle.
+        const ax = annotation.x, ay = annotation.y, aw = annotation.w, ah = annotation.h;
+        handles.push({ type: HANDLE_TYPES.TOP_LEFT, x: ax - hs/2, y: ay - hs/2 });
+        handles.push({ type: HANDLE_TYPES.TOP_RIGHT, x: ax + aw - hs/2, y: ay - hs/2 });
+        handles.push({ type: HANDLE_TYPES.BOTTOM_LEFT, x: ax - hs/2, y: ay + ah - hs/2 });
+        handles.push({ type: HANDLE_TYPES.BOTTOM_RIGHT, x: ax + aw - hs/2, y: ay + ah - hs/2 });
+        handles.push({ type: HANDLE_TYPES.TOP, x: ax + aw/2 - hs/2, y: ay - hs/2 });
+        handles.push({ type: HANDLE_TYPES.BOTTOM, x: ax + aw/2 - hs/2, y: ay + ah - hs/2 });
+        handles.push({ type: HANDLE_TYPES.LEFT, x: ax - hs/2, y: ay + ah/2 - hs/2 });
+        handles.push({ type: HANDLE_TYPES.RIGHT, x: ax + aw - hs/2, y: ay + ah/2 - hs/2 });
+      }
+      break;
   }
 
   // If the annotation is rotated, rotate all handle positions around the annotation center

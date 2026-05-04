@@ -255,3 +255,40 @@
   text-align: center;
   font-size: 12px;
 }
+
+/* --- Tool-group sub-menu (G4b) --- */
+/*
+ * Layout note: the wrap holds the main button + chevron. The sub-menu is
+ * rendered into a Solid <Portal> (escapes docked-palette overflow:hidden) and
+ * positioned via inline style (position: fixed, computed from
+ * wrap.getBoundingClientRect()). So this stylesheet only owns the visual
+ * presentation of the menu, not its placement.
+ */
+.tp-btn.has-sub { position: relative; }
+/*
+ * position:relative anchors the absolutely-positioned .tp-btn-chevron to the
+ * wrap (the chevron sits over the bottom-right corner of the main button).
+ * The sub-menu is portaled out and does NOT use this as its containing block.
+ */
+.tp-btn-group-wrap { position: relative; display: inline-flex; }
+.tp-btn-chevron {
+  position: absolute;
+  right: 2px;
+  bottom: 1px;
+  font-size: 8px;
+  line-height: 1;
+  opacity: 0.6;
+  pointer-events: none;
+  color: var(--theme-ribbon-icon-stroke);
+}
+.tp-submenu {
+  background: var(--theme-surface, #2a2a2a);
+  border: 1px solid var(--theme-border, transparent);
+  border-radius: 6px;
+  padding: 4px;
+  display: flex;
+  gap: 2px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  z-index: 1000;
+}
+.tp-submenu .tp-btn { width: 32px; height: 32px; }

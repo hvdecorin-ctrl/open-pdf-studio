@@ -842,6 +842,94 @@ export function applyResize(annotation, handleType, deltaX, deltaY, originalAnn,
       if (annotation.width < 20) annotation.width = 20;
       if (annotation.height < 20) annotation.height = 20;
       break;
+
+    default:
+      // Plugin rect/oval-area resize: types that use {x, y, w, h} (not
+      // width/height) get corner/edge resize support here. Mirrors the
+      // built-in 'box' case but writes to `w`/`h` instead.
+      if (
+        typeof originalAnn.x === 'number'
+        && typeof originalAnn.y === 'number'
+        && typeof originalAnn.w === 'number'
+        && typeof originalAnn.h === 'number'
+        && typeof handleType === 'string'
+        && !handleType.startsWith('polyline_node_')
+      ) {
+        switch (handleType) {
+          case HANDLE_TYPES.TOP_LEFT:
+            annotation.x = originalAnn.x + deltaX;
+            annotation.y = originalAnn.y + deltaY;
+            annotation.w = originalAnn.w - deltaX;
+            annotation.h = originalAnn.h - deltaY;
+            break;
+          case HANDLE_TYPES.TOP_RIGHT:
+            annotation.y = originalAnn.y + deltaY;
+            annotation.w = originalAnn.w + deltaX;
+            annotation.h = originalAnn.h - deltaY;
+            break;
+          case HANDLE_TYPES.BOTTOM_LEFT:
+            annotation.x = originalAnn.x + deltaX;
+            annotation.w = originalAnn.w - deltaX;
+            annotation.h = originalAnn.h + deltaY;
+            break;
+          case HANDLE_TYPES.BOTTOM_RIGHT:
+            annotation.w = originalAnn.w + deltaX;
+            annotation.h = originalAnn.h + deltaY;
+            break;
+          case HANDLE_TYPES.TOP:
+            annotation.y = originalAnn.y + deltaY;
+            annotation.h = originalAnn.h - deltaY;
+            break;
+          case HANDLE_TYPES.BOTTOM:
+            annotation.h = originalAnn.h + deltaY;
+            break;
+          case HANDLE_TYPES.LEFT:
+            annotation.x = originalAnn.x + deltaX;
+            annotation.w = originalAnn.w - deltaX;
+            break;
+          case HANDLE_TYPES.RIGHT:
+            annotation.w = originalAnn.w + deltaX;
+            break;
+        }
+        // Minimum-size guard: collapsing below 10 px makes the shape
+        // unreachable. Mirror the box-case minimum.
+        if (annotation.w < 10) annotation.w = 10;
+        if (annotation.h < 10) annotation.h = 10;
+        break;
+      }
+      // Plugin polyline fallback: any annotation-type with a points array supports
+      // polyline_node_<i> handle-drag identically to the builtin polyline case.
+      if (typeof handleType === 'string' && handleType.startsWith('polyline_node_') &&
+          originalAnn.points && Array.isArray(originalAnn.points)) {
+        const nodeIdx = parseInt(handleType.split('_').pop(), 10);
+        if (!isNaN(nodeIdx) && nodeIdx < originalAnn.points.length) {
+          annotation.points = originalAnn.points.map((p, i) => {
+            if (i === nodeIdx) {
+              let nx = p.x + deltaX, ny = p.y + deltaY;
+              if (shiftKey) {
+                const len = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+                if (len > 0) {
+                  const ang = snapAngle(Math.atan2(deltaY, deltaX) * (180 / Math.PI), 45) * (Math.PI / 180);
+                  nx = p.x + len * Math.cos(ang);
+                  ny = p.y + len * Math.sin(ang);
+                }
+              }
+              return { x: nx, y: ny };
+            }
+            return { x: p.x, y: p.y };
+          });
+          // Recalculate bounding box if annotation tracks x/y/width/height
+          if (typeof annotation.x === 'number') {
+            const xs = annotation.points.map(p => p.x);
+            const ys = annotation.points.map(p => p.y);
+            annotation.x = Math.min(...xs);
+            annotation.y = Math.min(...ys);
+            annotation.width = Math.max(...xs) - annotation.x;
+            annotation.height = Math.max(...ys) - annotation.y;
+          }
+        }
+      }
+      break;
   }
 
   annotation.modifiedAt = new Date().toISOString();
@@ -975,6 +1063,47 @@ export function applyMove(annotation, deltaX, deltaY) {
             quad[6] + deltaX, quad[7] + deltaY   // bottom-right
           ];
         });
+      }
+      break;
+
+    default:
+      // Generic move for plugin-registered types (e.g. symitech.schade,
+      // symitech.scheur, symitech.vloer-contour). Without this branch any
+      // annotation whose type isn't in the built-in switch would silently
+      // refuse to move when dragged with the hand-tool.
+      // Strategy: shift any of the well-known position-bearing fields that
+      // are present on the annotation. Plugins that need custom semantics
+      // can still opt out by setting `annotation.locked = true` (handled
+      // at the top of this function).
+      if (typeof annotation.x === 'number') annotation.x += deltaX;
+      if (typeof annotation.y === 'number') annotation.y += deltaY;
+      if (typeof annotation.startX === 'number') annotation.startX += deltaX;
+      if (typeof annotation.startY === 'number') annotation.startY += deltaY;
+      if (typeof annotation.endX === 'number') annotation.endX += deltaX;
+      if (typeof annotation.endY === 'number') annotation.endY += deltaY;
+      // Nested position-bearing fields used by point-marker plugin types
+      // (symitech.schade, symitech.reeks, symitech.doorvoer.point-marker store
+      // their coordinate as `at: {x, y}` rather than top-level x/y).
+      if (annotation.at && typeof annotation.at === 'object') {
+        if (typeof annotation.at.x === 'number') annotation.at.x += deltaX;
+        if (typeof annotation.at.y === 'number') annotation.at.y += deltaY;
+      }
+      // Center-coordinate variants (e.g. circle/ellipse-shaped plugin types).
+      if (typeof annotation.cx === 'number') annotation.cx += deltaX;
+      if (typeof annotation.cy === 'number') annotation.cy += deltaY;
+      if (Array.isArray(annotation.points)) {
+        annotation.points = annotation.points.map(p => ({
+          ...p,
+          x: typeof p.x === 'number' ? p.x + deltaX : p.x,
+          y: typeof p.y === 'number' ? p.y + deltaY : p.y,
+        }));
+      }
+      if (Array.isArray(annotation.path)) {
+        annotation.path = annotation.path.map(p => ({
+          ...p,
+          x: typeof p.x === 'number' ? p.x + deltaX : p.x,
+          y: typeof p.y === 'number' ? p.y + deltaY : p.y,
+        }));
       }
       break;
   }

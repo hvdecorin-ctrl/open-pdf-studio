@@ -186,6 +186,14 @@ export async function renderPage(pageNum) {
   }
   const viewport = page.getViewport(viewportOpts);
 
+  // Cache page dimensions in PDF points on the doc so plugin annotation
+  // handlers can read them synchronously at click time without depending
+  // on the pdf-viewport singleton (which is a noop for blank docs whose
+  // vector path is gated off by the filePath check).
+  if (!doc.pageDims) doc.pageDims = {};
+  const [vx0, vy0, vx1, vy1] = page.view;
+  doc.pageDims[pageNum] = { widthPt: vx1 - vx0, heightPt: vy1 - vy0 };
+
   const pdfCanvas = getPdfCanvas();
   const annotationCanvas = getAnnotationCanvas();
   if (!pdfCanvas || !annotationCanvas) return;
@@ -975,7 +983,7 @@ export async function zoomIn() {
   if (doc.viewMode === 'continuous') {
     await renderContinuous();
   } else {
-    await renderPageOffscreen(doc.currentPage);
+    await renderPage(doc.currentPage);
   }
 }
 
@@ -993,7 +1001,7 @@ export async function zoomOut() {
     if (doc.viewMode === 'continuous') {
       await renderContinuous();
     } else {
-      await renderPageOffscreen(doc.currentPage);
+      await renderPage(doc.currentPage);
     }
   }
 }
@@ -1015,7 +1023,7 @@ export async function setZoom(newScale) {
   if (doc.viewMode === 'continuous') {
     await renderContinuous();
   } else {
-    await renderPageOffscreen(doc.currentPage);
+    await renderPage(doc.currentPage);
   }
 }
 
@@ -1076,7 +1084,7 @@ async function _applyZoom(fitInputs, newZoom) {
   if (doc.viewMode === 'continuous') {
     await renderContinuous();
   } else {
-    await renderPageOffscreen(doc.currentPage);
+    await renderPage(doc.currentPage);
   }
 }
 
@@ -1117,7 +1125,7 @@ export async function actualSize() {
     if (doc.viewMode === 'continuous') {
       await renderContinuous();
     } else {
-      await renderPageOffscreen(doc.currentPage);
+      await renderPage(doc.currentPage);
     }
   }
 }

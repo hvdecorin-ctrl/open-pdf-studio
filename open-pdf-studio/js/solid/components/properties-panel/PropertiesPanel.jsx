@@ -1,5 +1,5 @@
 import { Show } from 'solid-js';
-import { panelVisible, panelCollapsed, setPanelCollapsed, annotProps, sectionVis, updateAnnotProp, cycleSelectNext } from '../../stores/propertiesStore.js';
+import { panelVisible, panelCollapsed, setPanelCollapsed, annotProps, sectionVis, updateAnnotProp, cycleSelectNext, nativePanelHidden } from '../../stores/propertiesStore.js';
 import { useTranslation } from '../../../i18n/useTranslation.js';
 import PanelHeader from './PanelHeader.jsx';
 import DocInfoView from './DocInfoView.jsx';
@@ -16,6 +16,7 @@ import ContentSection from './ContentSection.jsx';
 import ImageSection from './ImageSection.jsx';
 import ActionsSection from './ActionsSection.jsx';
 import CustomFieldsSection from './CustomFieldsSection.jsx';
+import CustomPluginPanel from './CustomPluginPanel.jsx';
 import CollapsibleSection from './CollapsibleSection.jsx';
 
 export default function PropertiesPanel() {
@@ -26,7 +27,7 @@ export default function PropertiesPanel() {
   }
 
   return (
-    <Show when={panelVisible()}>
+    <Show when={panelVisible() && !nativePanelHidden()}>
       <div class={`properties-panel-outer ${panelCollapsed() ? 'collapsed' : ''}`}
         onMouseDown={(e) => e.stopPropagation()}
         onClick={(e) => e.stopPropagation()}>
@@ -130,6 +131,7 @@ export default function PropertiesPanel() {
             <ContentSection />
             <ImageSection />
             <CustomFieldsSection />
+            <CustomPluginPanel />
             <ActionsSection />
           </div>
         </Show>

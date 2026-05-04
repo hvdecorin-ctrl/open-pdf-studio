@@ -29,8 +29,16 @@ export function drawShapePreview(currentX, currentY, e) {
 
   const tool = state.currentTool;
 
-  // Build a temporary annotation from current tool + coordinates
-  const tempAnn = buildAnnotationProps(tool, state.startX, state.startY, currentX, currentY, e);
+  // Build a temporary annotation from current tool + coordinates.
+  // Set _isPreview flag so plugin handlers (Symitech SP2) skip counter-bumps
+  // during the per-pointer-move preview-render-loop.
+  state._isPreview = true;
+  let tempAnn;
+  try {
+    tempAnn = buildAnnotationProps(tool, state.startX, state.startY, currentX, currentY, e);
+  } finally {
+    state._isPreview = false;
+  }
 
   if (tempAnn) {
     drawAnnotation(annotationCtx, tempAnn);

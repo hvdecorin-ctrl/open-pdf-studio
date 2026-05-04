@@ -1,4 +1,5 @@
 import { state, getActiveDocument, getPageRotation } from '../../core/state.js';
+import { drawAnnotation } from '../../annotations/rendering.js';
 import { updateAnnotationsList } from './annotations-list.js';
 import { updateAttachmentsList } from './attachments.js';
 import { updateSignaturesList } from './signatures.js';
@@ -25,6 +26,26 @@ const THUMBNAIL_SCALE = 0.2;
 
 // Cache for thumbnail data per document: Map<docId, Map<pageNum, imageDataURL>>
 const thumbnailCache = new Map();
+
+// Per-doc per-page generation counter. Bumped on invalidateThumbnail() so a
+// stale render-completion (annotations changed mid-flight, rapid re-invalidate)
+// can be discarded and not overwrite a newer cache entry. See bumpPageGen /
+// pageGenMatches usage below.
+const pageGeneration = new Map(); // Map<docId, Map<pageNum, int>>
+
+function bumpPageGen(docId, pageNum) {
+  let m = pageGeneration.get(docId);
+  if (!m) { m = new Map(); pageGeneration.set(docId, m); }
+  const g = (m.get(pageNum) || 0) + 1;
+  m.set(pageNum, g);
+  return g;
+}
+function getPageGen(docId, pageNum) {
+  return pageGeneration.get(docId)?.get(pageNum) || 0;
+}
+function pageGenMatches(docId, pageNum, gen) {
+  return getPageGen(docId, pageNum) === gen;
+}
 
 // Store pdfDoc references and state for each document
 const documentState = new Map(); // { pdfDoc, numPages, nextPage, startPage }
@@ -338,9 +359,15 @@ async function processPriorityThumbnail(docId) {
     return priorityPages.size > 0;
   }
 
+  const gen = getPageGen(docId, pageNum);
   try {
     const imageData = await renderThumbnailToDataURL(pdfDoc, pageNum);
     if (imageData) {
+      // Drop result if a newer invalidate raced past us — prevents stale
+      // overlay (e.g. old annotation snapshot) from overwriting fresh cache.
+      if (!pageGenMatches(docId, pageNum, gen)) {
+        return true;
+      }
       docCache.set(pageNum, imageData);
 
       // Update the Solid store so the ThumbnailItem component reacts
@@ -387,9 +414,13 @@ async function processDocumentThumbnail(docId) {
 
     if (docCache.has(pageNum)) continue;
 
+    const gen = getPageGen(docId, pageNum);
     try {
       const imageData = await renderThumbnailToDataURL(pdfDoc, pageNum);
       if (imageData) {
+        if (!pageGenMatches(docId, pageNum, gen)) {
+          return true;
+        }
         docCache.set(pageNum, imageData);
 
         // Update the Solid store so the ThumbnailItem component reacts
@@ -406,6 +437,43 @@ async function processDocumentThumbnail(docId) {
   }
 
   return false;
+}
+
+// Composite plugin/Solid-store annotations on top of a rendered thumbnail
+// dataURL. Returns a new dataURL with annotations overlayed. If the page has
+// no annotations, returns the input dataURL unchanged (zero-cost early-exit).
+async function overlayAnnotationsOnDataURL(dataURL, pageNum, width, height, scale) {
+  const doc = getActiveDocument();
+  const annotations = (doc?.annotations || []).filter(a => a.page === pageNum);
+  if (annotations.length === 0) return dataURL;
+  try {
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d');
+    const img = new Image();
+    await new Promise((resolve, reject) => {
+      img.onload = resolve;
+      img.onerror = reject;
+      img.src = dataURL;
+    });
+    ctx.drawImage(img, 0, 0, width, height);
+    ctx.save();
+    ctx.scale(scale, scale);
+    annotations.forEach(a => {
+      try { drawAnnotation(ctx, a); }
+      catch (e) {
+        // Tolerant: 1 broken annotation mag thumb niet breken — wel loggen
+        // zodat plugin-bugs niet stilletjes verdwijnen in productie.
+        console.warn(`[Thumbnails] drawAnnotation failed page ${pageNum} id=${a?.id ?? '?'} type=${a?.type ?? '?'}:`, e);
+      }
+    });
+    ctx.restore();
+    return canvas.toDataURL('image/jpeg', 0.7);
+  } catch (e) {
+    console.warn(`[Thumbnails] overlay failed for page ${pageNum}:`, e);
+    return dataURL;
+  }
 }
 
 // Render a single page thumbnail — uses Rust backend for speed when available
@@ -428,7 +496,18 @@ async function renderThumbnailToDataURL(pdfDoc, pageNum) {
         skipImages: true,
       });
       const data = JSON.parse(result);
-      return { dataURL: data.dataURL, width: data.width, height: data.height };
+      // Plugin/Solid-store annotations zijn niet in de PDF tot save; overlay
+      // ze hier zodat thumbnail dezelfde inhoud toont als hoofdcanvas.
+      // Scale = thumbnail-pixels / PDF-pt = data.width / pageWidthPt.
+      try {
+        const page = await pdfDoc.getPage(pageNum);
+        const viewport = page.getViewport({ scale: 1 });
+        const scale = data.width / viewport.width;
+        const composited = await overlayAnnotationsOnDataURL(data.dataURL, pageNum, data.width, data.height, scale);
+        return { dataURL: composited, width: data.width, height: data.height };
+      } catch {
+        return { dataURL: data.dataURL, width: data.width, height: data.height };
+      }
     } catch (e) {
       console.warn(`[Thumbnails] Rust render failed for page ${pageNum}:`, e);
       // Fall through to PDF.js fallback
@@ -459,6 +538,27 @@ async function renderThumbnailToDataURL(pdfDoc, pageNum) {
         viewport: viewport,
         annotationMode: 0
       }).promise;
+
+      // Overlay plugin/Solid-store annotations op dezelfde ctx vóór toDataURL.
+      // viewport.width = pdfPtWidth * THUMBNAIL_SCALE, dus scale-factor naar
+      // PDF-pt-coordsysteem = THUMBNAIL_SCALE.
+      try {
+        const docActive = getActiveDocument();
+        const annotations = (docActive?.annotations || []).filter(a => a.page === pageNum);
+        if (annotations.length > 0) {
+          ctx.save();
+          ctx.scale(THUMBNAIL_SCALE, THUMBNAIL_SCALE);
+          annotations.forEach(a => {
+            try { drawAnnotation(ctx, a); }
+            catch (e) {
+              console.warn(`[Thumbnails] drawAnnotation failed (PDF.js path) page ${pageNum} id=${a?.id ?? '?'} type=${a?.type ?? '?'}:`, e);
+            }
+          });
+          ctx.restore();
+        }
+      } catch (e) {
+        console.warn(`[Thumbnails] PDF.js overlay failed for page ${pageNum}:`, e);
+      }
 
       return {
         dataURL: canvas.toDataURL('image/jpeg', 0.7),
@@ -516,6 +616,9 @@ export function invalidateThumbnail(pageNum) {
   if (docCache) {
     docCache.delete(pageNum);
   }
+  // Bump generation: any in-flight render for this page will discard its
+  // result on completion (see pageGenMatches in process*Thumbnail).
+  bumpPageGen(activeDoc.id, pageNum);
   // Remove from Solid store so component shows loading spinner
   removeThumbnailImage(pageNum);
   // Re-add to priority queue and restart processor
