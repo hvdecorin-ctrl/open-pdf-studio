@@ -35,7 +35,6 @@ export default function CompareView() {
   const { t } = useTranslation('ribbon');
   let oldCanvasRef;
   let newCanvasRef;
-  let overlayOldCanvasRef;
   let overlayNewCanvasRef;
   let overlayHighlightCanvasRef;
   let bodyRef;
@@ -108,10 +107,23 @@ export default function CompareView() {
 
   let busy = false;
   let pending = false;
+  // When set, the next doRender() will skip change detection. Used by zoom-
+  // only re-renders since detection bboxes are computed in a fixed
+  // detection-px space and are independent of the display scale.
+  let pendingSkipDetection = false;
 
-  const doRender = async () => {
-    if (busy) { pending = true; return; }
+  const doRender = async (opts2 = {}) => {
+    if (busy) {
+      pending = true;
+      // Keep skip flag sticky-true so zoom-only renders never trigger
+      // detection, but if any non-zoom render is requested while busy, clear
+      // it so detection runs once after the busy render.
+      if (!opts2.skipDetection) pendingSkipDetection = false;
+      return;
+    }
     busy = true;
+    const skipDetection = !!opts2.skipDetection || pendingSkipDetection;
+    pendingSkipDetection = false;
     const zoomAtRender = compareZoom();
     try {
       const opts = {
@@ -121,12 +133,13 @@ export default function CompareView() {
         newPage: compareNewPage(),
         scale: 1.5 * zoomAtRender,
         offset: compareOffset(),
+        skipDetection,
       };
       if (!opts.oldPath || !opts.newPath) return;
       if (compareMode() === 'overlay') {
         if (overlayNewCanvasRef && overlayHighlightCanvasRef) {
           await renderCompareOverlay(
-            overlayOldCanvasRef,
+            null,
             overlayNewCanvasRef,
             opts,
             overlayHighlightCanvasRef,
@@ -163,7 +176,9 @@ export default function CompareView() {
     if (zoomDebounceTimer) clearTimeout(zoomDebounceTimer);
     zoomDebounceTimer = setTimeout(() => {
       zoomDebounceTimer = null;
-      doRender();
+      // Zoom-only re-render: skip change detection entirely. Bbox results
+      // are in detection-pixel space and don't change with display scale.
+      doRender({ skipDetection: true });
     }, ZOOM_DEBOUNCE_MS);
   };
 
@@ -318,11 +333,9 @@ export default function CompareView() {
                     style={`position:relative; background:#ffffff; box-shadow:0 0 0 1px #444; line-height:0; transform:scale(${cssScale()}); transform-origin:0 0;`}
                   >
                     <canvas ref={overlayNewCanvasRef} style="display:block;"></canvas>
-                    {/* OLD canvas is kept in DOM but hidden — used by detection only. */}
-                    <canvas
-                      ref={overlayOldCanvasRef}
-                      style="position:absolute; left:0; top:0; display:none;"
-                    ></canvas>
+                    {/* OLD page is rasterized for change detection only via
+                        an offscreen canvas in compare-viewport.js — no DOM
+                        element required. */}
                     <canvas
                       ref={overlayHighlightCanvasRef}
                       style="position:absolute; left:0; top:0; pointer-events:none;"

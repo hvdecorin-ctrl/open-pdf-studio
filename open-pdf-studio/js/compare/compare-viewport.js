@@ -26,6 +26,30 @@ let _detectSeq = 0;
 // underlying buffer; we always slice() bytes from originalBytesCache.
 const _docCache = new Map();
 
+// Cache of rasterized ImageData used by change detection. Keyed by
+// `${filePath}|${pageNum}|${scale}`. The same OLD rasterization is reused
+// across multiple detection passes (only the NEW side changes when the user
+// edits offsets, etc.). Capped to a small LRU to bound memory.
+const _imageDataCache = new Map();
+const _IMG_CACHE_MAX = 6;
+
+function _imgCacheGet(key) {
+  if (!_imageDataCache.has(key)) return null;
+  // LRU bump
+  const v = _imageDataCache.get(key);
+  _imageDataCache.delete(key);
+  _imageDataCache.set(key, v);
+  return v;
+}
+function _imgCacheSet(key, v) {
+  if (_imageDataCache.has(key)) _imageDataCache.delete(key);
+  _imageDataCache.set(key, v);
+  while (_imageDataCache.size > _IMG_CACHE_MAX) {
+    const first = _imageDataCache.keys().next().value;
+    _imageDataCache.delete(first);
+  }
+}
+
 async function _getDoc(filePath) {
   if (_docCache.has(filePath)) return _docCache.get(filePath);
   const bytes = getCachedPdfBytes(filePath);
@@ -47,6 +71,7 @@ export function clearCompareDocCache() {
     try { d.destroy?.(); } catch {}
   }
   _docCache.clear();
+  _imageDataCache.clear();
 }
 
 export async function getDocPageCount(filePath) {
@@ -95,31 +120,13 @@ export async function renderCompareSideBySide(canvasOld, canvasNew, opts) {
  * its DOM containers.
  */
 export async function renderCompareOverlay(canvasOld, canvasNew, opts, canvasHighlights = null) {
-  const { oldPath, newPath, oldPage, newPage, scale = 1.5, offset = { dx: 0, dy: 0, rotation: 0 } } = opts;
+  const { newPath, newPage, scale = 1.5, skipDetection = false } = opts;
 
-  // Render NEW normally — this is the visible base layer.
+  // Render NEW normally — this is the visible base layer. The OLD page is
+  // never drawn into a visible canvas in overlay mode (only rasterized for
+  // change detection below). This avoids one full PDF.js render pass on
+  // every zoom step, which was the dominant cost.
   await _renderPageToCanvas(newPath, newPage, scale, canvasNew);
-
-  // Render OLD into the (hidden) old canvas for completeness; not displayed.
-  if (canvasOld) {
-    const tmpOldRaw = document.createElement('canvas');
-    await _renderPageToCanvas(oldPath, oldPage, scale, tmpOldRaw);
-
-    canvasOld.width = canvasNew.width;
-    canvasOld.height = canvasNew.height;
-    const oldCtx = canvasOld.getContext('2d');
-    oldCtx.fillStyle = '#ffffff';
-    oldCtx.fillRect(0, 0, canvasOld.width, canvasOld.height);
-    oldCtx.save();
-    oldCtx.translate(offset.dx || 0, offset.dy || 0);
-    if (offset.rotation) {
-      oldCtx.translate(canvasOld.width / 2, canvasOld.height / 2);
-      oldCtx.rotate((offset.rotation * Math.PI) / 180);
-      oldCtx.translate(-canvasOld.width / 2, -canvasOld.height / 2);
-    }
-    oldCtx.drawImage(tmpOldRaw, 0, 0);
-    oldCtx.restore();
-  }
 
   // Size the highlights canvas to match NEW; the actual rectangles are drawn
   // separately by paintHighlights() once changes are detected.
@@ -131,8 +138,9 @@ export async function renderCompareOverlay(canvasOld, canvasNew, opts, canvasHig
   }
 
   // Kick off async, debounced change detection on a separately rasterized copy
-  // of both pages. Visual rendering is not blocked.
-  scheduleChangeDetection(opts);
+  // of both pages. Visual rendering is not blocked. Skipped when the caller
+  // knows only zoom (which doesn't affect detection results) has changed.
+  if (!skipDetection) scheduleChangeDetection(opts);
 
   return { width: canvasNew.width, height: canvasNew.height };
 }
@@ -172,6 +180,18 @@ export function scheduleChangeDetection(opts) {
   }, 200);
 }
 
+async function _rasterizeForDetection(filePath, pageNum, detectScale) {
+  const key = `${filePath}|${pageNum}|${detectScale}`;
+  const cached = _imgCacheGet(key);
+  if (cached) return cached;
+  const c = document.createElement('canvas');
+  await _renderPageToCanvas(filePath, pageNum, detectScale, c);
+  const data = c.getContext('2d').getImageData(0, 0, c.width, c.height);
+  const entry = { width: c.width, height: c.height, data };
+  _imgCacheSet(key, entry);
+  return entry;
+}
+
 async function runChangeDetection(opts) {
   const { oldPath, newPath, oldPage, newPage, offset = { dx: 0, dy: 0, rotation: 0 } } = opts;
   if (!oldPath || !newPath) return [];
@@ -184,21 +204,33 @@ async function runChangeDetection(opts) {
   const longest = Math.max(baseVp.width, baseVp.height);
   const detectScale = Math.min(1.5, DETECTION_MAX_DIM / longest);
 
-  const cOld = document.createElement('canvas');
-  const cNewRaw = document.createElement('canvas');
-  await _renderPageToCanvas(oldPath, oldPage, detectScale, cOld);
-  await _renderPageToCanvas(newPath, newPage, detectScale, cNewRaw);
+  // Rasterize both at detectScale, reusing cached ImageData when available.
+  // This is the hot path on offset/page changes — detection scale is fixed
+  // per (path,page), so cache hits are guaranteed across repeated calls.
+  const [oldEntry, newEntry] = await Promise.all([
+    _rasterizeForDetection(oldPath, oldPage, detectScale),
+    _rasterizeForDetection(newPath, newPage, detectScale),
+  ]);
 
   // Apply alignment offset to OLD so detection respects the same alignment as
-  // the visual overlay. NEW remains at native position.
+  // the visual overlay. NEW remains at native position. We blit the cached
+  // OLD ImageData into a fresh aligned canvas (cheap drawImage of an
+  // ImageBitmap-equivalent vs a full PDF.js re-render).
   const cOldAligned = document.createElement('canvas');
-  cOldAligned.width = cNewRaw.width;
-  cOldAligned.height = cNewRaw.height;
+  cOldAligned.width = newEntry.width;
+  cOldAligned.height = newEntry.height;
   const aCtx = cOldAligned.getContext('2d');
   aCtx.fillStyle = '#ffffff';
   aCtx.fillRect(0, 0, cOldAligned.width, cOldAligned.height);
+
+  // Materialize cached OLD ImageData onto an offscreen canvas to draw with
+  // alignment transform (putImageData ignores transforms).
+  const oldRaw = document.createElement('canvas');
+  oldRaw.width = oldEntry.width;
+  oldRaw.height = oldEntry.height;
+  oldRaw.getContext('2d').putImageData(oldEntry.data, 0, 0);
+
   aCtx.save();
-  // Scale offsets from display scale to detection scale.
   const visualScale = opts.scale || 1.5;
   const off = {
     dx: (offset.dx || 0) * (detectScale / visualScale),
@@ -211,11 +243,11 @@ async function runChangeDetection(opts) {
     aCtx.rotate((off.rotation * Math.PI) / 180);
     aCtx.translate(-cOldAligned.width / 2, -cOldAligned.height / 2);
   }
-  aCtx.drawImage(cOld, 0, 0);
+  aCtx.drawImage(oldRaw, 0, 0);
   aCtx.restore();
 
   const oldData = aCtx.getImageData(0, 0, cOldAligned.width, cOldAligned.height);
-  const newData = cNewRaw.getContext('2d').getImageData(0, 0, cNewRaw.width, cNewRaw.height);
+  const newData = newEntry.data;
 
   const changes = detectChanges(oldData, newData);
   // Tag the detection scale so the UI can map bbox px back to display px.
