@@ -5,7 +5,7 @@ import { setViewMode } from './renderer.js';
 import { generateThumbnails, refreshActiveTab } from '../ui/panels/left-panel.js';
 import { createTab, updateWindowTitle, markDocumentModified } from '../ui/chrome/tabs.js';
 import * as pdfjsLib from 'pdfjs-dist';
-import { isTauri, readBinaryFile, openFileDialog, lockFile } from '../core/platform.js';
+import { isTauri, readBinaryFile, openFileDialog, lockFile, invoke } from '../core/platform.js';
 import { PDFDocument } from 'pdf-lib';
 import { resetAnnotationStorage } from './form-layer.js';
 import { addRecentFile } from '../mobile/recent-files.js';
@@ -344,6 +344,70 @@ export async function loadPDF(filePath, docIndex, preloadedData = null) {
         console.log(`[PERF-BG] redrawAnnotations after bg load DONE`);
       }
     }).catch((e) => { console.error('[PERF-BG] loadExistingAnnotations error:', e); });
+
+    // Background prefetch of vector draw commands for ALL pages, so the
+    // thumbnail processor can hit the JS-side vector cache (which renders
+    // text correctly) instead of falling back to the Rust `render_thumbnail`
+    // path that explicitly skips text operators — that path produces blank /
+    // background-only thumbnails on text-only pages (e.g. AC294 page 2 came
+    // out as a solid green band because only the vector header was drawn).
+    //
+    // Concurrency is limited to 2 workers so this prefetch never starves the
+    // active page render or interactive thumbnail requests.
+    if (filePath && isTauri()) {
+      (async () => {
+        try {
+          const vr = await import('./vector-renderer.js');
+          const numPages = doc.pdfDoc?.numPages || 0;
+          if (numPages <= 0) return;
+
+          let nextPage = 1;
+          const CONCURRENCY = 2;
+
+          const worker = async () => {
+            while (true) {
+              if (isClosed()) return;
+              const p = nextPage++;
+              if (p > numPages) return;
+
+              // Skip if cache already populated (e.g. user already viewed it)
+              if (vr.hasCachedCommands(filePath, p, 0)) continue;
+
+              try {
+                const pageType = await invoke('analyze_page_type', {
+                  path: filePath, pageIndex: p - 1,
+                });
+                if (isClosed()) return;
+                if (pageType !== 'vector') continue;
+
+                if (vr.hasCachedCommands(filePath, p, 0)) continue;
+                const cmdData = await invoke('extract_draw_commands', {
+                  path: filePath, pageIndex: p - 1, rotation: 0,
+                });
+                if (isClosed()) return;
+                const cmdBytes = cmdData instanceof Uint8Array
+                  ? cmdData : new Uint8Array(cmdData);
+                vr.cacheCommands(filePath, p, cmdBytes, 0);
+                await vr.prepareImages(filePath, p, 0);
+              } catch (e) {
+                // One bad page shouldn't kill prefetch — just log and move on
+                console.warn(`[PERF-BG] vector prefetch failed page ${p}:`, e);
+              }
+
+              // Yield between pages so we don't starve interactive renders
+              await new Promise(r => setTimeout(r, 0));
+            }
+          };
+
+          const workers = [];
+          for (let i = 0; i < CONCURRENCY; i++) workers.push(worker());
+          await Promise.all(workers);
+          console.log(`[PERF-BG] vector prefetch complete (${numPages} pages)`);
+        } catch (e) {
+          console.warn('[PERF-BG] vector prefetch error:', e);
+        }
+      })();
+    }
 
   } catch (error) {
     // Suppress errors from document being closed during background loading
