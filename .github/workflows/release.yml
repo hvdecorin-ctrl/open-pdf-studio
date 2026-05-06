@@ -110,6 +110,30 @@ jobs:
           $conf.bundle.windows.nsis.installMode = "currentUser"
           $conf | ConvertTo-Json -Depth 10 | Set-Content src-tauri/tauri.conf.json
 
+      - name: Pre-build cargo (Windows) to materialize WebView2Loader.dll
+        if: contains(matrix.target, 'windows')
+        shell: pwsh
+        working-directory: open-pdf-studio/src-tauri
+        run: |
+          cargo build --release
+          $dll = Get-ChildItem -Path 'target/release/build' -Recurse -Filter 'WebView2Loader.dll' -ErrorAction SilentlyContinue |
+            Where-Object { $_.FullName -like '*\x64\*' } |
+            Select-Object -First 1
+          if ($dll) {
+            Copy-Item -Path $dll.FullName -Destination 'target/release/WebView2Loader.dll' -Force
+            Write-Output "Copied WebView2Loader.dll from $($dll.FullName)"
+          } else {
+            Write-Output "WARNING: WebView2Loader.dll not found under target/release/build"
+            Get-ChildItem -Path 'target/release' -Recurse -Filter 'WebView2Loader.dll' -ErrorAction SilentlyContinue |
+              ForEach-Object { Write-Output "  found: $($_.FullName)" }
+          }
+          if (Test-Path 'target/release/WebView2Loader.dll') {
+            Write-Output "OK: target/release/WebView2Loader.dll is present"
+          } else {
+            Write-Error "WebView2Loader.dll missing from target/release - NSIS bundle will not include it"
+            exit 1
+          }
+
       - name: Build Tauri app (with release upload)
         if: matrix.target != 'windows-user'
         uses: tauri-apps/tauri-action@action-v0.6.1
