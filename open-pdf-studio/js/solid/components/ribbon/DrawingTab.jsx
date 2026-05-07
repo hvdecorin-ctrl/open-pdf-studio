@@ -23,6 +23,9 @@ import {
   preferencesIcon, clearAllIcon
 } from '../../data/ribbonIcons.js';
 import { useTranslation } from '../../../i18n/useTranslation.js';
+import { createFullPageScaleRegion, invalidateScaleRegionCache } from '../../../annotations/scale-region.js';
+import { redrawAnnotations, redrawContinuous } from '../../../annotations/rendering.js';
+import { openDialog } from '../../../bridge.js';
 
 // Generic placeholder icons for buttons without a dedicated icon
 const placeholderIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="4" y="4" width="16" height="16" rx="0" stroke-dasharray="3 2"/><path d="M9 9 L15 15 M15 9 L9 15" stroke-width="1"/></svg>`;
@@ -150,6 +153,19 @@ export default function DrawingTab() {
             icon={scaleRegionIcon}
             disabled={ro()} active={state.currentTool === 'scaleRegion'}
             onClick={() => setTool('scaleRegion')} />
+          <RibbonButton size="small" id="dr-scale-region-full-page"
+            title={t('comment.scaleRegionFullPageTitle') || 'Place a scale region covering the whole page'}
+            icon={`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="2" width="20" height="20" stroke-dasharray="2 2"/><text x="12" y="15" font-size="7" font-weight="bold" text-anchor="middle" fill="currentColor" stroke="none">1:N</text></svg>`}
+            disabled={ro()}
+            onClick={() => {
+              const ann = createFullPageScaleRegion();
+              if (!ann) return;
+              invalidateScaleRegionCache();
+              const doc = getActiveDocument();
+              if (doc?.viewMode === 'continuous') redrawContinuous();
+              else redrawAnnotations();
+              openDialog('scale-region', { annotationId: ann.id, pageNum: ann.page });
+            }} />
         </RibbonGroup>
 
         {/* ANNOTATE */}

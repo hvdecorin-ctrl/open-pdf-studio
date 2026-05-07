@@ -101,6 +101,7 @@
     "presetScale": "Preset",
     "selectScale": "Select...",
     "scaleBar": "Scale Bar",
+    "scaleGroup": "Scale",
     "viewport": "Viewport",
     "createViewport": "Draw a viewport region with its own scale",
     "viewportTitle": "Set Viewport Scale",
@@ -157,6 +158,8 @@
   },
   "comment": {
     "scaleRegion": "Scale Region",
+    "scaleRegionFullPage": "Scale region on page",
+    "scaleRegionFullPageTitle": "Place a scale region covering the whole page",
     "drawing": "Drawing",
     "highlight": "Highlight",
     "freehand": "Freehand",

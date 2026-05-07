@@ -274,21 +274,7 @@ export default function MeasureTab() {
           </RibbonButtonStack>
         </RibbonGroup>
 
-        <RibbonGroup label={t('measure.scaleBar') || 'SCHAALSTOK'}>
-          <RibbonButton id="btn-place-scalebar"
-            title={t('measure.placeScaleBar') || 'Schaalstok plaatsen'}
-            icon={scaleBarIcon}
-            label={t('measure.placeScaleBar') || 'Schaalstok'}
-            disabled={noPdf() || isPdfAReadOnly()}
-            active={state.currentTool === 'scaleBar'}
-            onClick={() => setTool('scaleBar')} />
-          <RibbonButton id="btn-create-viewport"
-            title={t('measure.createViewport') || 'Draw a viewport region with its own scale'}
-            icon={viewportIcon}
-            label={t('measure.viewport') || 'Viewport'}
-            disabled={noPdf() || isPdfAReadOnly()}
-            active={state.currentTool === 'viewport'}
-            onClick={() => setTool('viewport')} />
+        <RibbonGroup label={t('measure.scaleGroup') || 'Schaal'}>
           <RibbonButtonStack>
             <label style={{ display: 'flex', 'align-items': 'center', gap: '4px', 'font-size': '10px', color: 'var(--theme-text-secondary, #888)', padding: '2px 4px', cursor: 'default' }}>
               <input type="checkbox"

@@ -105,6 +105,32 @@ export function getScaleFromRegion(pageNum, x, y) {
 }
 
 /**
+ * Create a full-page scaleRegion on the active document's current page,
+ * push it, invalidate cache and return it. Caller is responsible for
+ * triggering recordAdd, redraw and (optionally) opening the calibration dialog.
+ * Returns null if no active document or page dimensions cannot be resolved.
+ */
+export function createFullPageScaleRegion(opts = {}) {
+  const doc = getActiveDocument();
+  if (!doc) return null;
+  const pageNum = opts.page || doc.currentPage || 1;
+  const dims = doc.pageDims && doc.pageDims[pageNum];
+  if (!dims || !dims.widthPt || !dims.heightPt) return null;
+  const ann = createScaleRegion({
+    page: pageNum,
+    x: 0,
+    y: 0,
+    width: dims.widthPt,
+    height: dims.heightPt,
+    scaleString: opts.scaleString || '1:100',
+    units: opts.units || 'mm',
+    label: opts.label || '',
+  });
+  doc.annotations.push(ann);
+  return ann;
+}
+
+/**
  * Factory for scaleRegion annotations.
  */
 export function createScaleRegion(props) {

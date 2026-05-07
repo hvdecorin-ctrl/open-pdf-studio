@@ -15,7 +15,7 @@ import { drawSelectionHandles } from './rendering/selection.js';
 import { updateQuickAccessButtons, updateContextualTabs, drawGrid, snapToGrid } from './rendering/ui-state.js';
 import { drawCommentIcon } from './rendering/comment-icons.js';
 import { spatialIndex } from './spatial-index.js';
-import { invalidateScaleRegionCache } from './scale-region.js';
+import { invalidateScaleRegionCache, pixelsPerUnitFor } from './scale-region.js';
 import { getTemplate } from '../symbols/registry.js';
 
 // Re-export everything that external code needs
@@ -1184,6 +1184,61 @@ export function drawAnnotation(ctx, annotation) {
       ctx.textAlign = 'left';
       ctx.textBaseline = 'middle';
       ctx.fillText(badgeText, srX + 5, srY - badgeH / 2);
+
+      // Default 1-meter (or 1-foot for imperial) scale bar in bottom-right corner.
+      // Visual aid only; not stored in annotation data.
+      try {
+        const ppu = pixelsPerUnitFor(scaleStr, unitStr);
+        // Determine display unit + magnitude in that unit.
+        let barUnits;        // amount in the chosen display unit
+        let barUnitLabel;    // human label
+        if (unitStr === 'in' || unitStr === 'ft') {
+          // imperial → 1 ft
+          barUnits = (unitStr === 'ft') ? 1 : 12; // 1 ft = 12 in
+          barUnitLabel = '1 ft';
+        } else {
+          // metric → 1 m
+          switch (unitStr) {
+            case 'mm': barUnits = 1000; break;
+            case 'cm': barUnits = 100; break;
+            case 'm':  barUnits = 1; break;
+            default:   barUnits = 1000; break;
+          }
+          barUnitLabel = '1 m';
+        }
+        const barLen = barUnits * ppu;
+        // Only draw if the scaleRegion is wide enough and bar fits.
+        if (srW >= 60 && srH >= 24 && barLen >= 16 && barLen <= srW - 16) {
+          const margin = 8;
+          const barH = 6;
+          const barX = srX + srW - margin - barLen;
+          const barY = srY + srH - margin - barH;
+          const segments = 4;
+          const segW = barLen / segments;
+          ctx.globalAlpha = 1;
+          // Outer black frame
+          ctx.fillStyle = '#000000';
+          ctx.fillRect(barX, barY, barLen, barH);
+          // White segments (alternating)
+          ctx.fillStyle = '#ffffff';
+          for (let i = 0; i < segments; i++) {
+            if (i % 2 === 1) {
+              ctx.fillRect(barX + i * segW, barY, segW, barH);
+            }
+          }
+          // Black border
+          ctx.strokeStyle = '#000000';
+          ctx.lineWidth = 1;
+          ctx.strokeRect(barX + 0.5, barY + 0.5, barLen - 1, barH - 1);
+
+          // Label above the bar
+          ctx.font = '9px sans-serif';
+          ctx.fillStyle = '#000000';
+          ctx.textAlign = 'right';
+          ctx.textBaseline = 'bottom';
+          ctx.fillText(barUnitLabel, barX + barLen, barY - 1);
+        }
+      } catch (_) { /* defensive: never break rendering on a label glitch */ }
 
       ctx.globalAlpha = 1;
       ctx.restore();

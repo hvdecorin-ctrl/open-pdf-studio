@@ -94,6 +94,7 @@
     "measureAngle": "Hoek meten",
     "placeScaleBar": "Schaalstok plaatsen",
     "scaleBar": "Schaalstok",
+    "scaleGroup": "Schaal",
     "schedule": "TAKE-OFF",
     "openSchedule": "Open Take-Off",
     "placeSchedule": "Plaats Take-Off",
@@ -143,6 +144,8 @@
   },
   "comment": {
     "scaleRegion": "Schaalgebied",
+    "scaleRegionFullPage": "Schaalgebied op pagina",
+    "scaleRegionFullPageTitle": "Plaats een schaalgebied over de hele pagina",
     "drawing": "Tekening",
     "highlight": "Markeren",
     "freehand": "Vrije hand",
