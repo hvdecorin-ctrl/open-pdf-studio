@@ -237,10 +237,16 @@ export function formatMeasurement(measurement) {
   let val = applyRounding(measurement.value, measurement.unit);
   let unit = measurement.unit || 'mm';
 
-  // Always convert mm distances to meters
+  // Keep mm as mm — common architectural/CAD convention. Whole numbers only
+  // (no decimals) — millimeters are already the smallest practical unit.
   if (unit === 'mm') {
-    val = val / 1000;
-    unit = 'm';
+    const suffix = ` ${unit}`;
+    const rounding = state.preferences.measureRounding;
+    if (rounding && rounding !== 'none') {
+      const step = parseFloat(rounding);
+      if (step >= 1) return `${Math.round(val / step) * step}${suffix}`;
+    }
+    return `${Math.round(val)}${suffix}`;
   }
 
   // Always convert mm² areas to m²
