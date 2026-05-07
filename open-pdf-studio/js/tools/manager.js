@@ -67,6 +67,16 @@ function _setSelectFallthroughEnabled(enabled) {
       if (state.isDragging || state.isResizing || state.isRubberBanding ||
           state.isPanning || state.isDrawing || state.isEditingText) return;
 
+      // While the marquee is "armed" (user just clicked the Select ribbon
+      // button), force the annotation-canvas to receive pointer events so the
+      // next pointerdown reaches select-tool no matter where it lands.
+      if (state.armedMarquee) {
+        const canvas2 = document.getElementById('annotation-canvas') ||
+                        document.querySelector('.annotation-canvas');
+        if (canvas2 && canvas2.style.pointerEvents !== 'auto') canvas2.style.pointerEvents = 'auto';
+        return;
+      }
+
       const canvas = document.getElementById('annotation-canvas') ||
                      document.querySelector('.annotation-canvas');
       if (!canvas || !canvas.getBoundingClientRect) return;

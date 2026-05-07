@@ -135,6 +135,14 @@ export default function BehaviorTab(props) {
             <span>{t('behavior.autoSelectAfterCreation')}</span>
           </label>
         </div>
+        <div class="pref-row pref-checkbox-row">
+          <label class="pref-checkbox-label">
+            <input type="checkbox"
+              checked={typeof p.dynamicScaling?.[0] === 'function' ? p.dynamicScaling[0]() : false}
+              onChange={e => p.dynamicScaling?.[1] && p.dynamicScaling[1](e.target.checked)} />
+            <span>{t('behavior.dynamicScaling') || t('measure.dynamicScaling') || 'Auto-scale markups'}</span>
+          </label>
+        </div>
       </fieldset>
 
       <fieldset class="pref-fieldset">

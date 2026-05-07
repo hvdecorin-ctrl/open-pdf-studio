@@ -170,15 +170,6 @@ export default function CommentTab() {
               else redrawAnnotations();
               openDialog('scale-region', { annotationId: ann.id, pageNum: ann.page });
             }} />
-          <RibbonButtonStack>
-            <label style={{ display: 'flex', 'align-items': 'center', gap: '4px', 'font-size': '10px', color: 'var(--theme-text-secondary, #888)', padding: '2px 4px', cursor: 'default' }}>
-              <input type="checkbox"
-                checked={isDynamicScalingEnabled()}
-                onChange={(e) => { setDynamicScalingEnabled(e.target.checked); savePreferences(); }}
-                style={{ margin: 0 }} />
-              {t('measure.dynamicScaling') || 'Auto-scale markups'}
-            </label>
-          </RibbonButtonStack>
         </RibbonGroup>
 
         <RibbonGroup label={t('measure.schedule') || 'TAKE-OFF'}>

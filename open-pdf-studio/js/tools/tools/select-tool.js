@@ -111,7 +111,13 @@ export const selectTool = {
       }
     }
 
-    const clickedAnnotation = ctx.findAnnotationAt(x, y);
+    // "Armed marquee": when the user clicked the Select button in the ribbon,
+    // the next pointerdown unconditionally starts a rubber-band selection,
+    // even if it lands on an annotation. The flag is consumed here.
+    const armedMarquee = !!state.armedMarquee;
+    if (armedMarquee) state.armedMarquee = false;
+
+    const clickedAnnotation = armedMarquee ? null : ctx.findAnnotationAt(x, y);
     // Auto-exit edit-contour mode when clicking outside the currently edited annotation
     if (state.editingContour && (!clickedAnnotation || clickedAnnotation.id !== state.editingContour)) {
       state.editingContour = null;
