@@ -11,7 +11,9 @@ function computeDimensionText(ann) {
     const pixelDist = Math.sqrt(dx * dx + dy * dy);
     const scaledVal = pixelDist * ann.measureScale;
     const unit = ann.measureUnit || 'mm';
-    const prec = ann.measurePrecision !== undefined ? ann.measurePrecision : 2;
+    // mm shows whole numbers (no decimals); other units use annotation.measurePrecision.
+    const prec = (unit === 'mm') ? 0
+      : (ann.measurePrecision !== undefined ? ann.measurePrecision : 2);
     return `${scaledVal.toFixed(prec)} ${unit}`;
   }
   return formatMeasurement(calculateDistance(ann.startX, ann.startY, ann.endX, ann.endY, ann.page));

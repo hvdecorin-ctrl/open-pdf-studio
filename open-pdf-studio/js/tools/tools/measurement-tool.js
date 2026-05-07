@@ -98,10 +98,12 @@ export const measureDistanceTool = {
       const prefs = state.preferences;
       const currentPage = getActiveDocument()?.currentPage || 1;
       const dist = ctx.calculateDistance(startX, startY, endX, endY, currentPage);
-      const dimPrecision = prefs.measureDistDimPrecision != null ? prefs.measureDistDimPrecision : 2;
       const hasScaleSource = getActiveDocument()?.annotations?.some(a => a.type === 'scaleBar' || a.type === 'viewport');
       const dimScale = hasScaleSource ? 0 : (prefs.measureDistDimScale || 0);
       const dimUnit = hasScaleSource ? dist.unit : (prefs.measureDistDimUnit || dist.unit);
+      // mm shows whole numbers (no decimals); other units use the user pref.
+      const dimPrecision = (dimUnit === 'mm') ? 0
+        : (prefs.measureDistDimPrecision != null ? prefs.measureDistDimPrecision : 2);
       let mText;
       if (dimScale) {
         const pixelDist = Math.sqrt((endX - startX) ** 2 + (endY - startY) ** 2);
@@ -189,7 +191,9 @@ export const measureDistanceTool = {
     const hasScaleSourcePreview = getActiveDocument()?.annotations?.some(a => a.type === 'scaleBar' || a.type === 'viewport');
     const dimScale = hasScaleSourcePreview ? 0 : (prefs.measureDistDimScale || 0);
     const dimUnit = prefs.measureDistDimUnit || '';
-    const dimPrecision = prefs.measureDistDimPrecision != null ? prefs.measureDistDimPrecision : 2;
+    // mm shows whole numbers (no decimals); other units use the user pref.
+    const dimPrecision = (dimUnit === 'mm') ? 0
+      : (prefs.measureDistDimPrecision != null ? prefs.measureDistDimPrecision : 2);
 
     function dimMeasureText(sx, sy, ex, ey) {
       if (dimScale) {
