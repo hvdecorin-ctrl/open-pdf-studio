@@ -47,9 +47,9 @@ pub struct AppState {
     pub test_pdfs_dir: Arc<PathBuf>,
 }
 
-/// Standard JSON-RPC error codes used by this server. Only the codes
-/// currently dispatched in handler bodies are warning-clean; the rest are
-/// defined for use by tool handlers added in tasks 6-9.
+/// Standard JSON-RPC error codes used by this server. Codes not yet
+/// dispatched in handler bodies are kept available for tool handlers added
+/// in tasks 7-9.
 #[allow(dead_code)]
 mod jsonrpc_error {
     pub const PARSE_ERROR: i32 = -32700;
@@ -97,29 +97,106 @@ fn handle_initialize() -> Value {
     })
 }
 
-/// Handle `tools/list`. Empty for now — tasks 6-9 will append their tool
-/// descriptors here.
+/// Handle `tools/list`. Tasks 7-9 will append their tool descriptors to
+/// this array.
 fn handle_tools_list() -> Value {
-    json!({ "tools": [] })
+    json!({
+        "tools": [
+            {
+                "name": "list_test_pdfs",
+                "description": "List all PDFs in the test corpus directory.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {},
+                    "additionalProperties": false
+                }
+            }
+        ]
+    })
 }
 
-/// Handle `tools/call`. No tools registered yet, so always returns
-/// "method not found" with the requested tool name.
-fn handle_tools_call(params: &Value) -> (i32, String) {
+/// Dispatch a `tools/call` request to the matching tool handler. Returns
+/// the tool's MCP-shaped result (`content[]` + `isError`) on success, or a
+/// `(code, message)` pair that the caller wraps in a JSON-RPC error
+/// response. Tasks 7-9 add new arms to the inner `match`.
+async fn handle_tools_call(state: &AppState, params: &Value) -> Result<Value, (i32, String)> {
     let name = params
         .get("name")
         .and_then(|v| v.as_str())
         .unwrap_or("<missing>");
-    (
-        jsonrpc_error::METHOD_NOT_FOUND,
-        format!("method not found: {name}"),
-    )
+    let _arguments = params.get("arguments").cloned().unwrap_or(Value::Null);
+    match name {
+        "list_test_pdfs" => tool_list_test_pdfs(state).await,
+        other => Err((
+            jsonrpc_error::METHOD_NOT_FOUND,
+            format!("method not found: {other}"),
+        )),
+    }
+}
+
+/// `list_test_pdfs` tool — enumerates every `*.pdf` under
+/// `state.test_pdfs_dir` and returns its absolute path, file size, and
+/// page count. Page count is read with `lopdf::Document::load_mem` inside
+/// `spawn_blocking` because lopdf does synchronous I/O.
+///
+/// The result is shaped per the MCP convention: a single text content
+/// block whose `text` field is a JSON-encoded payload. The harness in
+/// Task 13 decodes this string to recover the structured `pdfs` array.
+async fn tool_list_test_pdfs(state: &AppState) -> Result<Value, (i32, String)> {
+    let dir: &PathBuf = &state.test_pdfs_dir;
+    let mut entries = match tokio::fs::read_dir(dir.as_path()).await {
+        Ok(e) => e,
+        Err(e) => {
+            return Err((
+                jsonrpc_error::INTERNAL_ERROR,
+                format!("could not read test corpus dir {:?}: {e}", dir),
+            ));
+        }
+    };
+
+    let mut pdfs: Vec<Value> = Vec::new();
+    while let Ok(Some(entry)) = entries.next_entry().await {
+        let path = entry.path();
+        if path.extension().and_then(|s| s.to_str()) != Some("pdf") {
+            continue;
+        }
+        let metadata = match entry.metadata().await {
+            Ok(m) => m,
+            Err(_) => continue,
+        };
+        // page count: lopdf reads from disk synchronously, so do it on a
+        // blocking thread to keep the runtime responsive.
+        let path_for_count = path.clone();
+        let page_count = tokio::task::spawn_blocking(move || {
+            std::fs::read(&path_for_count)
+                .ok()
+                .and_then(|b| lopdf::Document::load_mem(&b).ok())
+                .map(|doc| doc.get_pages().len())
+                .unwrap_or(0)
+        })
+        .await
+        .unwrap_or(0);
+        pdfs.push(json!({
+            "path":       path.to_string_lossy(),
+            "page_count": page_count,
+            "file_size":  metadata.len(),
+        }));
+    }
+    pdfs.sort_by(|a, b| a["path"].as_str().cmp(&b["path"].as_str()));
+
+    Ok(json!({
+        "content": [{
+            "type": "text",
+            "text": json!({ "pdfs": pdfs }).to_string(),
+        }],
+        "isError": false,
+    }))
 }
 
 /// Axum POST handler for `/mcp`. Parses the JSON-RPC envelope and dispatches
 /// on the `method` field.
 async fn mcp_handler(
-    State(_state): State<AppState>,
+    State(state): State<AppState>,
     Json(body): Json<Value>,
 ) -> impl IntoResponse {
     // Pull out the request id; default to null so error responses are still
@@ -146,8 +223,10 @@ async fn mcp_handler(
         "tools/call" => {
             let empty = Value::Null;
             let params = body.get("params").unwrap_or(&empty);
-            let (code, msg) = handle_tools_call(params);
-            rpc_error(id, code, msg)
+            match handle_tools_call(&state, params).await {
+                Ok(value) => rpc_result(id, value),
+                Err((code, msg)) => rpc_error(id, code, msg),
+            }
         }
         // `notifications/initialized` and other notification methods carry no
         // id and expect no response. We still send back an empty result for
@@ -215,9 +294,70 @@ mod tests {
     }
 
     #[test]
-    fn tools_list_starts_empty() {
+    fn tools_list_advertises_list_test_pdfs() {
         let v = handle_tools_list();
         let arr = v["tools"].as_array().expect("tools must be an array");
-        assert!(arr.is_empty());
+        assert!(
+            arr.iter().any(|t| t["name"] == "list_test_pdfs"),
+            "tools list must advertise list_test_pdfs, got: {arr:?}"
+        );
+        let tool = arr
+            .iter()
+            .find(|t| t["name"] == "list_test_pdfs")
+            .expect("descriptor present");
+        assert_eq!(tool["inputSchema"]["type"], "object");
+        assert_eq!(tool["inputSchema"]["additionalProperties"], false);
+    }
+
+    /// Exercises the real `tool_list_test_pdfs` over a fixture directory.
+    /// We point `AppState.test_pdfs_dir` at the repo's actual test corpus
+    /// (`../../test pdf-bestanden/Originele bestanden`) so this also serves
+    /// as a smoke test when the GUI binary cannot be launched.
+    #[test]
+    fn tool_list_test_pdfs_returns_corpus_entries() {
+        // Resolve corpus relative to this crate's manifest dir so the test is
+        // CWD-independent.
+        let corpus = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join("..")
+            .join("test pdf-bestanden")
+            .join("Originele bestanden");
+        if !corpus.is_dir() {
+            // Skip gracefully if the corpus isn't checked in on this clone.
+            eprintln!("skipping: corpus dir not found at {:?}", corpus);
+            return;
+        }
+
+        let state = AppState {
+            test_pdfs_dir: Arc::new(corpus),
+        };
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("tokio runtime");
+        let value = rt
+            .block_on(tool_list_test_pdfs(&state))
+            .expect("tool_list_test_pdfs ok");
+
+        assert_eq!(value["isError"], false);
+        let text = value["content"][0]["text"]
+            .as_str()
+            .expect("text content present");
+        let payload: Value =
+            serde_json::from_str(text).expect("text payload is valid JSON");
+        let pdfs = payload["pdfs"].as_array().expect("pdfs is an array");
+        assert!(
+            !pdfs.is_empty(),
+            "expected at least one PDF in the corpus, got payload {payload}"
+        );
+        for entry in pdfs {
+            assert!(entry["path"].is_string(), "path is string");
+            assert!(entry["file_size"].is_u64(), "file_size is unsigned int");
+            assert!(
+                entry["page_count"].as_u64().unwrap_or(0) > 0,
+                "page_count > 0 for {}",
+                entry["path"]
+            );
+        }
     }
 }

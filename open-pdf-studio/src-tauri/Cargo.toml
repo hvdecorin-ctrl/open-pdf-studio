@@ -53,6 +53,11 @@ tokio = { version = "1", features = ["sync", "macros", "rt-multi-thread", "net"]
 # needs a small fixed method set (initialize / tools/list / tools/call).
 axum = "0.8"
 
+# Direct dep for MCP tool handlers that need to inspect PDF structure (page
+# count, etc). Pinned to match `open-pdf-render`'s transitive version so the
+# resolver picks a single lopdf in Cargo.lock.
+lopdf = "0.34"
+
 [target.'cfg(not(target_os = "android"))'.dependencies]
 tauri-plugin-updater = "2"
 
