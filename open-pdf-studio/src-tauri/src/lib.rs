@@ -1408,6 +1408,7 @@ pub fn run() {
             extract_text_batch,
             extract_page_text,
             render_thumbnail,
+            render_to_png::render_page_to_png,
             allow_fs_scope,
             auth::auth_is_configured,
             auth::auth_login,

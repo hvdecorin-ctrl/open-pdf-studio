@@ -53,3 +53,40 @@ mod tests {
         assert!(err.contains("size mismatch"), "got: {err}");
     }
 }
+
+/// Render a PDF page at `target_width` pixels and return a base64-encoded PNG.
+/// Used by both the in-app "Export page as image" feature (future) and the MCP
+/// regression-test server.
+#[tauri::command]
+pub async fn render_page_to_png(
+    path: String,
+    page_index: usize,
+    target_width: u32,
+) -> Result<String, String> {
+    if target_width == 0 {
+        return Err("target_width must be > 0".to_string());
+    }
+
+    let pdf_bytes = tokio::fs::read(&path)
+        .await
+        .map_err(|e| format!("failed to read PDF '{path}': {e}"))?;
+
+    // open_pdf_render parsing + render is sync and CPU-bound; offload to a
+    // blocking task so we don't stall the Tauri async runtime.
+    let rendered = tokio::task::spawn_blocking(move || -> Result<open_pdf_render::RenderedPage, String> {
+        let doc = open_pdf_render::DocumentHandle::load(&pdf_bytes)
+            .map_err(|e| format!("load PDF: {e}"))?;
+        let (w_pt, h_pt) = doc
+            .page_dimensions(page_index)
+            .map_err(|e| format!("page_dimensions: {e}"))?;
+        // Scale so the longest page side fits target_width pixels — same
+        // convention as render_thumbnail in lib.rs.
+        let scale = target_width as f32 / w_pt.max(h_pt);
+        doc.render_page(page_index, scale, 0)
+            .map_err(|e| format!("render: {e}"))
+    })
+    .await
+    .map_err(|e| format!("render task panicked: {e}"))??;
+
+    encode_rgba_to_png_base64(rendered.width, rendered.height, &rendered.rgba)
+}
