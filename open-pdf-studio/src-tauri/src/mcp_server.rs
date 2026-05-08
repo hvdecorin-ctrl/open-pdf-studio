@@ -110,6 +110,20 @@ fn handle_tools_list() -> Value {
                     "properties": {},
                     "additionalProperties": false
                 }
+            },
+            {
+                "name": "screenshot_page",
+                "description": "Render a single PDF page to PNG (returned as base64).",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "path":       { "type": "string" },
+                        "page_index": { "type": "integer", "minimum": 0 },
+                        "width":      { "type": "integer", "minimum": 1, "default": 2000 }
+                    },
+                    "required": ["path", "page_index"],
+                    "additionalProperties": false
+                }
             }
         ]
     })
@@ -124,9 +138,10 @@ async fn handle_tools_call(state: &AppState, params: &Value) -> Result<Value, (i
         .get("name")
         .and_then(|v| v.as_str())
         .unwrap_or("<missing>");
-    let _arguments = params.get("arguments").cloned().unwrap_or(Value::Null);
+    let arguments = params.get("arguments").cloned().unwrap_or(Value::Null);
     match name {
         "list_test_pdfs" => tool_list_test_pdfs(state).await,
+        "screenshot_page" => tool_screenshot_page(state, &arguments).await,
         other => Err((
             jsonrpc_error::METHOD_NOT_FOUND,
             format!("method not found: {other}"),
@@ -188,6 +203,79 @@ async fn tool_list_test_pdfs(state: &AppState) -> Result<Value, (i32, String)> {
         "content": [{
             "type": "text",
             "text": json!({ "pdfs": pdfs }).to_string(),
+        }],
+        "isError": false,
+    }))
+}
+
+/// `screenshot_page` tool — renders a single PDF page via `open_pdf_render`
+/// at a target output width (in pixels) and returns the PNG bytes encoded as
+/// base64. The MCP harness uses this to compare current renders against
+/// committed reference PNGs.
+///
+/// Scaling matches the convention used by `render_thumbnail` in `lib.rs`:
+/// `scale = width / max(page_w_pt, page_h_pt)`, so portrait and landscape
+/// pages both fit within `width` pixels on their longest side.
+async fn tool_screenshot_page(
+    _state: &AppState,
+    arguments: &Value,
+) -> Result<Value, (i32, String)> {
+    let path = arguments
+        .get("path")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| (jsonrpc_error::INVALID_PARAMS, "missing 'path'".to_string()))?
+        .to_string();
+    let page_index = arguments
+        .get("page_index")
+        .and_then(|v| v.as_u64())
+        .ok_or_else(|| (jsonrpc_error::INVALID_PARAMS, "missing or invalid 'page_index'".to_string()))?
+        as usize;
+    let width = arguments
+        .get("width")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(2000) as u32;
+    if width == 0 {
+        return Err((jsonrpc_error::INVALID_PARAMS, "'width' must be > 0".to_string()));
+    }
+
+    let pdf_bytes = tokio::fs::read(&path).await.map_err(|e| {
+        (
+            jsonrpc_error::INTERNAL_ERROR,
+            format!("read {}: {e}", path),
+        )
+    })?;
+
+    let rendered = tokio::task::spawn_blocking(move || -> Result<open_pdf_render::RenderedPage, String> {
+        let doc = open_pdf_render::DocumentHandle::load(&pdf_bytes)
+            .map_err(|e| format!("load PDF: {e}"))?;
+        let (w_pt, h_pt) = doc
+            .page_dimensions(page_index)
+            .map_err(|e| format!("page_dimensions: {e}"))?;
+        let scale = width as f32 / w_pt.max(h_pt);
+        doc.render_page(page_index, scale, 0)
+            .map_err(|e| format!("render: {e}"))
+    })
+    .await
+    .map_err(|e| (jsonrpc_error::INTERNAL_ERROR, format!("render task panic: {e}")))?
+    .map_err(|e| (jsonrpc_error::INTERNAL_ERROR, e))?;
+
+    let png_b64 = crate::render_to_png::encode_rgba_to_png_base64(
+        rendered.width,
+        rendered.height,
+        &rendered.rgba,
+    )
+    .map_err(|e| (jsonrpc_error::INTERNAL_ERROR, format!("encode png: {e}")))?;
+
+    let payload = json!({
+        "png_base64": png_b64,
+        "width":  rendered.width,
+        "height": rendered.height,
+    });
+
+    Ok(json!({
+        "content": [{
+            "type": "text",
+            "text": payload.to_string(),
         }],
         "isError": false,
     }))
@@ -359,5 +447,63 @@ mod tests {
                 entry["path"]
             );
         }
+    }
+
+    #[test]
+    fn tools_list_advertises_screenshot_page() {
+        let v = handle_tools_list();
+        let arr = v["tools"].as_array().expect("tools must be an array");
+        let tool = arr
+            .iter()
+            .find(|t| t["name"] == "screenshot_page")
+            .expect("screenshot_page descriptor present");
+        assert_eq!(tool["inputSchema"]["type"], "object");
+        assert_eq!(tool["inputSchema"]["additionalProperties"], false);
+        let required = tool["inputSchema"]["required"]
+            .as_array()
+            .expect("required is array");
+        let names: Vec<&str> = required.iter().filter_map(|v| v.as_str()).collect();
+        assert!(names.contains(&"path"));
+        assert!(names.contains(&"page_index"));
+    }
+
+    #[tokio::test]
+    async fn tool_screenshot_page_returns_png_base64() {
+        use std::path::PathBuf;
+        let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        // CARGO_MANIFEST_DIR is `<repo>/open-pdf-studio/src-tauri`. The corpus
+        // sits at `<repo>/test pdf-bestanden/Originele bestanden/`.
+        let corpus = manifest_dir
+            .ancestors()
+            .nth(2)
+            .unwrap()
+            .join("test pdf-bestanden")
+            .join("Originele bestanden");
+        if !corpus.exists() {
+            eprintln!("[skip] corpus dir missing at {:?}", corpus);
+            return;
+        }
+        // Pick the smallest PDF deterministically.
+        let mut pdfs: Vec<_> = std::fs::read_dir(&corpus).unwrap()
+            .filter_map(|e| e.ok())
+            .map(|e| e.path())
+            .filter(|p| p.extension().and_then(|s| s.to_str()) == Some("pdf"))
+            .collect();
+        pdfs.sort_by_key(|p| std::fs::metadata(p).map(|m| m.len()).unwrap_or(u64::MAX));
+        let smallest = pdfs.first().expect("no pdfs in corpus").clone();
+
+        let state = AppState { test_pdfs_dir: std::sync::Arc::new(corpus) };
+        let args = serde_json::json!({
+            "path": smallest.to_string_lossy(),
+            "page_index": 0,
+            "width": 200
+        });
+        let result = tool_screenshot_page(&state, &args).await.expect("render ok");
+        assert_eq!(result["isError"], serde_json::Value::Bool(false));
+        let text = result["content"][0]["text"].as_str().unwrap();
+        let body: serde_json::Value = serde_json::from_str(text).unwrap();
+        let b64 = body["png_base64"].as_str().unwrap();
+        assert!(b64.starts_with("iVBORw0KGgo"), "expected png magic; got {}", &b64[..20]);
+        assert!(body["width"].as_u64().unwrap() > 0);
     }
 }
