@@ -38,6 +38,7 @@ tauri-plugin-store = "2"
 reqwest = { version = "0.12", features = ["rustls-tls", "json"], default-features = false }
 open-pdf-render = { path = "../../open-pdf-render" }
 image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
+clap = { version = "4", features = ["derive"] }
 
 # OIDC sign-in (Impertio Accounts): Authorization Code + PKCE with a
 # loopback redirect on 127.0.0.1:53683.

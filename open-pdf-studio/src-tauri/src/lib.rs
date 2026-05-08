@@ -1,6 +1,17 @@
 mod auth;
 pub mod render_to_png;
 
+pub struct StartupOpts {
+    pub mcp_server: bool,
+    pub mcp_port: u16,
+}
+
+impl Default for StartupOpts {
+    fn default() -> Self {
+        Self { mcp_server: false, mcp_port: 9223 }
+    }
+}
+
 use std::fs;
 use std::fs::File;
 use std::collections::HashMap;
@@ -1274,7 +1285,11 @@ fn get_page_dimensions(
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
-pub fn run() {
+pub fn run(opts: StartupOpts) {
+    eprintln!(
+        "[startup] mcp_server={}, mcp_port={}",
+        opts.mcp_server, opts.mcp_port
+    );
     let args: Vec<String> = std::env::args().collect();
 
     // Handle --version / --help before Tauri::Builder::default().run() so these
