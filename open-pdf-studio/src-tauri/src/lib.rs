@@ -1,4 +1,5 @@
 mod auth;
+pub mod mcp_server;
 pub mod render_to_png;
 
 pub struct StartupOpts {
@@ -1290,6 +1291,22 @@ pub fn run(opts: StartupOpts) {
         "[startup] mcp_server={}, mcp_port={}",
         opts.mcp_server, opts.mcp_port
     );
+
+    // Spawn the in-process MCP server when requested. Refuses to start in
+    // release builds unless OPS_ENABLE_MCP=1 (handled inside `mcp_server::start`).
+    if opts.mcp_server {
+        let port = opts.mcp_port;
+        let test_pdfs_dir = std::env::current_dir()
+            .unwrap_or_else(|_| std::path::PathBuf::from("."))
+            .join("test pdf-bestanden")
+            .join("Originele bestanden");
+        tauri::async_runtime::spawn(async move {
+            if let Err(e) = mcp_server::start(port, test_pdfs_dir).await {
+                eprintln!("[mcp] server failed: {e}");
+            }
+        });
+    }
+
     let args: Vec<String> = std::env::args().collect();
 
     // Handle --version / --help before Tauri::Builder::default().run() so these
