@@ -288,4 +288,4 @@ Per-PDF stats from initial harness run:
 - Worst PDF in current state is Zware vector PDF (12/19 PASS, avg ~2.2%, several pages 3-5%) — these are vector-heavy scientific drawing pages that would benefit from a path-rendering iteration rather than text snapping.
 - The `1e-3` epsilon comfortably distinguishes axis-aligned from rotated; if a future PDF has near-axis-aligned-but-not-quite text matrix (e.g. a 1° rotated PDF), the snap will be skipped on that page. Acceptable trade-off.
 
-**Commit**: TBD (this entry)
+**Commit**: 8600a3ae
