@@ -328,3 +328,32 @@ Per-PDF stats from initial harness run:
 - The unified `read_smask_alpha` helper is a small architectural improvement that future iterations can extend (e.g. for /Matte un-matting per PDF spec §11.6.5) without touching multiple call sites.
 
 **Commit**: 9415766c
+
+
+### Iteration 10 — Long-tail AA investigation (Text pdf gecombineerd / rapport-constructie cluster)
+
+**Iter-9 baseline** (per fresh full-suite run 2026-05-09_1718-b1e1daad): 56/106 passing. Text pdf gecombineerd: 11/28 PASS (17 fail, range 0.45-6.41%, avg ~3.0%); rapport-constructie: 11/28 PASS (identical numbers — same content as Text pdf).
+
+**Cluster picked: Text pdf gecombineerd / rapport-constructie (28 pages × 2 PDFs, 17 fail each, identical diffs)**.
+
+**Reasoning**: Iter-9 agent flagged this as the largest remaining cluster and called it a "text-rasterizer-AA family" issue. The identical mirror diffs across the two PDFs strongly suggest a single shared mechanical cause. Worth one focused investigation pass before declaring it long-tail.
+
+**Investigation findings**:
+- The `latest_summary.json` referenced in iter-10's prompt was STALE — it showed 60-72% diffs on multiple pages (p4=48%, p5=62%, p6=73%, p15=62%, p16=70%) suggesting a render disaster. Fresh run 2026-05-09_1714-b1e1daad against current binary (b1e1daad commit) shows the actual diff range is 0.45-6.41% — typical text AA territory.
+- pikepdf inspection of p8 (representative of cluster, 6.41% diff): standard Calibri-Light + Arial / ArialMT / Arial-BoldMT TrueType fonts. Calibri-Light has FontFile2 (embedded subset, 134 KB, 7146 glyphs, all 4 cmap subtables present and correct). Arial-BoldMT and ArialMT are non-embedded → resolved via `try_system_font` to Windows arialbd.ttf / arial.ttf at runtime (server log confirms: `[fonts] Loaded system font: Arial-BoldMT → C:\Windows\Fonts\arialbd.ttf`). Glyph 'B' (0x42) maps consistently to GID 17 across all cmap subtables in the embedded font.
+- Visual diff of p8: every text glyph edge appears in the diff image as red. Layout is byte-identical between ref and app; characters are at the same positions. 8x-zoom on a single 'B' character (cyan heading) shows the strokes in the app render are consistently lighter/thinner than the reference — same colour, same position, same letter, but ~7% less pixel coverage.
+- Pixel-level analysis on the cyan heading region (row 450-495, cols 320-850): ref has 5,492 cyan-classified pixels; app has 5,144. Mean and median colour values match almost exactly (`[91, 197, 241]` median for both). The difference is purely in how many fractional-AA edge pixels reach the cyan-detection threshold.
+- Sub-pixel cross-correlation showed the optimal global shift to minimise app-vs-ref pixel difference is +1px in X (app is 1px to the LEFT of ref). This is consistent with a per-glyph-origin sub-pixel offset, not a systemic CTM error.
+- The pattern is consistent across all 17 failing pages of this cluster: glyph layout matches PyMuPDF byte-for-byte, but tiny-skia's linear-space anti-aliasing produces ~7% less ink coverage at fractional pixel edges than PyMuPDF/MuPDF's gamma-aware AA. This 7% under-coverage on every glyph edge is enough to push 2-7% of total pixels over the per-pixel tolerance, depending on text density on each page.
+
+**Hypothesis**: Architectural rasterizer-quality difference. tiny-skia performs linear-space AA against gamma-encoded sRGB coverage values. PyMuPDF/MuPDF performs gamma-correct AA (anti-aliasing in linear space then encoding to sRGB). The result is that fractional-pixel edges in our renderer reach lower coverage at the same outline geometry than the reference. There's no PDF feature gap and no glyph-mapping bug — the glyph outlines, advance widths, positions, font selection, and colour are all correct. The difference is the rasterizer's gamma handling.
+
+**Decision**: NO_FEATURE_GAP_FOUND / ARCHITECTURAL. Per iter-10 prompt guidance ("If the issue is fundamentally a rasterizer-quality difference (PyMuPDF gamma correction, anti-grain integer math, etc.) that would require swapping out tiny_skia, report ARCHITECTURAL_QUESTION"), no fix attempted in this iteration.
+
+**Total passing**: 56/106 (unchanged).
+
+**Recommended next step**: Pause the per-iter render-kernel improvement loop. The remaining failures share a common rasterizer-quality root cause that won't be solved by additional small fixes to glyph outlines, font resolution, or text-state arithmetic. Two paths forward, both substantial:
+1. Replace tiny-skia with a gamma-aware rasterizer (potentially Vello, Skia via Skia-Safe, or rolling a small linear-light AA rasterizer). High effort but unlocks the entire long-tail category at once.
+2. Apply a per-glyph "stem widening" hack — slightly inflate fill paths by 0.1-0.2 device pixels before rasterising — to compensate for the under-coverage. Low effort but pixel-imperfect and may regress pages that DON'T have this drift.
+
+**Commit**: (no code change — investigation-only iter)
