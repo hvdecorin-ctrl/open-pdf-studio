@@ -236,11 +236,12 @@ pub fn render_text_glyphs_skia(
                 let sh = s * horizontal_scaling;
                 let gx = rise * tm[2] + tm[4];
                 let gy = rise * tm[3] + tm[5];
+                let (sgx, sgy) = snap_glyph_origin(gx, gy, &state.current.ctm);
 
                 state.save();
                 let saved_fill = state.current.fill_color;
                 state.current.fill_color = fill_rgba;
-                state.concat_matrix(sh * tm[0], sh * tm[1], s * tm[2], s * tm[3], gx, gy);
+                state.concat_matrix(sh * tm[0], sh * tm[1], s * tm[2], s * tm[3], sgx, sgy);
 
                 renderer.begin_path();
                 for cmd in &outline.commands {
@@ -264,6 +265,48 @@ pub fn render_text_glyphs_skia(
             tm[4] += tx * tm[0];
             tm[5] += tx * tm[1];
         }
+    }
+}
+
+/// Snap the per-glyph origin to the nearest device pixel.
+///
+/// PyMuPDF/MuPDF (the reference renderer) performs pixel-grid alignment
+/// when rasterising glyph outlines: each glyph's origin is rounded to an
+/// integer device pixel before the rasterizer scan-converts the outline.
+/// This is a long-standing convention in font rasterizers (FreeType,
+/// Cairo, Skia) — it produces crisper anti-aliasing edges and avoids the
+/// 0.5-pixel "soft-edge" patterns that arise when a glyph stem straddles
+/// two pixels at sub-pixel offset.
+///
+/// Without snapping, our renderer keeps the full sub-pixel position from
+/// the text-matrix advance accumulator, so each glyph edge falls at a
+/// fractional pixel. Both renderers produce visually correct text, but
+/// per-pixel AA values differ across thousands of glyph edges → 4-8% diff
+/// across text-heavy pages even though the layout is byte-identical.
+///
+/// We snap to whole device pixels (integer round) by:
+///   1. Applying the current CTM to (gx, gy) to get device-space origin.
+///   2. Rounding both to the nearest integer.
+///   3. Applying the inverse CTM to recover the equivalent user-space gx'.
+///
+/// If the CTM is non-invertible (degenerate scale), we fall back to the
+/// unsnapped origin.
+#[inline]
+fn snap_glyph_origin(gx: f32, gy: f32, ctm: &tiny_skia::Transform) -> (f32, f32) {
+    // Forward map (gx, gy) through CTM to device space.
+    let dx = ctm.sx * gx + ctm.kx * gy + ctm.tx;
+    let dy = ctm.ky * gx + ctm.sy * gy + ctm.ty;
+    // Round to nearest pixel.
+    let sdx = dx.round();
+    let sdy = dy.round();
+    // Inverse-map back to user space.
+    match ctm.invert() {
+        Some(inv) => {
+            let sgx = inv.sx * sdx + inv.kx * sdy + inv.tx;
+            let sgy = inv.ky * sdx + inv.sy * sdy + inv.ty;
+            (sgx, sgy)
+        }
+        None => (gx, gy),
     }
 }
 
@@ -314,10 +357,11 @@ pub fn render_cid_text_glyphs_skia(
                 let sh = s * horizontal_scaling;
                 let gx = rise * tm[2] + tm[4];
                 let gy = rise * tm[3] + tm[5];
+                let (sgx, sgy) = snap_glyph_origin(gx, gy, &state.current.ctm);
 
                 state.save();
                 state.current.fill_color = fill_rgba;
-                state.concat_matrix(sh * tm[0], sh * tm[1], s * tm[2], s * tm[3], gx, gy);
+                state.concat_matrix(sh * tm[0], sh * tm[1], s * tm[2], s * tm[3], sgx, sgy);
 
                 renderer.begin_path();
                 for cmd in &outline.commands {

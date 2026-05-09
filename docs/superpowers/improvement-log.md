@@ -208,3 +208,46 @@ Per-PDF stats from initial harness run:
 
 **Commit**: fe6ce578
 
+
+### Iteration 7 — Glyph-origin device-pixel snapping (text-edge AA matches MuPDF)
+
+**Iter-6 baseline** (run 2026-05-09_1600-80da0486): 52/106 passing. Worst page in suite was 2885 Demo project p4 at 8.09%. Several other 2885 pages clustered in the 5-8% band (p2 5.66, p6 5.20, p8 6.12, p13 5.91), as did Text pdf gecombineerd / rapport-constructie p8/11 (~6.5-6.7%) and Tekst.pdf p0-p3 (2.16-3.70%, just over the 2% threshold).
+
+**Investigation findings**:
+- Page 4 of 2885 is structurally trivial: a single Form XObject `/X8` with `/Group /S /Transparency /I true` containing 1091 `Tj` ops over 3 embedded TrueType-subset CID fonts (NotoSans-Regular, TAN-PEARL-Regular, SeN-CB). No images, no shadings, no patterns, no nested transparency.
+- Visual inspection (`Drijvend bouwen…` body paragraph, row 280, col 100-200): both ref and app render the text correctly and align byte-for-byte at the **stem interiors** (full-ink purple = `[59, 27, 61]` in both renders). The diff is concentrated on **glyph anti-aliased edge pixels** — same column, but ref has e.g. left-edge AA value `120` (53% ink coverage) and right-edge `228` (11% coverage), while app produces a more symmetric `206` (19%) / `157` (38%) pattern. Mean text-pixel intensity: ref 69.1, app 73.3 (app is ~6% lighter); pixels < 50 (very dark): ref 207338 vs app 226048 (app has 9% MORE fully-inked pixels).
+- Cross-correlation to detect a global x/y shift: minimum mean-abs-diff is at offset (0, 0). So glyphs are positioned at the right places — what differs is the **per-glyph sub-pixel placement** of each origin within its target pixel cell.
+- Root cause: `text_renderer::render_text_glyphs_skia` and `render_cid_text_glyphs_skia` compute glyph origin as `(gx, gy) = (rise·tm[2] + tm[4], rise·tm[3] + tm[5])` — i.e. the accumulated sub-pixel position from successive `tx = (w0·Tfs + Tc + Tw) · Th` advances. tiny_skia then rasterises each glyph at its full sub-pixel origin. PyMuPDF/MuPDF (and most production rasterizers — FreeType, Cairo, Skia) **snap each glyph origin to the nearest integer device pixel** before scan-converting the outline. Without snapping, our glyph stems straddle two columns at fractional offset, producing a wider/softer AA edge profile than the reference's snapped, crisper edges.
+
+**Fix** — `open-pdf-render/src/text_renderer.rs`:
+- New `snap_glyph_origin(gx, gy, ctm) -> (gx', gy')` helper. Forward-maps the user-space origin through the current CTM to device space, rounds both components to the nearest integer, then inverse-maps back to user space. If the CTM is non-invertible, falls back to the unsnapped origin.
+- Both `render_text_glyphs_skia` (simple-encoded fonts) and `render_cid_text_glyphs_skia` (Identity-H/Identity-V Type0 fonts) call the helper before `state.concat_matrix(...)`. Glyph outlines are then rasterised at the pixel-aligned origin while still inheriting the full font-size scale from the text matrix.
+- The `tm[4]/tm[5]` advance accumulator is **not** snapped — only the per-glyph painting origin. Text layout (kerning, justification) stays accurate; only the rasterisation grid alignment changes.
+
+**Verification** (run 2026-05-09_1626-4dfae30a, full suite):
+- **2885 Demo project p4: 8.09% → 0.08% (FAIL → PASS)** — the targeted -8.01pp win. The high-water-mark page is now near-perfect.
+- Bonus 2885 wins (text-heavy pages with same root cause):
+  - p2: 5.66% → 0.06% (FAIL → PASS, -5.60pp).
+  - p6: 5.20% → 0.05% (FAIL → PASS, -5.15pp).
+  - p8: 6.12% → 6.07% (still FAIL but slightly better).
+  - p13: 5.91% → 5.70% (still FAIL but slightly better).
+  - 2885 net: 9/14 → **12/14** PASS (+3); avg diff -1.55pp.
+- Tekst.pdf wins:
+  - p0: 2.45% → 1.97% (FAIL → PASS).
+  - p1: 2.16% → 1.86% (FAIL → PASS).
+  - p4: 0.68% → 0.53%.
+  - Tekst net: 1/5 → **3/5** PASS (+2); avg diff -0.45pp.
+- Regressions (4 borderline pages — all were within 0.2pp of the 2% threshold):
+  - Technische tekening p0: 1.96% → 2.13% (PASS → FAIL, +0.18).
+  - Barn Relocation p6: 1.82% → 2.06% (PASS → FAIL, +0.24).
+  - Text pdf gecombineerd p22: 1.98% → 2.99% (PASS → FAIL, +1.01).
+  - rapport-constructie p22: 1.98% → 2.99% (PASS → FAIL, +1.01) — same content as Text pdf gecombineerd p22.
+- Average diff change per PDF: 2885 -1.55pp, Tekst -0.45pp, Text/rapport -0.09pp, Zware vector +0.16pp, Barn +0.13pp, Technische +0.21pp, Combinatie +0.07pp. Net positive on the heaviest-failing PDF, slight regression on already-passing PDFs (snapping shifts the AA pattern by half a pixel either way; sometimes that aligns better with the reference, sometimes worse).
+- **Total passing: 52/106 → 53/106 (+1 net)**. Five FAIL→PASS wins offset four PASS→FAIL regressions. The high-water mark went from 8.09% to 6.41% (Text pdf gecombineerd p8).
+
+**Concerns / next ideas**:
+- The four PASS→FAIL regressions all sit between 2.0 and 3.0% — they were borderline before and the snap shifted them just over. A smarter snap (e.g. snap only when the fractional part is > some threshold, or only snap one axis) might recover some without losing the 2885/Tekst gains.
+- Several pages now in the 5-6% band (Text/rapport p8/11/17/20/21, 2885 p8/p13, Zware p3/p5) — same text-rasterizer-difference shape as iter-7 targeted. Most likely need additional rasterizer-level work (gamma-correct AA, stem snapping, font hinting) which is more invasive than this iteration.
+- Worth investigating: could `tiny_skia::Paint::force_hq_pipeline` or different stroke/fill quality knobs nudge the AA closer? Current `paint.anti_alias = true` is already on.
+
+**Commit**: TBD
