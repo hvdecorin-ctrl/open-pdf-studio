@@ -686,6 +686,39 @@ impl Interpreter {
         let expected = width as usize * height as usize * components;
         if raw_pixels.len() < expected { return None; }
 
+        // Resolve and decode an /SMask soft-alpha mask if present. The mask
+        // is itself an Image XObject (DeviceGray, 8 bpc) whose pixel values
+        // become the per-pixel alpha for this image. We only honour the
+        // mask when it's the same resolution as the image — resampling
+        // mismatched dims would risk introducing worse artefacts than no
+        // mask at all. /Matte (un-matting against a background colour) is
+        // intentionally ignored for now; the silhouette alone fixes the
+        // bulk of the page-0 / page-27 black-rectangle artefact on the
+        // rapport-constructie / Text pdf gecombineerd PDFs.
+        let smask_alpha: Option<Vec<u8>> = dict.get(b"SMask").ok().and_then(|o| {
+            let stream = match o {
+                Object::Stream(s) => Some(s.clone()),
+                Object::Reference(id) => doc.get_object(*id).ok().and_then(|obj| {
+                    if let Object::Stream(s) = obj { Some(s.clone()) } else { None }
+                }),
+                _ => None,
+            }?;
+            let sm_dict = &stream.dict;
+            let sm_w = sm_dict.get(b"Width").ok().and_then(|o| match o {
+                Object::Integer(i) => Some(*i as u32),
+                _ => None,
+            })?;
+            let sm_h = sm_dict.get(b"Height").ok().and_then(|o| match o {
+                Object::Integer(i) => Some(*i as u32),
+                _ => None,
+            })?;
+            if sm_w != width || sm_h != height { return None; }
+            let bytes = Self::decompress_image_stream(&stream)?;
+            let needed = (sm_w as usize) * (sm_h as usize);
+            if bytes.len() < needed { return None; }
+            Some(bytes[..needed].to_vec())
+        });
+
         // Determine output size — downsample if over budget
         let (out_w, out_h, step_x, step_y) = if max_pixels > 0 && width * height > max_pixels {
             let ratio = (max_pixels as f64 / (width as f64 * height as f64)).sqrt();
@@ -696,33 +729,54 @@ impl Interpreter {
             (width, height, 1.0, 1.0)
         };
 
+        // tiny-skia's `PixmapRef::from_bytes` requires PREMULTIPLIED RGBA —
+        // it returns None if r/g/b > a for any pixel. Premultiply when
+        // baking the per-pixel alpha so transparent regions of the SMask
+        // (alpha == 0) become fully transparent black instead of being
+        // rejected by the pixmap loader.
+        let pm = |c: u8, a: u8| -> u8 { ((c as u16 * a as u16 + 127) / 255) as u8 };
+
         let mut rgba = Vec::with_capacity((out_w * out_h * 4) as usize);
         for dy in 0..out_h {
             for dx in 0..out_w {
                 let src_x = (dx as f64 * step_x) as usize;
                 let src_y = (dy as f64 * step_y) as usize;
-                let idx = (src_y * width as usize + src_x) * components;
+                let src_idx = src_y * width as usize + src_x;
+                let idx = src_idx * components;
+                let alpha = smask_alpha
+                    .as_ref()
+                    .and_then(|a| a.get(src_idx).copied())
+                    .unwrap_or(255);
                 match components {
                     1 => {
                         let g = raw_pixels[idx];
-                        rgba.extend_from_slice(&[g, g, g, 255]);
+                        let g2 = pm(g, alpha);
+                        rgba.extend_from_slice(&[g2, g2, g2, alpha]);
                     }
                     3 => {
-                        rgba.extend_from_slice(&[raw_pixels[idx], raw_pixels[idx+1], raw_pixels[idx+2], 255]);
+                        rgba.extend_from_slice(&[
+                            pm(raw_pixels[idx],     alpha),
+                            pm(raw_pixels[idx + 1], alpha),
+                            pm(raw_pixels[idx + 2], alpha),
+                            alpha,
+                        ]);
                     }
                     4 => {
                         let c = raw_pixels[idx] as f32 / 255.0;
                         let m = raw_pixels[idx+1] as f32 / 255.0;
                         let y = raw_pixels[idx+2] as f32 / 255.0;
                         let k = raw_pixels[idx+3] as f32 / 255.0;
+                        let r = (255.0 * (1.0 - c) * (1.0 - k)) as u8;
+                        let g = (255.0 * (1.0 - m) * (1.0 - k)) as u8;
+                        let b = (255.0 * (1.0 - y) * (1.0 - k)) as u8;
                         rgba.extend_from_slice(&[
-                            (255.0 * (1.0 - c) * (1.0 - k)) as u8,
-                            (255.0 * (1.0 - m) * (1.0 - k)) as u8,
-                            (255.0 * (1.0 - y) * (1.0 - k)) as u8,
-                            255,
+                            pm(r, alpha),
+                            pm(g, alpha),
+                            pm(b, alpha),
+                            alpha,
                         ]);
                     }
-                    _ => { rgba.extend_from_slice(&[0, 0, 0, 255]); }
+                    _ => { rgba.extend_from_slice(&[0, 0, 0, alpha]); }
                 }
             }
         }
@@ -1720,6 +1774,45 @@ impl Interpreter {
             return;
         }
 
+        // Resolve and decode an /SMask soft-alpha mask, if present. The mask
+        // is an Image XObject in DeviceGray (8 bpc) whose pixel values become
+        // the per-pixel alpha for this image. PDF spec 8.5.4: a SMask whose
+        // dimensions equal the parent image's gives a 1:1 alpha lookup; we
+        // ignore /Matte (un-matting against the matte colour) for this
+        // iteration — the silhouette accounts for the bulk of the visual diff.
+        // Returns Some(alpha_bytes) when we have width*height single-byte
+        // values usable as the RGBA `a` channel, otherwise None.
+        let smask_alpha: Option<Vec<u8>> = dict.get(b"SMask").ok().and_then(|o| {
+            let stream = match o {
+                Object::Stream(s) => Some(s.clone()),
+                Object::Reference(id) => doc.get_object(*id).ok().and_then(|obj| {
+                    if let Object::Stream(s) = obj { Some(s.clone()) } else { None }
+                }),
+                _ => None,
+            }?;
+            let sm_dict = &stream.dict;
+            let sm_w = sm_dict.get(b"Width").ok().and_then(|o| match o {
+                Object::Integer(i) => Some(*i as u32),
+                _ => None,
+            })?;
+            let sm_h = sm_dict.get(b"Height").ok().and_then(|o| match o {
+                Object::Integer(i) => Some(*i as u32),
+                _ => None,
+            })?;
+            // Bail out if the mask is not the same resolution as the image —
+            // resampling is a future improvement; misaligned alpha would be
+            // worse than no alpha.
+            if sm_w != width as u32 || sm_h != height as u32 {
+                return None;
+            }
+            let bytes = Self::decompress_image_stream(&stream)?;
+            let needed = (sm_w as usize) * (sm_h as usize);
+            if bytes.len() < needed {
+                return None;
+            }
+            Some(bytes[..needed].to_vec())
+        });
+
         // Detect filter to determine image format
         let filter = dict.get(b"Filter").ok().and_then(|o| {
             match o {
@@ -1810,21 +1903,44 @@ impl Interpreter {
                 // Convert raw pixels to RGBA and encode as simple bitmap
                 let expected_len = width as usize * height as usize * components as usize;
                 if raw_pixels.len() >= expected_len {
-                    // Build RGBA buffer
+                    // Build RGBA buffer. When an /SMask supplied per-pixel
+                    // alpha, plug those bytes into the `a` slot so transparent
+                    // regions (alpha == 0) drop out instead of painting solid
+                    // RGB. Without this, images that rely on a soft mask
+                    // (cover pages, drop-shadowed logos) render with the
+                    // background-bleed pre-matte showing through as solid
+                    // black, which dominated the page-0/27 diff on the
+                    // rapport-constructie / Text pdf gecombineerd PDFs.
+                    // tiny-skia (used by the server-side rasteriser) requires
+                    // PREMULTIPLIED RGBA — `PixmapRef::from_bytes` returns
+                    // None if r/g/b > a for any pixel. The browser-side
+                    // canvas path treats the same blob as straight RGBA but
+                    // either way the conversion produces correct pixels (a==
+                    // 255 → premultiplied == straight; a < 255 → both pipes
+                    // can recover the source colour). So premultiply here.
                     let mut rgba = Vec::with_capacity(width as usize * height as usize * 4);
                     let mut i = 0;
-                    for _ in 0..(width as usize * height as usize) {
+                    let n_pixels = width as usize * height as usize;
+                    let pm = |c: u8, a: u8| -> u8 {
+                        ((c as u16 * a as u16 + 127) / 255) as u8
+                    };
+                    for px in 0..n_pixels {
+                        let alpha = smask_alpha
+                            .as_ref()
+                            .and_then(|a| a.get(px).copied())
+                            .unwrap_or(255);
                         match components {
                             1 => {
                                 let g = raw_pixels.get(i).copied().unwrap_or(0);
-                                rgba.extend_from_slice(&[g, g, g, 255]);
+                                let g2 = pm(g, alpha);
+                                rgba.extend_from_slice(&[g2, g2, g2, alpha]);
                                 i += 1;
                             }
                             3 => {
                                 let r = raw_pixels.get(i).copied().unwrap_or(0);
                                 let g = raw_pixels.get(i + 1).copied().unwrap_or(0);
                                 let b = raw_pixels.get(i + 2).copied().unwrap_or(0);
-                                rgba.extend_from_slice(&[r, g, b, 255]);
+                                rgba.extend_from_slice(&[pm(r, alpha), pm(g, alpha), pm(b, alpha), alpha]);
                                 i += 3;
                             }
                             4 => {
@@ -1836,11 +1952,11 @@ impl Interpreter {
                                 let r = (255.0 * (1.0 - c) * (1.0 - k)) as u8;
                                 let g = (255.0 * (1.0 - m) * (1.0 - k)) as u8;
                                 let b = (255.0 * (1.0 - y) * (1.0 - k)) as u8;
-                                rgba.extend_from_slice(&[r, g, b, 255]);
+                                rgba.extend_from_slice(&[pm(r, alpha), pm(g, alpha), pm(b, alpha), alpha]);
                                 i += 4;
                             }
                             _ => {
-                                rgba.extend_from_slice(&[0, 0, 0, 255]);
+                                rgba.extend_from_slice(&[0, 0, 0, alpha]);
                                 i += components as usize;
                             }
                         }

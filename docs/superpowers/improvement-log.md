@@ -88,3 +88,33 @@ Per-PDF stats from initial harness run:
 **Total passing**: 25/106 → 26/106
 
 **Commit**: b93814d6
+
+### Iteration 3 — Image /SMask soft alpha (rapport-constructie / Text pdf gecombineerd p0 + p27)
+
+**Iter-2 baseline** (run 2026-05-09_1413-e3f5e26b): 26/106 passing. Top remaining failures: rapport-constructie p27 = 61.84%, p0 = 50.47% (both also present in identical-failures Text pdf gecombineerd).
+
+**Investigation findings**:
+- Resources on rapport-constructie p0: a single Image XObject `/Image9` 1653×2338, DeviceRGB, FlateDecode, with `/SMask` → DeviceGray 8 bpc FlateDecode 1653×2338 (`/Matte [0 0 0]`). Page content stream: header artifacts + a single `/Image9 Do`. Page 27 is the same shape with `/Image175` (also has SMask).
+- Visual symptom: the regions of the image that should be transparent (revealing the white page) were rendered as a giant solid black rectangle. Opaque parts of the image (logo, blue title block, colored shape clusters) rendered correctly. Looked exactly like the SMask was being thrown away and the black /Matte pre-multiplied colour was bleeding through.
+- Root cause: `Interpreter::decode_raw_image` (server-side render path used by the harness) and `Interpreter::handle_image_xobject` (browser-side draw-command path) both built RGBA buffers with the alpha byte hard-coded to `255`. The image dictionary's `/SMask` entry was never resolved or read, so the per-pixel soft alpha was discarded. Tiny-skia's pixmap loader requires premultiplied RGBA, so any future alpha < 255 also needs the colour channels premultiplied.
+
+**Fix** — `open-pdf-render/src/interpreter.rs`:
+- `decode_raw_image` (server-side): resolve `/SMask` (Stream or Reference→Stream), confirm Width/Height match the parent image (skip otherwise — resampling is a future improvement), call `decompress_image_stream` to recover the alpha bytes, then plug those bytes into the per-pixel RGBA `a` slot. Premultiply R/G/B by `a` because `tiny_skia::PixmapRef::from_bytes` requires premultiplied input. CMYK and grayscale paths also premultiply.
+- `handle_image_xobject` (browser-side): same SMask resolution + premultiplied RGBA emission, so the JS `vector-renderer` path matches the server.
+- `/Matte` un-matting deliberately skipped this iteration — the silhouette alone fixes the visible black-rectangle artefact; un-matting is a refinement for sub-pixel mask edges.
+
+**Verification** (run 2026-05-09_1422-e3f5e26b vs iter-2 baseline):
+- Text pdf gecombineerd p27: 61.84% → 0.55% (FAIL → PASS) — -61.29pp.
+- rapport-constructie p27: 61.84% → 0.55% (FAIL → PASS) — -61.29pp.
+- Text pdf gecombineerd p0: 50.47% → 1.21% (FAIL → PASS) — -49.26pp.
+- rapport-constructie p0: 50.47% → 1.21% (FAIL → PASS) — -49.26pp.
+- Bonus wins (other PDFs with SMask images):
+  - 2885 Demo project p7: 41.76% → 8.27% (-33.49pp).
+  - 2885 Demo project p3: 12.10% → 2.44% (-9.65pp).
+  - 2885 Demo project p9: 4.26% → 1.08% (FAIL → PASS).
+- Zero regressions — no page worsened by more than 0.1pp.
+- Visual confirmation: cover page now matches reference with correct transparency around the logo and shapes; previously transparent regions are white, not black.
+
+**Total passing**: 26/106 → 31/106 (+5)
+
+**Commit**: <pending>
