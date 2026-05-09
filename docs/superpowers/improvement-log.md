@@ -592,4 +592,4 @@ For `BinaryCutout`, high-alpha pixels (≥ 250) get the dimming treatment (alpha
 
 **Status**: DONE_WITH_CONCERNS — architectural fix landed, verified spec-conformant, zero regressions, but the predicted pass-count improvement did not materialize (the affected pages were already passing under the iter-2 approximation).
 
-**Commit**: (filled in by commit step)
+**Commit**: c0680f9b
