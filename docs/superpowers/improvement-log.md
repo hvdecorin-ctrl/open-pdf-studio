@@ -251,3 +251,41 @@ Per-PDF stats from initial harness run:
 - Worth investigating: could `tiny_skia::Paint::force_hq_pipeline` or different stroke/fill quality knobs nudge the AA closer? Current `paint.anti_alias = true` is already on.
 
 **Commit**: e8fc0262
+
+
+### Iteration 8 — Snap refinement: axis-aligned-only glyph snapping (Path A)
+
+**Iter-7 baseline** (per improvement-log entry above): 53/106 passing. Four PASS→FAIL regressions from iter-7's unconditional glyph snap: Technische tekening p0 (1.96 → 2.13), Barn Relocation p6 (1.82 → 2.06), Text pdf gecombineerd p22 (1.98 → 2.99), rapport-constructie p22 (1.98 → 2.99).
+
+**Path chosen**: A — refine the snap. Path B (chasing 5-7% pages) requires deeper rasterizer-level work (stem snapping, gamma-correct AA, font hinting) that is more invasive than the available time budget. Path A's idea #1 (snap only when CTM is axis-aligned) has a clean, falsifiable hypothesis backed by pikepdf inspection of the regressed pages.
+
+**Investigation findings**:
+- pikepdf inspection of the four iter-7 regressed pages: Technische tekening p0 (`/Rotate 90`, MediaBox 1684×2384), Barn Relocation p6 (`/Rotate 90`, MediaBox 1584×2448), Text pdf gecombineerd p22 (`/Rotate 0`), rapport-constructie p22 (`/Rotate 0`). 2 of 4 regressions are on `/Rotate 90` pages.
+- For `/Rotate 90` pages, the page-level rotation is folded into the initial CTM (parser.rs lines 358-370), so `state.current.ctm.kx` and `ctm.ky` are non-zero throughout the page render. Iter-7's snap rounds the device-space origin to integer pixels, but on a rotated CTM the inverse-mapped user-space origin gets shifted along the perpendicular advance direction — the snap moves each glyph's stem by up to half a pixel along its visible vertical axis, producing AA edge patterns that don't match the reference.
+- For `/Rotate 0` pages with axis-aligned text (Tekst, 2885 wins), `kx=ky=0` and the snap produces the desired horizontal pixel-grid alignment with no spurious vertical shift.
+- The two unrotated regressions (Text/rapport p22) are harder — the snap creates a 1pp regression on an axis-aligned page. Likely a content-specific AA-pattern mismatch that would need a different refinement (idea #4 cumulative-error tracking) to recover; out of scope for iter-8.
+
+**Hypothesis**: Restrict the snap to pages where the CTM has negligible rotation/skew (`kx.abs() < 1e-3 && ky.abs() < 1e-3`). This recovers the two `/Rotate 90` regressions while preserving every iter-7 win (which was on rotation-0 pages).
+
+**Fix** — `open-pdf-render/src/text_renderer.rs`:
+- `snap_glyph_origin` now checks `ctm.kx.abs() > AXIS_ALIGNED_EPS || ctm.ky.abs() > AXIS_ALIGNED_EPS` at entry and returns the unsnapped origin in that case. Only the rounding path was guarded — the inverse-CTM math is unchanged otherwise.
+- `AXIS_ALIGNED_EPS = 1e-3` — generous enough to handle floating-point noise on identity-scale CTMs, tight enough to reject any real rotation (`sin(0.1°) ≈ 1.7e-3`).
+- Updated docstring to record why the guard exists (iter-7 regressions).
+
+**Verification** (full suite run 2026-05-09_1641-5f6ebc9a vs iter-7 baseline run):
+- **Technische tekening p0: 2.13% → 1.96% (FAIL → PASS)** — recovered, -0.17pp.
+- **Barn Relocation p6: 2.06% → 1.82% (FAIL → PASS)** — recovered, -0.24pp.
+- Text pdf gecombineerd p22: 2.99% → 2.99% (still FAIL) — not recovered (axis-aligned page, snap still applies).
+- rapport-constructie p22: 2.99% → 2.99% (still FAIL) — same as above.
+- All iter-7 2885 wins preserved: p2 0.06, p4 0.08, p6 0.05 — all still PASS.
+- All iter-7 Tekst wins preserved: p0 1.97, p1 1.86 — both still PASS.
+- Per-PDF passing: Barn 2/7→3/7, Technische tekening 2/4→3/4, 2885 12/14, Tekst 3/5, Text/rapport 12/28 each, Zware vector 12/19, Combinatie 0/1.
+- **Total passing: 53/106 → 55/106 (+2 net)**. Zero regressions; only the two `/Rotate 90` recoveries moved.
+
+**Concerns / next ideas**:
+- The two remaining iter-7 regressions (Text/rapport p22 at 2.99%) are on axis-aligned pages so this iteration cannot recover them. They need either idea #4 (cumulative subpixel error across a glyph run) or a content-aware approach. Probably 1 or 2pp recoverable but more invasive.
+- High-water mark unchanged (Text/rapport p8 = 6.41%). Several pages still cluster in 4-7% band — same text-rasterizer-difference family that iter-7 partially attacked.
+- Worst PDF in current state is Zware vector PDF (12/19 PASS, avg ~2.2%, several pages 3-5%) — these are vector-heavy scientific drawing pages that would benefit from a path-rendering iteration rather than text snapping.
+- The `1e-3` epsilon comfortably distinguishes axis-aligned from rotated; if a future PDF has near-axis-aligned-but-not-quite text matrix (e.g. a 1° rotated PDF), the snap will be skipped on that page. Acceptable trade-off.
+
+**Commit**: TBD (this entry)

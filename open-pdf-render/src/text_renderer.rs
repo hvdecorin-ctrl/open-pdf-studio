@@ -289,10 +289,27 @@ pub fn render_text_glyphs_skia(
 ///   2. Rounding both to the nearest integer.
 ///   3. Applying the inverse CTM to recover the equivalent user-space gx'.
 ///
+/// **Axis-aligned only**: snapping is only applied when the CTM has
+/// negligible rotation/skew (kx/ky near zero). On rotated pages
+/// (`/Rotate 90/270`) the page-level rotation is folded into the CTM
+/// so kx/ky ≠ 0; in that regime, integer-device-pixel snapping shifts
+/// glyphs along the perpendicular advance direction and can WORSEN the
+/// AA pattern relative to the reference. PyMuPDF/MuPDF handle this
+/// internally; we approximate the same behaviour by leaving rotated
+/// text unsnapped (iter-7 found this regressed Technische tekening p0
+/// and Barn Relocation p6, both `/Rotate 90` pages).
+///
 /// If the CTM is non-invertible (degenerate scale), we fall back to the
 /// unsnapped origin.
 #[inline]
 fn snap_glyph_origin(gx: f32, gy: f32, ctm: &tiny_skia::Transform) -> (f32, f32) {
+    // Skip snapping on rotated/skewed pages — the snap shifts each glyph
+    // along the perpendicular advance direction by up to half a pixel,
+    // and the reference renderer's AA pattern doesn't match that shift.
+    const AXIS_ALIGNED_EPS: f32 = 1e-3;
+    if ctm.kx.abs() > AXIS_ALIGNED_EPS || ctm.ky.abs() > AXIS_ALIGNED_EPS {
+        return (gx, gy);
+    }
     // Forward map (gx, gy) through CTM to device space.
     let dx = ctm.sx * gx + ctm.kx * gy + ctm.tx;
     let dy = ctm.ky * gx + ctm.sy * gy + ctm.ty;
