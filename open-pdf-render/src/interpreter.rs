@@ -2949,6 +2949,160 @@ impl Interpreter {
         Some((xmin, ymin, xmax, ymax))
     }
 
+    /// Render a single annotation's appearance stream onto the page canvas.
+    ///
+    /// PDF spec ISO 32000-1 §12.5.5 — an annotation's normal appearance
+    /// (`/AP /N`) is a Form XObject. To position it on the page, a matrix
+    /// `A` is computed that scales/translates the appearance's transformed
+    /// BBox to align with the annotation's `/Rect`:
+    ///
+    /// 1. Transform the form's `/BBox` by the form's `/Matrix` to get the
+    ///    axis-aligned bbox `T` in form-coordinate-system-after-Matrix.
+    /// 2. `sx = (Rect.w) / (T.w)`, `sy = (Rect.h) / (T.h)`
+    /// 3. `A = [sx, 0, 0, sy, Rect.x_min - T.x_min*sx, Rect.y_min - T.y_min*sy]`
+    ///
+    /// The rendering is then equivalent to: `A cm <Matrix cm> <appearance>`,
+    /// with the form's resources active.
+    ///
+    /// Without this pass, sticky-note callouts, freeform text annotations,
+    /// rectangles-with-fill, and other AP-stream annotations are skipped
+    /// entirely — the page content stream alone doesn't include them.
+    /// PyMuPDF / Adobe / etc render these by default, so the regression
+    /// test sees the missing yellow boxes / freeText labels as a diff.
+    pub fn render_annotation_appearance(
+        ap_stream: &lopdf::Stream,
+        annot_rect: (f32, f32, f32, f32),
+        renderer: &mut SkiaRenderer,
+        state: &mut GraphicsStateStack,
+        doc: &Document,
+        font_registry: &mut FontRegistry,
+    ) {
+        // Extract the form's BBox (mandatory per spec).
+        let bbox = match Self::extract_form_bbox(&ap_stream.dict) {
+            Some(b) => b,
+            None => return,
+        };
+
+        // Extract the form's Matrix (defaults to identity).
+        let (ma, mb, mc, md, mtx, mty) = match ap_stream.dict.get(b"Matrix") {
+            Ok(Object::Array(arr)) if arr.len() >= 6 => (
+                Self::f(&arr[0]), Self::f(&arr[1]),
+                Self::f(&arr[2]), Self::f(&arr[3]),
+                Self::f(&arr[4]), Self::f(&arr[5]),
+            ),
+            _ => (1.0, 0.0, 0.0, 1.0, 0.0, 0.0),
+        };
+
+        // Step 1: transform BBox by Matrix to get axis-aligned T.
+        let (bx0, by0, bx1, by1) = bbox;
+        let corners = [
+            (bx0, by0), (bx1, by0), (bx1, by1), (bx0, by1),
+        ];
+        let mut tx_min = f32::INFINITY;
+        let mut ty_min = f32::INFINITY;
+        let mut tx_max = f32::NEG_INFINITY;
+        let mut ty_max = f32::NEG_INFINITY;
+        for (x, y) in corners {
+            let nx = ma * x + mc * y + mtx;
+            let ny = mb * x + md * y + mty;
+            tx_min = tx_min.min(nx);
+            ty_min = ty_min.min(ny);
+            tx_max = tx_max.max(nx);
+            ty_max = ty_max.max(ny);
+        }
+        let tw = tx_max - tx_min;
+        let th = ty_max - ty_min;
+        if tw <= 0.0 || th <= 0.0 {
+            return;
+        }
+
+        // Step 2/3: build A.
+        let (rx0, ry0, rx1, ry1) = annot_rect;
+        let sx = (rx1 - rx0) / tw;
+        let sy = (ry1 - ry0) / th;
+        let ax_e = rx0 - tx_min * sx;
+        let ay_f = ry0 - ty_min * sy;
+
+        // Save the parent graphics state and apply A then Matrix.
+        state.save();
+        state.concat_matrix(sx, 0.0, 0.0, sy, ax_e, ay_f);
+        state.concat_matrix(ma, mb, mc, md, mtx, mty);
+
+        // Clip to the form's BBox in form-coordinate space (per spec
+        // §8.10.2). This protects the page from content that paints
+        // outside the appearance's nominal bbox.
+        {
+            use tiny_skia::PathBuilder;
+            let mut pb = PathBuilder::new();
+            pb.move_to(bx0, by0);
+            pb.line_to(bx1, by0);
+            pb.line_to(bx1, by1);
+            pb.line_to(bx0, by1);
+            pb.close();
+            if let Some(path) = pb.finish() {
+                renderer.apply_clip(&mut state.current, &path, false);
+            }
+        }
+
+        // Resolve the form's own resources (fonts/colorspaces/etc).
+        let form_resources = Self::extract_form_resources(&ap_stream.dict, doc);
+        let empty_dict;
+        let res: &Dictionary = match form_resources.as_ref() {
+            Some(d) => d,
+            None => {
+                empty_dict = Dictionary::new();
+                &empty_dict
+            }
+        };
+
+        // Execute the appearance content stream. lopdf 0.34's
+        // `decompressed_content()` rejects Form XObjects with a `DictKey`
+        // error in some versions, so we try it first and fall back to
+        // raw `stream.content` (uncompressed) or manual flate-decode.
+        let content_bytes = match ap_stream.decompressed_content() {
+            Ok(b) => Some(b),
+            Err(_) => Self::decode_appearance_stream(ap_stream),
+        };
+        if let Some(bytes) = content_bytes {
+            let _ = Self::execute_internal(
+                &bytes,
+                renderer,
+                state,
+                doc,
+                res,
+                font_registry,
+                0,
+            );
+        }
+
+        state.restore();
+    }
+
+    /// Decode an appearance Form-XObject's stream when lopdf's
+    /// `decompressed_content()` refuses (typically with `DictKey`). Handles
+    /// the no-filter and `FlateDecode` cases — the only filters we've ever
+    /// seen on an `/AP /N` stream in practice.
+    fn decode_appearance_stream(stream: &lopdf::Stream) -> Option<Vec<u8>> {
+        use std::io::Read;
+        let filters = match stream.dict.get(b"Filter") {
+            Ok(Object::Name(n)) => vec![String::from_utf8_lossy(n).to_string()],
+            Ok(Object::Array(arr)) => arr.iter().filter_map(|o| {
+                o.as_name().ok().map(|n| String::from_utf8_lossy(n).to_string())
+            }).collect(),
+            _ => Vec::new(),
+        };
+        if filters.is_empty() {
+            return Some(stream.content.clone());
+        }
+        if filters.last().map(|s| s.as_str()) != Some("FlateDecode") {
+            return None;
+        }
+        let mut decoder = flate2::read::ZlibDecoder::new(stream.content.as_slice());
+        let mut out = Vec::with_capacity(stream.content.len() * 4);
+        decoder.read_to_end(&mut out).ok()?;
+        Some(out)
+    }
+
     /// Walk a content stream and emit one TextSpan per Tj/TJ run.
     /// Lighter than extract_commands — only the operators that affect text
     /// position or content are processed; path/color/image ops are skipped.

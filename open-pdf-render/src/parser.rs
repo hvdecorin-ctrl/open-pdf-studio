@@ -92,14 +92,142 @@ impl DocumentHandle {
         let resources = self.get_page_resources(page_id)?;
         let mut font_registry = self.font_registry.lock()
             .map_err(|e| RenderError::RenderError(format!("Font registry poisoned: {}", e)))?;
+
+        // Capture the page-to-pixel transform set up above, BEFORE the
+        // content stream runs (it may leave residual `cm` translations
+        // unpaired with q/Q). Annotations are positioned in PDF user
+        // space and need this clean transform for correct rendering.
+        let page_ctm = state.current.ctm;
+
         if max_image_pixels > 0 {
             crate::interpreter::Interpreter::execute_with_image_limit(&content_bytes, &mut renderer, &mut state, &self.doc, &resources, &mut *font_registry, max_image_pixels)?;
         } else {
             crate::interpreter::Interpreter::execute(&content_bytes, &mut renderer, &mut state, &self.doc, &resources, &mut *font_registry)?;
         }
+
+        // Iter 29: render page annotations with appearance streams
+        // (PDF spec §12.5.5). Skipping these makes sticky-note callouts,
+        // /FreeText labels, /Square outlines, /Stamp etc invisible — visible
+        // as missing yellow boxes vs. PyMuPDF reference on Technische
+        // tekening p1, Barn Relocation, and similar markup-heavy PDFs.
+        // Reset to the page-level CTM so annotation rects (in PDF user
+        // space) project to the correct page pixels regardless of what
+        // residual transform the content stream left behind.
+        state.current.ctm = page_ctm;
+        // Reset graphics state knobs that may have been left in unusual
+        // values by the content stream — annotation appearances expect a
+        // fresh state per spec.
+        state.current.fill_alpha = 1.0;
+        state.current.stroke_alpha = 1.0;
+        state.current.group_fill_alpha = 1.0;
+        state.current.group_stroke_alpha = 1.0;
+        state.current.text_render_mode = 0;
+        state.current.clip_path = None;
+        self.render_page_annotations(page_id, &mut renderer, &mut state, &mut *font_registry);
+
         drop(font_registry);
 
         Ok(RenderedPage { width, height, rgba: renderer.into_rgba() })
+    }
+
+    /// Render every annotation on the page that has a `/AP /N` appearance
+    /// stream. Skipped types (no AP): /Link (interactive only — no visual),
+    /// /Widget without appearance, /Popup (associated with another annot).
+    fn render_page_annotations(
+        &self,
+        page_id: ObjectId,
+        renderer: &mut crate::renderer::SkiaRenderer,
+        state: &mut crate::graphics_state::GraphicsStateStack,
+        font_registry: &mut FontRegistry,
+    ) {
+        let page_dict = match self.doc.get_object(page_id).and_then(|o| o.as_dict().map(|d| d.clone())) {
+            Ok(d) => d,
+            Err(_) => return,
+        };
+        // Resolve /Annots — may be a direct array or a reference.
+        let annots_arr = match page_dict.get(b"Annots") {
+            Ok(lopdf::Object::Array(arr)) => arr.clone(),
+            Ok(lopdf::Object::Reference(rid)) => {
+                match self.doc.get_object(*rid).and_then(|o| o.as_array().map(|a| a.clone())) {
+                    Ok(a) => a,
+                    Err(_) => return,
+                }
+            }
+            _ => return,
+        };
+
+        for annot_obj in &annots_arr {
+            // Each annot is usually a Reference; could be a direct dict.
+            let annot_dict = match annot_obj {
+                lopdf::Object::Reference(rid) => {
+                    match self.doc.get_object(*rid).and_then(|o| o.as_dict().map(|d| d.clone())) {
+                        Ok(d) => d,
+                        Err(_) => continue,
+                    }
+                }
+                lopdf::Object::Dictionary(d) => d.clone(),
+                _ => continue,
+            };
+
+            // Skip if /F flag bit 2 (Hidden) or bit 1 (Invisible) is set —
+            // PDF spec §12.5.3, Table 165. Bit 3 (Print) is irrelevant for
+            // screen rendering. We honour /F here so the renderer matches
+            // PyMuPDF's default behaviour.
+            if let Ok(flags) = annot_dict.get(b"F").and_then(|o| o.as_i64()) {
+                if (flags & 0x01) != 0 || (flags & 0x02) != 0 {
+                    continue;
+                }
+            }
+
+            // Get /Rect.
+            let rect = match annot_dict.get(b"Rect").and_then(|o| o.as_array()) {
+                Ok(arr) if arr.len() >= 4 => {
+                    let x0 = Self::obj_to_f32(&arr[0]).unwrap_or(0.0);
+                    let y0 = Self::obj_to_f32(&arr[1]).unwrap_or(0.0);
+                    let x1 = Self::obj_to_f32(&arr[2]).unwrap_or(0.0);
+                    let y1 = Self::obj_to_f32(&arr[3]).unwrap_or(0.0);
+                    (x0.min(x1), y0.min(y1), x0.max(x1), y0.max(y1))
+                }
+                _ => continue,
+            };
+            if (rect.2 - rect.0) <= 0.0 || (rect.3 - rect.1) <= 0.0 {
+                continue;
+            }
+
+            // Get /AP /N — the normal-appearance form XObject.
+            let ap_dict = match annot_dict.get(b"AP") {
+                Ok(lopdf::Object::Dictionary(d)) => d.clone(),
+                Ok(lopdf::Object::Reference(rid)) => {
+                    match self.doc.get_object(*rid).and_then(|o| o.as_dict().map(|d| d.clone())) {
+                        Ok(d) => d,
+                        Err(_) => continue,
+                    }
+                }
+                _ => continue,
+            };
+            let n_obj = match ap_dict.get(b"N") {
+                Ok(o) => o,
+                _ => continue,
+            };
+            // /N may be a stream (direct) or a reference. For state-aware
+            // appearances (Widget with /AS), /N is a sub-dict keyed by
+            // appearance state name — we deliberately ignore that case here
+            // (rare for the corpus).
+            let stream = match n_obj {
+                lopdf::Object::Stream(s) => s.clone(),
+                lopdf::Object::Reference(rid) => {
+                    match self.doc.get_object(*rid) {
+                        Ok(lopdf::Object::Stream(s)) => s.clone(),
+                        _ => continue,
+                    }
+                }
+                _ => continue,
+            };
+
+            crate::interpreter::Interpreter::render_annotation_appearance(
+                &stream, rect, renderer, state, &self.doc, font_registry,
+            );
+        }
     }
 
     fn get_page_id(&self, page: usize) -> Result<ObjectId, RenderError> {

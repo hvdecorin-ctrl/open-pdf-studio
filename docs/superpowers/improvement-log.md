@@ -1371,3 +1371,82 @@ Per-page diff change after iter-28, `scripts/render_test_iter23.py` (literal-bin
 **Status**: **DONE** — concrete PDF spec gap (`Tr` operator, PDF 1.7 §9.3.6) closed end-to-end, including the q/Q-aware text-state restoration semantics (PDF 1.7 §8.4.1). Pass count tied at 58/106, but per-page diff% measurably improved on 13 pages with no regressions on the other 93. Reliability gates all green. Visual quality on Tekst.pdf significantly improved (bold headings now render correctly).
 
 **Continue**: YES — the methodology of fresh microscopy on each PDF's worst-near-pass page may surface more single-spec-feature gaps. Specifically next: microscopy on Text pdf gecombineerd p7/p15 (3.4%/2.8%, both close to threshold) to see whether they share a different feature gap, and on Zware vector PDF p6 (2.97% — closest to threshold among that PDF's failures).
+
+---
+
+### Iteration 29 — Page annotation rendering (PDF spec §12.5.5)
+
+**Methodology continuation from iter-28**: pikepdf-driven feature signature scan across near-threshold failing pages, then pixel forensics on the highest-signal candidate.
+
+**Target picked: `Technische tekening.pdf` page 2 (index 1)** — was 2.86% FAIL.
+
+**Why this page**:
+- Among the candidate near-threshold pages, this page's content stream has 315 `Tr`, 315 `Tz`, 315 `Tc` operators — the densest text-state-affecting feature footprint of any page in the corpus, suggesting a high probability of an undiscovered spec gap.
+- It also has 7 `/FreeText` + `/Square` annotations (per `pikepdf` inspection) — a feature category we'd never encountered in earlier iterations because most other test PDFs only carry `/Link` annotations (which are interactive-only and produce no visual).
+
+**Pixel forensics findings**:
+- Top-30 worst pixels: every single one was `ref=(0,0,0)` vs `app=(255,255,255)` with delta=765 (max possible).
+- Concentrated at specific x-coordinates (1518, 1748, 1200, 1259) — i.e., NOT noise; specific glyphs/lines are systematically MISSING from the app render.
+- Concentrated rows at top (y=19-23) and bottom (y=1384-85) — page-border frame pixels.
+- Side-by-side visual: reference shows yellow callout "sticky note" boxes with annotation text + connecting arrows. App shows the underlying drawing identically but the **yellow boxes and arrows are entirely absent**.
+
+**Hypothesis (single root cause)**: The renderer has zero handling of PDF annotations (`/Annots`). PDF spec ISO 32000-1 §12.5.5 requires renderers to draw each annotation's normal-appearance Form XObject (`/AP /N`), positioned by mapping the appearance's transformed bounding box to the annotation's `/Rect`. Confirmed by `grep -ri "Annots\|annotation" open-pdf-render/src` returning **zero hits**.
+
+This explains the architectural drawing PDFs that have hand-added markup notes (Technische tekening, Barn Relocation `/Stamp` annotation), and is the ONLY missing-content axis of failure for those pages — every other primitive (paths, text, images, transparency groups, Tr-mode) was already implemented.
+
+Annotation type prevalence in the corpus (counted via pikepdf):
+- `/Link` (52+39+52 = 143) — visual no-op; safe to ignore
+- `/FreeText` (4+4+1 = 9), `/Square` (4+1 = 5), `/Line` (4) — visual; needed
+- `/Stamp` (1) — visual; needed
+
+**Fix** (smallest-possible scope; no in-flight files touched):
+
+1. **`open-pdf-render/src/interpreter.rs`** — added two new associated functions on `Interpreter`:
+   - `render_annotation_appearance(ap_stream, annot_rect, renderer, state, doc, font_registry)` — implements the PDF spec §12.5.5 transform-mapping algorithm. Computes the appearance's transformed BBox by applying its `/Matrix` to the four BBox corners; derives scale + translate so the transformed BBox's lower-left corner maps to the annotation's `/Rect` lower-left and dimensions match. Pre-concats `[sx, 0, 0, sy, e, f]` then the form's `/Matrix` onto the parent CTM, applies a clip rect to the form's BBox in form-space (per spec §8.10.2), then re-uses `Self::execute_internal` to walk the appearance content stream — so every operator (paths, fills, text, transparency) is honoured uniformly.
+   - `decode_appearance_stream(stream)` — fallback for the appearance content bytes. lopdf 0.34's `Stream::decompressed_content()` returns `DictKey` for some Form-XObject streams (its dict-key validation rejects appearance forms missing the `/Subtype /Form` slot in some encodings); this helper handles the no-filter case (`stream.content` directly) and the `FlateDecode` case (manual `flate2::ZlibDecoder` — same approach as `image_decode.rs`).
+
+2. **`open-pdf-render/src/parser.rs`** — extended `render_page_internal` to invoke the new annotation pass after the page content stream completes:
+   - Captures `state.current.ctm` BEFORE the content stream runs (so annotations get the clean page-to-pixel transform, not whatever residual `cm` translations the content stream may have left unpaired with q/Q).
+   - Resets `fill_alpha`, `stroke_alpha`, `group_*_alpha`, `text_render_mode`, and `clip_path` to defaults — annotations are spec'd to render with a fresh graphics state per appearance.
+   - New helper `render_page_annotations(page_id, …)` walks the page dict's `/Annots` array (resolving direct array vs reference), and for each annotation: honours the `/F` flag (skips Hidden bit-2 / Invisible bit-1 per §12.5.3 Table 165), normalises `/Rect`, resolves `/AP /N` (handling the stream-vs-reference variants), then calls `Interpreter::render_annotation_appearance`.
+
+**Verification**:
+
+a) Build: `cargo build --release --example render_page_literal` — clean (no new warnings, 3 pre-existing).
+
+b) Direct-binary regression (`scripts/render_test_iter23.py`):
+
+| PDF | Page | Before iter-29 | After iter-29 | Outcome |
+|---|---|---|---|---|
+| Technische tekening | 0 | 1.95% PASS | **0.78% PASS** | −1.17, deeper margin |
+| Technische tekening | 1 | **2.86% FAIL** | **1.18% PASS** | **FAIL → PASS, −1.68** |
+| Technische tekening | 2 | 0.75% PASS | 0.75% PASS | unchanged (no annotations on this page) |
+| Technische tekening | 3 | 1.02% PASS | 0.75% PASS | −0.27 |
+| All other 102 pages | — | — | unchanged | 0 net change |
+
+**Total PASS**: 60/106 → **61/106** (+1 page flipped FAIL→PASS — Technische tekening p1).
+
+c) Visual side-by-side of Technische tekening p1: yellow callout boxes ("extra groep ivm tuinkamer/serre", "deze ruimte ook voorzien van vloerverwarming en PCM…", "stoelen aan andere kant kookeiland", etc.) now render in the correct positions, matching the PyMuPDF reference. Connecting arrow lines + rectangular outlines also appear. Indistinguishable from reference at the annotation regions.
+
+d) Reliability gates (per the brief):
+- ≥58/106: 61/106 ✓ (improved beyond gate)
+- All 8 PDFs open without panic: confirmed (script ran end-to-end with no errors) ✓
+- No new panics: confirmed ✓
+- Iter 23-28 wins preserved: confirmed (in-flight files untouched; rapport-constructie / Text gecombineerd / Tekst pages identical to iter-28 numbers) ✓
+- No regressions: confirmed (only Technische tekening pages moved, and all moved BETTER) ✓
+
+**Files touched (to be committed by this iteration)**:
+- `open-pdf-render/src/interpreter.rs` — added `render_annotation_appearance` (~100 lines) and `decode_appearance_stream` (~25 lines).
+- `open-pdf-render/src/parser.rs` — added `render_page_annotations` (~95 lines), captured page CTM, reset state knobs before annotation pass.
+- `docs/superpowers/improvement-log.md` — this entry.
+
+**Files explicitly NOT touched** (in-flight per hygiene rule): `saver.js`, `manager.js`, `hand-tool.js`, `vector-renderer.js`, `left-panel.js`, `font_parser.rs`, `fonts.rs`, `mcp_server.rs`, `Cargo.lock` (both), `Cargo.toml`.
+
+**Architectural takeaway**:
+- Three of the corpus's eight PDFs (Technische tekening, Barn Relocation, and any future architectural / annotated PDFs) carry visible annotation markup that PyMuPDF renders by default. The renderer's prior behaviour of completely ignoring `/Annots` was a real, user-visible spec gap — not a noise-band issue.
+- The `decompressed_content()` quirk in lopdf 0.34 (DictKey error on some Form XObject streams) is a recurring trap; the same fallback shape (`stream.content` for no-filter, manual flate for FlateDecode) is now present in three places (image_decode-related, Image XObject path, and now appearance streams). A consolidated helper would reduce duplication but is out-of-scope for this iter.
+- Resetting `state.current.ctm` to the captured `page_ctm` before the annotation pass is necessary because content streams in the wild routinely leave residual translations behind (cm operators outside q/Q). This is the same principle that the form-XObject Do handler already follows (q before, Q after) — applied at the page boundary.
+
+**Status**: **DONE** — concrete PDF spec gap (`/Annots` rendering, ISO 32000-1 §12.5.5) closed end-to-end with the §12.5.3 `/F` flag check and §8.10.2 BBox clip both honoured. Pass count went from 60 → 61 (+1 page flipped). Per-page diff% measurably improved on 3 pages of Technische tekening with no regressions on the other 103 pages. Reliability gates all green. Visual quality on annotation-bearing PDFs significantly improved (yellow callout notes now render correctly).
+
+**Continue**: YES — the methodology of pikepdf signature scan + pixel forensics + single-feature spec gap continues to surface real gaps. Next-best candidates: Barn Relocation p2 (4.41% — has /Stamp annotation that may now render too; verify), or the dense-text PDFs (Text gecombineerd p4/p8/p11/p17/p20/p21 — all 4-6%, may share a single residual-text-rendering gap not yet found). The Tekst.pdf p3 still at 2.70% remains a ripe target for fresh microscopy.
