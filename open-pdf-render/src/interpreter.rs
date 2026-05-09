@@ -153,8 +153,32 @@ impl Interpreter {
 
         let mut has_active_path = false;
         let mut text_state = TextState::new();
+        // PDF clipping is two-step: `W` (or `W*`) marks the current path
+        // as a future clip, then the next path-painting/no-op operator
+        // (S/s/f/f*/B/B*/b/b*/n) actually consumes the path. We track the
+        // pending state with this Option<even_odd_flag>; the snapshot is
+        // applied to the GraphicsState clip mask just before the paint
+        // operator takes the path builder. The path itself is still
+        // consumed by the paint op via path_builder.take().
+        let mut pending_clip: Option<bool> = None;
 
         for op in &content.operations {
+            // If a W/W* was just seen, the next paint op (or n) consumes
+            // the path AND uses it as the clip — snapshot it now before
+            // the paint op takes the builder.
+            if pending_clip.is_some() {
+                let is_paint_or_noop = matches!(
+                    op.operator.as_str(),
+                    "S" | "s" | "f" | "F" | "f*" | "B" | "B*" | "b" | "b*" | "n"
+                );
+                if is_paint_or_noop {
+                    if let Some(path) = renderer.snapshot_path() {
+                        let even_odd = pending_clip.unwrap();
+                        renderer.apply_clip(&mut state.current, &path, even_odd);
+                    }
+                    pending_clip = None;
+                }
+            }
             match op.operator.as_str() {
                 // Graphics state
                 "q" => state.save(),
@@ -225,8 +249,11 @@ impl Interpreter {
                 "b" => { renderer.close_path(); renderer.fill_and_stroke(&state.current, false); has_active_path = false; }
                 "b*" => { renderer.close_path(); renderer.fill_and_stroke(&state.current, true); has_active_path = false; }
                 "n" => { has_active_path = false; }
-                // Clipping
-                "W" | "W*" => {}
+                // Clipping — record the pending clip; the path is captured
+                // and applied to gs.clip_path immediately before the next
+                // paint/no-op operator consumes the path builder.
+                "W" => { pending_clip = Some(false); }
+                "W*" => { pending_clip = Some(true); }
                 // Text operators
                 "BT" => { text_state.begin_text(); }
                 "ET" => { text_state.in_text = false; }

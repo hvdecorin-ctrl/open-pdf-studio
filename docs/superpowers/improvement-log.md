@@ -176,3 +176,35 @@ Per-PDF stats from initial harness run:
 - Consider adding a build-freshness assertion to the regression harness (compare exe mtime against `src/**/*.rs` mtimes; warn loudly if Rust sources are newer) so future loops don't chase stale-binary artefacts.
 
 **Commit**: none. No `open-pdf-render` changes; this entry is documentation only.
+
+### Iteration 6 — Path clipping `W` / `W*` (Barn Relocation v1.4 Bluebeam-stapled construction permit)
+
+**Iter-5 baseline** (run 2026-05-09_1541-01495dc7 per improvement-log + 2026-05-09_1550-80da0486 fresh re-run): 42/106 passing. Barn Relocation page 6 = 13.59%, the worst single page in the suite. Other Barn pages (p0-p5) all between 0.90% and 4.64%.
+
+**Investigation findings**:
+- Visual diff: app render's right side is dominated by a HUGE solid grey rectangle where the reference shows a delicate column-on-footing structural detail. The bottom-left construction detail similarly shows oversized grey blocks with hatching missing.
+- Resource inventory (pikepdf): page is A1 landscape (`/MediaBox [0 0 1584 2448]` `/Rotate 90`). 16 DCT-JPEG images of varying sizes (94×1662 down to 147×44, plus a 3535×94 footer band and the giant 3077×2204 main `/R24`); single CenturyGothic TrueType font; no transparency groups; no shadings/patterns.
+- Content-stream pattern: the page is a ~1.9 MB stream that wraps every image-paint sequence in nested `q ... [clip-rect] re W n q [transform] cm /RXX Do Q Q`. The `W n` pair at the inner level is supposed to constrain the image to a small inner rectangle even though the image is placed by a transform that scales it to fill the page. Without clipping, the image draws across the entire page.
+- Root cause: **`W`/`W*` operators were no-ops in the SkiaRenderer interpreter path** (`open-pdf-render/src/interpreter.rs:229` had `"W" | "W*" => {}`). The `GraphicsState` already declared a `clip_path: Option<tiny_skia::Path>` field but nothing populated it, and none of `fill`/`stroke`/`fill_and_stroke`/`draw_image` passed a mask to tiny_skia. So every clipping rectangle that was supposed to constrain a `Do` image (or path) drew the full source content uncropped — for the page-6 footing detail this meant the 3077×2204 photo of a wall-section drawing painted across most of the right half of the page as a solid grey block. The same gap was costing diff% on every page in the suite that uses `re W n` framing (very common — virtually every PDF generator emits clip rects to bound images and form XObjects).
+
+**Fix**:
+- `open-pdf-render/src/graphics_state.rs`: changed `clip_path: Option<tiny_skia::Path>` → `clip_path: Option<tiny_skia::Mask>`. The mask is a pixmap-sized 8-bit alpha buffer (white = pass, black = block) that tiny_skia's `fill_path`/`stroke_path`/`draw_pixmap` accept as the `mask` parameter. `q` clones the mask via `Clone`; `Q` restores the parent mask, giving correct PDF clip-stack semantics for free.
+- `open-pdf-render/src/renderer.rs`: stored pixmap dimensions on `SkiaRenderer`. Added `snapshot_path()` which clones the path-builder and finishes it without consuming (so the same path can be both painted and clipped). Added `apply_clip(gs, path, even_odd)` which either creates a new `Mask::new(w, h)` and `fill_path`s the path into it, or `intersect_path`s into the existing mask. Both use `gs.ctm` so the clip is in pixmap pixel coordinates. Threaded `gs.clip_path.as_ref()` into all four `fill_path` / `stroke_path` / `draw_pixmap` call sites in `fill`, `stroke`, `fill_and_stroke`, `draw_image`.
+- `open-pdf-render/src/interpreter.rs`: added `pending_clip: Option<bool>` (the bool is the even-odd flag). `W` sets `Some(false)`; `W*` sets `Some(true)`. At the head of every iteration, if a paint or no-op operator (S/s/f/F/f*/B/B*/b/b*/n) is about to run AND `pending_clip` is set, snapshot the current path and apply it to `state.current.clip_path` before the paint op consumes the path builder. This matches the PDF spec's two-step "W then S" semantics and falls through `q`/`Q` automatically.
+
+**Verification** (run 2026-05-09_1600-80da0486, full suite):
+- **Barn Relocation page 6: 13.59% → 1.82% (FAIL → PASS)** — the targeted -11.77pp win. Visual confirms the giant grey rectangle is gone and the column/footing detail renders correctly.
+- Bonus wins from clipping fix landing across the suite (no other PDF was deliberately targeted):
+  - 2885 Demo project: 2/14 PASS → **9/14 PASS (+7)**. p0 1.15% (was 10.60), p3 1.26 (was 2.44), p5 1.76, p7 1.83 (was 8.27), p9 1.08, p10 0.81, p11 1.15 — all newly passing because their image-on-image transparency-group renders had been bleeding outside their intended clip rects.
+  - Text pdf gecombineerd / rapport-constructie: 11/28 → 12/28 each (p0 1.27% from previously near-passing).
+  - Barn Relocation: 2/7 → 3/7 (page 6 now passes, page 1 still passes).
+- Zero regressions. Every page that was already passing in iter-5 is still passing. Worst page in suite is now 8.09% (2885 p4) — the high-water mark dropped from 13.59 to 8.09.
+- **Total passing: 42/106 → 52/106 (+10)**. Average diff dropped on 4 of 8 PDFs; 2885 Demo project went from 4/14 → 9/14 PASS (avg 5.10 → 3.02).
+
+**Concerns / next ideas**:
+- The remaining failures cluster around text-edge antialiasing differences (Text pdf gecombineerd p2/4/8/11 in the 2-7% band). These look like sub-pixel font rendering deltas, not missing operators. Lower-leverage from here.
+- 2885 Demo project p4 = 8.09% is now the worst page; visual inspection would be the next iter target if pursuing < 7%.
+- Tekst.pdf p0-p3 still in 2.16-3.70% just-over-the-line band — same anti-aliasing story.
+
+**Commit**: (filled in below)
+

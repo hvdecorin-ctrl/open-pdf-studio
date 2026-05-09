@@ -4,6 +4,8 @@ use crate::graphics_state::GraphicsState;
 pub struct SkiaRenderer {
     pub pixmap: Pixmap,
     path_builder: Option<PathBuilder>,
+    width: u32,
+    height: u32,
 }
 
 impl SkiaRenderer {
@@ -11,7 +13,40 @@ impl SkiaRenderer {
         let mut pixmap = Pixmap::new(width, height)
             .ok_or_else(|| "Failed to create pixmap".to_string())?;
         pixmap.fill(Color::WHITE);
-        Ok(SkiaRenderer { pixmap, path_builder: None })
+        Ok(SkiaRenderer { pixmap, path_builder: None, width, height })
+    }
+
+    /// Snapshot the current path-builder contents into a finished Path
+    /// without consuming the builder. Used by the clipping operator (`W` /
+    /// `W*`), which needs to apply the same path to the GraphicsState clip
+    /// mask in addition to whatever the immediately-following paint
+    /// operator does with it. Returns `None` if the path is empty.
+    pub fn snapshot_path(&self) -> Option<Path> {
+        let pb = self.path_builder.as_ref()?;
+        pb.clone().finish()
+    }
+
+    /// PDF `W` / `W*` clipping. The supplied path (already in user space)
+    /// is intersected with the existing clip mask in `gs.clip_path`,
+    /// mapping through `gs.ctm` to pixmap pixel coordinates. If no clip
+    /// mask exists yet, a new one is created from the path; subsequent
+    /// `W` operators inside nested `q`/`Q` blocks intersect with it.
+    /// `q` clones the GraphicsState (including the Mask), so `Q`
+    /// automatically restores the previous clip — that's how PDF
+    /// clip-stack semantics work without any extra plumbing.
+    pub fn apply_clip(&mut self, gs: &mut GraphicsState, path: &Path, even_odd: bool) {
+        let fill_rule = if even_odd { FillRule::EvenOdd } else { FillRule::Winding };
+        match gs.clip_path.as_mut() {
+            Some(mask) => {
+                mask.intersect_path(path, fill_rule, true, gs.ctm);
+            }
+            None => {
+                if let Some(mut mask) = Mask::new(self.width, self.height) {
+                    mask.fill_path(path, fill_rule, true, gs.ctm);
+                    gs.clip_path = Some(mask);
+                }
+            }
+        }
     }
 
     pub fn begin_path(&mut self) {
@@ -61,7 +96,7 @@ impl SkiaRenderer {
         paint.set_color_rgba8(r, g, b, Self::blend_alpha(a, gs.effective_fill_alpha()));
         paint.anti_alias = true;
         let rule = if even_odd { FillRule::EvenOdd } else { FillRule::Winding };
-        self.pixmap.fill_path(&path, &paint, rule, gs.ctm, None);
+        self.pixmap.fill_path(&path, &paint, rule, gs.ctm, gs.clip_path.as_ref());
     }
 
     /// Resolve the user-space stroke width applied to tiny_skia.
@@ -124,7 +159,7 @@ impl SkiaRenderer {
         if !gs.dash_array.is_empty() {
             stroke.dash = StrokeDash::new(gs.dash_array.clone(), gs.dash_phase);
         }
-        self.pixmap.stroke_path(&path, &paint, &stroke, gs.ctm, None);
+        self.pixmap.stroke_path(&path, &paint, &stroke, gs.ctm, gs.clip_path.as_ref());
     }
 
     pub fn fill_and_stroke(&mut self, gs: &GraphicsState, even_odd: bool) {
@@ -136,7 +171,7 @@ impl SkiaRenderer {
                 fill_paint.set_color_rgba8(r, g, b, Self::blend_alpha(a, gs.effective_fill_alpha()));
                 fill_paint.anti_alias = true;
                 let rule = if even_odd { FillRule::EvenOdd } else { FillRule::Winding };
-                self.pixmap.fill_path(&path, &fill_paint, rule, gs.ctm, None);
+                self.pixmap.fill_path(&path, &fill_paint, rule, gs.ctm, gs.clip_path.as_ref());
                 // Stroke
                 let mut stroke_paint = Paint::default();
                 let (r, g, b, a) = gs.stroke_color;
@@ -150,7 +185,7 @@ impl SkiaRenderer {
                 if !gs.dash_array.is_empty() {
                     stroke.dash = StrokeDash::new(gs.dash_array.clone(), gs.dash_phase);
                 }
-                self.pixmap.stroke_path(&path, &stroke_paint, &stroke, gs.ctm, None);
+                self.pixmap.stroke_path(&path, &stroke_paint, &stroke, gs.ctm, gs.clip_path.as_ref());
             }
         }
     }
@@ -176,7 +211,7 @@ impl SkiaRenderer {
         if width == 0 || height == 0 { return; }
         let pixel_to_unit = Transform::from_scale(1.0 / width as f32, 1.0 / height as f32);
         let final_xform = gs.ctm.pre_concat(pixel_to_unit);
-        self.pixmap.draw_pixmap(0, 0, img, &paint, final_xform, None);
+        self.pixmap.draw_pixmap(0, 0, img, &paint, final_xform, gs.clip_path.as_ref());
     }
 
     pub fn into_rgba(self) -> Vec<u8> {

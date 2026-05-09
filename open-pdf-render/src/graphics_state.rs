@@ -1,4 +1,4 @@
-use tiny_skia::Transform;
+use tiny_skia::{Mask, Transform};
 
 #[derive(Clone, Debug)]
 pub struct GraphicsState {
@@ -11,7 +11,12 @@ pub struct GraphicsState {
     pub miter_limit: f32,
     pub dash_array: Vec<f32>,
     pub dash_phase: f32,
-    pub clip_path: Option<tiny_skia::Path>,
+    /// Accumulated clip mask in pixmap (device) coordinates. PDF `W` / `W*`
+    /// stores the path here as an alpha mask; subsequent paint operators
+    /// pass it to `tiny_skia::Pixmap::{fill_path,stroke_path,draw_pixmap}`
+    /// as the `mask` argument so painting respects the clip. Cloned by
+    /// `q`, restored by `Q`.
+    pub clip_path: Option<Mask>,
     /// Constant alpha for non-stroking operations (PDF /ca, ExtGState).
     /// Multiplied into fill_color alpha and image paint opacity. 0..1.
     pub fill_alpha: f32,
