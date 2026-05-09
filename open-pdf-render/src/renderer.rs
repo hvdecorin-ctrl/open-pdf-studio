@@ -44,6 +44,13 @@ impl SkiaRenderer {
         if let Some(ref mut pb) = self.path_builder { pb.close(); }
     }
 
+    /// Multiply ExtGState constant alpha (`/ca` or `/CA`) into the per-color
+    /// alpha byte. Both factors are clamped to `[0, 1]` first.
+    fn blend_alpha(color_a: u8, gs_alpha: f32) -> u8 {
+        let alpha = (color_a as f32 / 255.0) * gs_alpha.clamp(0.0, 1.0);
+        (alpha.clamp(0.0, 1.0) * 255.0).round() as u8
+    }
+
     pub fn fill(&mut self, gs: &GraphicsState, even_odd: bool) {
         let path = match self.path_builder.take() {
             Some(pb) => match pb.finish() { Some(p) => p, None => return },
@@ -51,7 +58,7 @@ impl SkiaRenderer {
         };
         let mut paint = Paint::default();
         let (r, g, b, a) = gs.fill_color;
-        paint.set_color_rgba8(r, g, b, a);
+        paint.set_color_rgba8(r, g, b, Self::blend_alpha(a, gs.effective_fill_alpha()));
         paint.anti_alias = true;
         let rule = if even_odd { FillRule::EvenOdd } else { FillRule::Winding };
         self.pixmap.fill_path(&path, &paint, rule, gs.ctm, None);
@@ -64,7 +71,7 @@ impl SkiaRenderer {
         };
         let mut paint = Paint::default();
         let (r, g, b, a) = gs.stroke_color;
-        paint.set_color_rgba8(r, g, b, a);
+        paint.set_color_rgba8(r, g, b, Self::blend_alpha(a, gs.effective_stroke_alpha()));
         paint.anti_alias = true;
 
         let mut stroke = Stroke::default();
@@ -84,14 +91,14 @@ impl SkiaRenderer {
                 // Fill
                 let mut fill_paint = Paint::default();
                 let (r, g, b, a) = gs.fill_color;
-                fill_paint.set_color_rgba8(r, g, b, a);
+                fill_paint.set_color_rgba8(r, g, b, Self::blend_alpha(a, gs.effective_fill_alpha()));
                 fill_paint.anti_alias = true;
                 let rule = if even_odd { FillRule::EvenOdd } else { FillRule::Winding };
                 self.pixmap.fill_path(&path, &fill_paint, rule, gs.ctm, None);
                 // Stroke
                 let mut stroke_paint = Paint::default();
                 let (r, g, b, a) = gs.stroke_color;
-                stroke_paint.set_color_rgba8(r, g, b, a);
+                stroke_paint.set_color_rgba8(r, g, b, Self::blend_alpha(a, gs.effective_stroke_alpha()));
                 stroke_paint.anti_alias = true;
                 let mut stroke = Stroke::default();
                 stroke.width = gs.line_width;
@@ -105,8 +112,9 @@ impl SkiaRenderer {
             Some(p) => p,
             None => return,
         };
+        // Image painting is a non-stroking op — apply /ca as constant opacity.
         let paint = PixmapPaint {
-            opacity: 1.0,
+            opacity: gs.effective_fill_alpha(),
             blend_mode: BlendMode::SourceOver,
             quality: FilterQuality::Bilinear,
         };

@@ -59,3 +59,32 @@ Per-PDF stats from initial harness run:
 - Two pages regressed visually (rapport-constructie p0: 32.84→50.47, p27: 13.56→61.84). Both previously rendered ENTIRELY BLANK; my fix now correctly draws everything except a JPEG image with `/SMask` (soft alpha mask). The renderer doesn't honor SMask, so the image draws fully opaque (a black rectangle) where the reference shows it composited with transparency. This is a separate, pre-existing image-decoding gap that my fix exposed but did not introduce — the previous "lower" diff number on those pages came from the page being mostly white-on-white instead of actually correct rendering. Recommend tackling SMask in a follow-up iteration.
 
 **Commit**: c4b940b4
+
+### Iteration 2 — 2885 Demo project (v1.4 image-heavy, transparency)
+
+**Iter-1 baseline** (run 2026-05-09_1352-ed55cea0): 25/106 pages passing. 2885 Demo project: avg 22.34%, worst page 9 = 98.05%, page 0 = 96.47%.
+
+**Investigation findings**:
+- Target pages: 9 (98.05%) and 0 (96.47%).
+- Visual symptom: large background photograph on each page is rendered fully opaque/saturated, but the reference shows it semi-transparent (washed-out, faded). On page 0, an additional decorative diamond/hexagon shape is painted opaque white where it should be translucent.
+- Resource inventory (pikepdf): both pages use a single Form XObject (X12/X15) with `/Group /S /Transparency`. Inside that form, the image-bearing inner Form XObjects are invoked under `/G6 gs` (`/ca` = 0.32 on p9, 0.61 on p0) and `/G9 gs` (`/ca` = 0.65) ExtGState entries — these are constant-alpha values for non-stroking ops. The inner forms also have transparency groups and use `/G3 gs` (`/ca` = 1) internally.
+- Root cause: the `gs` operator (set-graphics-state-from-ExtGState-name) was a no-op in `Interpreter::execute_internal` (`interpreter.rs:306`). `/ca` and `/CA` were never read, so every fill/image painted at 100% opacity. Additionally, PDF transparency-group Form XObjects require the *parent* alpha to wrap the entire group as if compositing — the inner form's own `/G3 gs` (ca=1) must not erase the parent's accumulated 0.32.
+
+**Fix**:
+- `open-pdf-render/src/graphics_state.rs`: added `fill_alpha`, `stroke_alpha`, `group_fill_alpha`, `group_stroke_alpha` fields (defaults 1.0) and `effective_fill_alpha`/`effective_stroke_alpha` accessors that return the product. The save/restore via `q`/`Q` already covers them through `Clone`.
+- `open-pdf-render/src/interpreter.rs`: implemented the `gs` operator (`apply_ext_gstate`) — looks up the named ExtGState in resources and reads `/ca` → `fill_alpha`, `/CA` → `stroke_alpha`. In `handle_do_execute`, when entering a Form XObject whose `/Group /S` is `/Transparency`, the parent's `fill_alpha`/`stroke_alpha` are folded into the group multipliers and the in-group alphas reset to 1.0 — this approximates PDF transparency-group compositing without needing an off-screen pixmap.
+- `open-pdf-render/src/renderer.rs`: `fill`, `stroke`, `fill_and_stroke`, and `draw_image` now multiply `effective_fill_alpha()` / `effective_stroke_alpha()` into the paint alpha / `PixmapPaint::opacity`.
+
+**Verification**:
+- 2885 Demo project page 9: 98.05% → 4.26% (-93.79%).
+- 2885 Demo project page 0: 96.47% → 10.60% (-85.87%); diamond shape still opaque (a deeper transparency-group-on-image-paths case for next iteration).
+- 2885 Demo project page 1: 5.98% → 0.41% (now PASS).
+- 2885 Demo project avg: 22.34% → 9.11% (-13.23%).
+- 2885 Demo project worst: 98.05% → 41.76%.
+- Full-suite avg: 8.78% → 7.03%.
+- Full-suite passing: 25/106 → 26/106.
+- Other PDFs delta: no page changed by > 1pp aside from the three 2885 wins above. No regressions.
+
+**Total passing**: 25/106 → 26/106
+
+**Commit**: (added below)

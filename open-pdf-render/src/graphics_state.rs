@@ -12,6 +12,32 @@ pub struct GraphicsState {
     pub dash_array: Vec<f32>,
     pub dash_phase: f32,
     pub clip_path: Option<tiny_skia::Path>,
+    /// Constant alpha for non-stroking operations (PDF /ca, ExtGState).
+    /// Multiplied into fill_color alpha and image paint opacity. 0..1.
+    pub fill_alpha: f32,
+    /// Constant alpha for stroking operations (PDF /CA, ExtGState). 0..1.
+    pub stroke_alpha: f32,
+    /// Inherited group alpha from the enclosing transparency group(s).
+    /// PDF Form XObjects with `/Group /S /Transparency` should be rendered
+    /// into a separate buffer at full alpha and then composited onto the
+    /// parent at the parent's current alpha. Since this renderer flattens
+    /// everything into a single pixmap, we approximate by capturing the
+    /// parent's `fill_alpha` when entering a transparency group, resetting
+    /// `fill_alpha` to 1.0 inside the group, and multiplying both at draw
+    /// time. (Same idea for the stroke side.)
+    pub group_fill_alpha: f32,
+    pub group_stroke_alpha: f32,
+}
+
+impl GraphicsState {
+    /// Effective non-stroking alpha at draw time: group × current.
+    pub fn effective_fill_alpha(&self) -> f32 {
+        (self.group_fill_alpha * self.fill_alpha).clamp(0.0, 1.0)
+    }
+    /// Effective stroking alpha at draw time: group × current.
+    pub fn effective_stroke_alpha(&self) -> f32 {
+        (self.group_stroke_alpha * self.stroke_alpha).clamp(0.0, 1.0)
+    }
 }
 
 impl Default for GraphicsState {
@@ -27,6 +53,10 @@ impl Default for GraphicsState {
             dash_array: Vec::new(),
             dash_phase: 0.0,
             clip_path: None,
+            fill_alpha: 1.0,
+            stroke_alpha: 1.0,
+            group_fill_alpha: 1.0,
+            group_stroke_alpha: 1.0,
         }
     }
 }

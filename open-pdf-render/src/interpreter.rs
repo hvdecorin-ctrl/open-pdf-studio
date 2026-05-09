@@ -303,7 +303,10 @@ impl Interpreter {
                 "Do" => {
                     Self::handle_do_execute(&op.operands, renderer, state, doc, resources, font_registry, max_image_pixels);
                 }
-                "gs" | "ri" | "i" => {}
+                "gs" => {
+                    Self::apply_ext_gstate(&op.operands, state, doc, resources);
+                }
+                "ri" | "i" => {}
                 _ => {}
             }
         }
@@ -362,6 +365,27 @@ impl Interpreter {
                     );
                 }
             }
+        }
+        // Transparency-group Form XObjects (PDF 1.4+) should be rendered
+        // into an isolated buffer at full alpha and then composited onto
+        // the parent at the parent's current /ca. We don't allocate a
+        // separate pixmap; instead we fold the parent's accumulated alpha
+        // into a multiplier (group_*_alpha) and reset the in-group alpha
+        // to 1.0 — at draw time we multiply the two. This is the right
+        // answer for single-level groups and a close approximation for
+        // nested ones.
+        let is_transparency_group = stream.dict.get(b"Group")
+            .ok()
+            .and_then(|g| Self::resolve_dict(g, doc).ok())
+            .and_then(|d| d.get(b"S").ok())
+            .and_then(|s| s.as_name().ok())
+            == Some(b"Transparency" as &[u8]);
+        if is_transparency_group {
+            let cur = &mut state.current;
+            cur.group_fill_alpha = (cur.group_fill_alpha * cur.fill_alpha).clamp(0.0, 1.0);
+            cur.group_stroke_alpha = (cur.group_stroke_alpha * cur.stroke_alpha).clamp(0.0, 1.0);
+            cur.fill_alpha = 1.0;
+            cur.stroke_alpha = 1.0;
         }
         let form_resources = Self::extract_form_resources(&stream.dict, doc);
         let res = form_resources.as_ref().unwrap_or(resources);
@@ -1836,6 +1860,45 @@ impl Interpreter {
                     buf.restore_state();
                 }
             }
+        }
+    }
+
+    /// Implements the `gs` operator: look up the named ExtGState in the
+    /// current resources and apply its parameters to the current graphics
+    /// state. Today only `/ca` (constant alpha for non-stroking ops) and
+    /// `/CA` (constant alpha for stroking ops) are honoured — these are the
+    /// transparency knobs that produce washed-out images and faded paths.
+    fn apply_ext_gstate(
+        operands: &[Object],
+        state: &mut GraphicsStateStack,
+        doc: &Document,
+        resources: &Dictionary,
+    ) {
+        let name = match operands.first() {
+            Some(Object::Name(n)) => n,
+            _ => return,
+        };
+        let egs_obj = match resources.get(b"ExtGState") {
+            Ok(o) => o,
+            _ => return,
+        };
+        let egs_dict = match Self::resolve_dict(egs_obj, doc) {
+            Ok(d) => d,
+            _ => return,
+        };
+        let entry_obj = match egs_dict.get(name.as_slice()) {
+            Ok(o) => o,
+            _ => return,
+        };
+        let entry = match Self::resolve_dict(entry_obj, doc) {
+            Ok(d) => d,
+            _ => return,
+        };
+        if let Ok(v) = entry.get(b"ca") {
+            state.current.fill_alpha = Self::f(v).clamp(0.0, 1.0);
+        }
+        if let Ok(v) = entry.get(b"CA") {
+            state.current.stroke_alpha = Self::f(v).clamp(0.0, 1.0);
         }
     }
 
