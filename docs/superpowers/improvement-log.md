@@ -146,3 +146,33 @@ Per-PDF stats from initial harness run:
 - Total passing: 31/106 → **34/106 (+3)**.
 
 **Commit**: ac39648e
+
+### Iteration 5 — In-flight scale-convention fix verified by rebuild (no NEW code change)
+
+**Iter-4 baseline** (per improvement-log): 34/106 passing. Cluster Text pdf gecombineerd / rapport-constructie: 7/28 each, avg 4.39%, worst page p8 = 9.0%.
+
+**Investigation findings**:
+- pikepdf inspection of Text pdf gecombineerd p8: standard A4 portrait (595.32×841.92), Rotate=0, fonts F1=Calibri-Light embedded TrueType subset, F2=Arial-BoldMT non-embedded, F3=ArialMT non-embedded, F4=SymbolMT, F5=Calibri-LightItalic embedded, F6=Type0/Calibri-Light embedded. No images on this page, no shadings/patterns, only ExtGState GS7/GS8 with /ca=/CA=1. Heavy TJ usage (249 ops on this page, F1 dominant). Same font signature on rapport-constructie.
+- Visual diff inspection at the iter-4 deployed binary: app render dimensions = **1415×2000** against ref of 2000×2829. Reading `mcp_server.rs` showed `let scale = width as f32 / w_pt;` (literal width), which would produce 2000×2829 — but the running binary clearly was not following that rule.
+- Source-of-truth check: writing a standalone `examples/test_dim.rs` against the published-on-disk `open-pdf-render` crate confirmed the kernel correctly produces 2000×2829 from `width=2000, w_pt=595.32, scale=3.359`. So the bug was only in what was compiled into the exe, not in the current source tree.
+- Root cause: an in-flight uncommitted change to `open-pdf-studio/src-tauri/src/mcp_server.rs` had switched `scale = width / w_pt.max(h_pt)` → `scale = width / w_pt` (literal width to match PyMuPDF), but a `cargo build --release` had not been run since the change. The deployed exe (mtime 15:13) was still using the previous `max(w_pt, h_pt)` denominator → portrait A4 pages rendered at 2000/841.92 = 2.376× scale → 1415×2000 output → LANCZOS upscale to ref size → blurred anti-aliased text edges → 5-9% diff bands tracking text density.
+
+**Action**: rebuilt `src-tauri` with `cargo build --release` (55 s). This compiled the in-flight `mcp_server.rs` literal-width-scale fix into the exe. NO new code was introduced in this iteration — the value comes entirely from a previously-committed-elsewhere fix that hadn't yet been linked into the running binary. The `mcp_server.rs` change remains uncommitted (it was an in-flight change before this iteration started).
+
+**Verification** (run 2026-05-09_1541-01495dc7, full suite):
+- Text pdf gecombineerd: avg 4.39 → 2.99 (-1.40pp), worst page 8.97 → 6.85 (-2.12pp), passing 7/28 → 11/28 (+4 pages: p1, p14, p16, p19, p25 now PASS).
+- rapport-constructie: identical numbers (this PDF tracks Text pdf gecombineerd page-by-page in every iteration so far).
+- 2885 Demo project: 2/14 PASS (worst page 11.39%, was 41.76% iter-2). Some side-effect improvement.
+- Tekst.pdf: 1/5 PASS (p4 = 0.68%); p0-p3 in 2.16-3.70% range — just over the 2% threshold but visually correct.
+- Zware vector PDF: 12/19 PASS (best PDF in suite); avg 2.15%.
+- Technische tekening: 3/4 PASS (unchanged from iter-4).
+- Combinatie / Barn Relocation: 0/1 and 2/7 PASS respectively.
+
+**Total passing**: 34/106 → **42/106 (+8 pages)**. No regressions on previously-passing pages. All gains are on text-heavy portrait pages where the resolution mismatch had been costing 1-2 percentage points of diff.
+
+**Concerns**:
+- The +8 improvement is real but is owed to an in-flight, uncommitted `mcp_server.rs` fix that the previous iteration never linked into the binary. This iteration's actual contribution is the diagnosis (stale binary vs in-flight source) and the rebuild — no new Rust changes were made and no commit was created for `open-pdf-render/`.
+- The next real iteration should target the remaining text-page diffs (Text pdf gecombineerd p8/11 still ≈ 6.85%). Visual inspection shows a faint horizontal grey-blue stripe across the bottom ~4 rows of the app render that's absent from the ref — looks like a clipped page-footer rectangle. Worth investigating in iter-6.
+- Consider adding a build-freshness assertion to the regression harness (compare exe mtime against `src/**/*.rs` mtimes; warn loudly if Rust sources are newer) so future loops don't chase stale-binary artefacts.
+
+**Commit**: none. No `open-pdf-render` changes; this entry is documentation only.
