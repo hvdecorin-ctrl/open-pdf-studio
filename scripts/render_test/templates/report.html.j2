@@ -1,0 +1,49 @@
+<!doctype html>
+<html><head>
+<meta charset="utf-8">
+<title>Render Regression Report — {{ git_sha }}</title>
+<style>
+body { font: 13px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; margin: 24px; background: #1e1e1e; color: #ddd; }
+h1 { margin: 0 0 8px; font-size: 20px; }
+h2 { margin: 24px 0 8px; font-size: 16px; border-bottom: 1px solid #333; padding-bottom: 4px; }
+.config { color: #888; font-size: 12px; margin-bottom: 16px; }
+.totals { padding: 8px 12px; background: #2a2a2a; border-radius: 4px; display: inline-block; }
+.totals .pass { color: #2ecc71; }
+.totals .fail { color: #e74c3c; }
+table { width: 100%; border-collapse: collapse; }
+th, td { padding: 6px 8px; vertical-align: top; border-bottom: 1px solid #2a2a2a; text-align: left; }
+.row.fail { background: rgba(231, 76, 60, 0.07); }
+.diff-pct.fail { color: #e74c3c; font-weight: bold; }
+.diff-pct.pass { color: #888; }
+img.thumb { width: 220px; height: auto; border: 1px solid #333; cursor: zoom-in; }
+img.thumb:hover { outline: 2px solid #f3a847; }
+</style></head><body>
+<h1>Render Regression — {{ git_sha }}</h1>
+<div class="config">Config: width={{ config.width }}, fail_pct={{ config.fail_pct }}, blur_sigma={{ config.blur_sigma }}, pixel_tol={{ config.pixel_tol }}</div>
+<div class="totals">
+  <span class="pass">{{ totals.passed }} passed</span> /
+  <span class="fail">{{ totals.failed }} failed</span> /
+  total {{ totals.pages }}
+</div>
+
+{% for pdf in pdfs %}
+<h2>{{ pdf.path }} <small style="color:#888">v{{ pdf.version }}</small></h2>
+<table>
+  <thead><tr>
+    <th>Page</th><th>Diff %</th>
+    <th>Reference</th><th>App</th><th>Diff overlay</th>
+  </tr></thead>
+  <tbody>
+  {% for p in pdf.pages %}
+    <tr class="row {% if not p.passed %}fail{% endif %}">
+      <td>{{ p.index }}</td>
+      <td class="diff-pct {% if p.passed %}pass{% else %}fail{% endif %}">{{ "%.2f"|format(p.diff_pct) }} %</td>
+      <td><a href="{{ p.ref_filename }}" target="_blank"><img class="thumb" src="{{ p.ref_filename }}"></a></td>
+      <td><a href="{{ p.app_filename }}" target="_blank"><img class="thumb" src="{{ p.app_filename }}"></a></td>
+      <td><a href="{{ p.diff_filename }}" target="_blank"><img class="thumb" src="{{ p.diff_filename }}"></a></td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endfor %}
+</body></html>
