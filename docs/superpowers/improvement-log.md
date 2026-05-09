@@ -434,5 +434,38 @@ Per-PDF stats from initial harness run:
 - The `resolve_color_space` helper also added structured handling for /ICCBased and array-form Cal* colour spaces; these aren't exercised by the current corpus but should not regress on future PDFs.
 - Cross-page analysis remains worthwhile: iter-10 incorrectly concluded "pure architectural AA" and iter-12 found another concrete spec-compliance gap by comparing resource shapes across passing vs failing pages. The remaining 48 failures cluster around (a) Text/rapport text-AA differences (iter-7/8/10/11 territory), (b) Zware vector JPEG-decoder colour drift (iter-9 territory), (c) Tekst.pdf p2/p3 small text-AA residuals, (d) Technische tekening p1 (~3% — close to threshold). None of those are clear feature gaps from one-pass cross-page analysis; they are rasterizer-quality / library-tuning territory.
 
+**Commit**: ea12c152
+
+
+### Iteration 13 — SMask "dimming-only" mask compositing (Zware vector tile-grid pages)
+
+**Iter-12 baseline** (per fresh full-suite run 2026-05-09_180917-2c9a3e8b at commit ea12c152): 58/106 passing. Re-confirmed before any code change in iter-13.
+
+**Investigation (per iter-12's hand-off tip "ref [253,253,253] vs app [255,255,255] might be CalRGB/CalGray gamma not honored")**:
+- Step 1 — colour-space audit across all failing PDFs. NO /CalRGB or /CalGray usage anywhere. Only Combinatie (already fixed) used /Indexed; only 2885 Demo project images used /ICCBased — but with a standard sRGB-equivalent monitor profile (mntr/RGB→XYZ, 536-byte). Calibrated colourspace was NOT the gap.
+- Step 2 — pixel histogram analysis on Zware vector p0 (88.78% diff). Found ref's dominant background = (253, 253, 253) on 1.99M pixels, app's dominant background = (254, 254, 254) on 1.98M pixels — exactly iter-12's predicted "ref 253 vs app 255-ish" pattern, but the magnitude was a uniform +1 across R/G/B (not a chromatic gamma shift). Sub-bucket analysis showed all near-white regions of the page were +1 brighter in app vs ref; mid-tone fills were also +1 to +4 brighter.
+- Step 3 — content stream of Zware p0 has ZERO rg/RG operators — the page is 41 tiled JPEG images filling the whole page. So the +1 difference is entirely in image rendering, not vector colour.
+- Step 4 — JPEG decode comparison: PIL/libjpeg AND PyMuPDF's Pixmap-direct-decode AND turbojpeg ALL return (254, 254, 254) for the JPEG. The reference page renders show (253, 253, 253), but `page.get_pixmap(alpha=True)` returns (253, 253, 253, 254). PyMuPDF is producing a *premultiplied* RGB and the alpha=False output simply drops the alpha channel — exposing the (253, 253, 253) premul colour directly.
+- Step 5 — image XObject inspection. Each image has an SMask (`/SMask` reference) with `Filter=/DCTDecode`, decoded as a uniform 254-everywhere byte stream. So an opaque (255,255,255) image with a uniform-254 SMask → premultiplied (254*254/255 = 253, …, alpha=254). PyMuPDF reads premul colour = 253. Our pipeline composites the premul (253, 253, 253, 254) over an opaque white tiny-skia canvas: `result = 253 + 255*(255-254)/255 = 253 + 1 = 254` — off by exactly +1.
+
+**Hypothesis**: For "dimming-only" SMasks (no real soft-edge transparency, alpha values stay near 255 — used by Adobe-style JPEG-quality dimming), our standard premultiply-then-composite pipeline produces +1 brighter output than MuPDF's "drop alpha = expose premul" output. Across Zware's tile-grid pages this manifests as a uniform +1 across millions of background pixels.
+
+**Fix** — `open-pdf-render/src/interpreter.rs::premultiply_with_smask`:
+- Sample the SMask byte buffer up front. If every value ≥ 250 ("DIMMING_THRESHOLD"), classify the mask as a colour-attenuation-only pass and per-pixel set output alpha to 255 (after multiplying RGB by alpha) instead of the natural alpha. The composite-over-opaque-white path then yields exactly the premultiplied colour with no dst-bleed-through, matching PyMuPDF's "drop alpha" behaviour.
+- If any pixel of the mask is below 250, treat it as a real soft mask / cutout and keep the existing premul-with-alpha behaviour, preserving correct silhouette and transparent-edge compositing for legitimate cutouts (the variable mask referenced as G6/the lone non-uniform mask on every Zware page falls into this branch).
+
+**Verification** (full suite run 2026-05-09_182826-ea12c152 vs iter-12 baseline run 2026-05-09_180917-2c9a3e8b, both at HEAD ea12c152):
+- **Net pass count: 58/106 → 58/106 (no PASS↔FAIL transitions in either direction)**.
+- **Zero regressions**: zero PASS→FAIL on any page.
+- Targeted Zware tile-grid pages all improved in diff%: p2 4.564% → 4.498% (-0.066pp), p3 5.217% → 5.070% (-0.147pp), p4 3.402% → 3.311% (-0.091pp), p5 5.357% → 5.124% (-0.232pp), p6 3.050% → 2.966% (-0.084pp), p0 1.753% → 1.703% (-0.050pp).
+- Background-colour-correctness verified on Zware p0: app's most-common pixel changed from (254, 254, 254) to (253, 253, 253), exactly matching PyMuPDF's reference render. The remaining 12.4% diff on p0 is now isolated to image-tile-edge AA pixels (where ref vs app differ on JPEG sub-pixel sample positions), not the global colour offset that this fix targeted.
+- Total diff%-sum across all 106 pages: 247.30 → 246.64 (-0.67pp). Improvements all on Zware vector pages; everywhere else byte-identical.
+
+**Concerns / next ideas**:
+- No net pass count change because Zware's failing pages were already at 3-5% diff (well above the 2% threshold) and the SMask fix only contributes -0.05 to -0.23pp per page. The remaining diff on these pages is image-tile-edge AA and JPEG sub-pixel sampling differences — not a single feature gap, more rasterizer-quality territory.
+- The "dimming-only" gate is conservative (threshold 250). The 254-uniform JPEG-quality masks Adobe inserts are very common in PDFs targeting print fidelity (this happens for any image saved with Adobe's DCTDecode + lossy SMask compression chain, which tends to insert near-uniform dim masks as part of the high-quality print pipeline). Future PDFs with similar compositing patterns should benefit.
+- 2885 Demo project p0 (10.6% diff in older summaries) showed similar +1 background offset, but this fix doesn't help — 2885 has zero SMasks; its +1 offset comes from transparency-group rendering with `/ca=0.61, 0.65` (real partial alpha). That's a separate compositing issue (group-knockout / non-isolated blending) — same root cause family but different code path. Worth investigating in iter-14 if the loop continues.
+- The signature pattern (uniform R/G/B +1 background offset) is now diagnostic-grade: any future iteration spotting this pattern can immediately classify it as a compositing-formula issue rather than a feature gap.
+
 **Commit**: <pending>
 

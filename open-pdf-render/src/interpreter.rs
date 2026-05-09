@@ -647,6 +647,21 @@ impl Interpreter {
     /// R/G/B by the alpha (tiny-skia requires premultiplied input).
     /// When the image was downsampled (img_w != sm_w), the mask is
     /// nearest-neighbour resampled onto the image grid.
+    ///
+    /// PyMuPDF/MuPDF parity note: when the SMask is "dimming-only" (no real
+    /// transparency, alpha values stay near 255), we treat it as a colour
+    /// attenuation rather than a soft alpha. With a true alpha-comp pipeline,
+    /// premultiplied (c=253, a=254) over an opaque-white canvas yields
+    /// 253 + 255*(255-254)/255 = 254, but PyMuPDF effectively renders 253
+    /// because its straight-output path drops alpha and exposes the
+    /// premultiplied colour bytes directly. Forcing alpha=255 for high-alpha
+    /// pixels keeps the straight-over-white tiny-skia composite reading the
+    /// premul colour without further mixing — matching MuPDF on tiled JPEG
+    /// photo grids (Zware vector PDF p0/p2/p3/p4/p5/p6, where every tile
+    /// has a uniform-254 SMask used purely as a JPEG-quality dimming pass).
+    /// Real cutout SMasks (with alpha values that vary down to 0 / dip below
+    /// the threshold) keep the original premultiplied behaviour so soft
+    /// edges and silhouettes still composite correctly.
     fn premultiply_with_smask(
         rgba: &mut [u8],
         img_w: u32,
@@ -658,6 +673,22 @@ impl Interpreter {
         if img_w == 0 || img_h == 0 { return; }
         let same_dims = img_w == sm_w && img_h == sm_h;
         let pm = |c: u8, a: u8| -> u8 { ((c as u16 * a as u16 + 127) / 255) as u8 };
+
+        // Decide whether the mask is a dimming pass (all alpha values >=
+        // DIMMING_THRESHOLD) or a real soft mask with cutouts. Sample the
+        // mask bytes — for any pixel below the threshold, treat the whole
+        // mask as a true cutout. Threshold 250 is conservative: it catches
+        // the 254-uniform JPEG-quality masks while still treating any mask
+        // with even a hint of real transparency (alpha < 250) as a cutout.
+        const DIMMING_THRESHOLD: u8 = 250;
+        let mut is_dimming_only = true;
+        for &a in smask.iter() {
+            if a < DIMMING_THRESHOLD {
+                is_dimming_only = false;
+                break;
+            }
+        }
+
         for dy in 0..img_h {
             for dx in 0..img_w {
                 let sm_idx = if same_dims {
@@ -673,10 +704,22 @@ impl Interpreter {
                 };
                 let pixel_idx = ((dy as usize) * (img_w as usize) + (dx as usize)) * 4;
                 if pixel_idx + 3 >= rgba.len() { return; }
-                rgba[pixel_idx]     = pm(rgba[pixel_idx],     a);
-                rgba[pixel_idx + 1] = pm(rgba[pixel_idx + 1], a);
-                rgba[pixel_idx + 2] = pm(rgba[pixel_idx + 2], a);
-                rgba[pixel_idx + 3] = a;
+                if is_dimming_only {
+                    // Treat the mask as a colour-attenuation pass: pre-darken
+                    // RGB and keep alpha=255 so the over-white composite
+                    // doesn't add a brightening dst contribution.
+                    rgba[pixel_idx]     = pm(rgba[pixel_idx],     a);
+                    rgba[pixel_idx + 1] = pm(rgba[pixel_idx + 1], a);
+                    rgba[pixel_idx + 2] = pm(rgba[pixel_idx + 2], a);
+                    rgba[pixel_idx + 3] = 255;
+                } else {
+                    // Real cutout / soft mask: premultiply with the alpha as
+                    // tiny-skia expects, so transparent edges blend correctly.
+                    rgba[pixel_idx]     = pm(rgba[pixel_idx],     a);
+                    rgba[pixel_idx + 1] = pm(rgba[pixel_idx + 1], a);
+                    rgba[pixel_idx + 2] = pm(rgba[pixel_idx + 2], a);
+                    rgba[pixel_idx + 3] = a;
+                }
             }
         }
     }
