@@ -631,3 +631,105 @@ The render-regression diff metric is per-pixel sum-of-RGB-channels above 30 (pos
 **Status**: NO_PROGRESS — three compensation parameter sets attempted (Path A two curves, Path B two strokes), Path C ruled out by tiny_skia API audit. All attempts reverted. The remaining 48 failures need either (a) a tiny_skia fork with gamma-correct AA, (b) a switch to a different rasterizer (skia-safe / piet-cairo / fontdue text + custom blitter), or (c) acceptance that 58/106 is the architectural ceiling at this rasterizer.
 
 **Commit**: (revert-only — no commit; this entry is the only persisted artifact).
+
+
+
+### Iteration 18 — 2× supersample + gamma-aware downsample (REVERTED)
+
+**Iter-17 baseline at HEAD 80419c04**: 58/106 passing. 5 consecutive NO_PROGRESS iterations on the rasterizer-quality cluster. Per the iter-18 mandate, attempt the technique used by Skia / Cairo / Direct2D: render at 2× the requested resolution into an internal pixmap, then box-filter downsample 2:1 with gamma-correct (sRGB → linear → average → linear → sRGB) averaging. The hypothesis was that 4-sample-per-output-pixel AA edges, averaged in linear-light space, would approximate gamma-correct AA without forking tiny_skia.
+
+**Implementation** — `open-pdf-render/src/parser.rs::render_page_internal`:
+- Allocated the SkiaRenderer's pixmap at `internal_w = width × 2`, `internal_h = height × 2`. Doubled the CTM scale (`render_scale = scale × 2`) so all draws — paths, strokes, glyphs, images via `draw_pixmap` — land in the larger buffer at 2× resolution. Skipped supersampling for `max_image_pixels > 0` (thumbnail / image-budgeted) renders to keep preview cost bounded.
+- Added module-level helpers `build_srgb_to_linear_lut()` (256 → u32 fixed-point with LINEAR_MAX = 65535, IEC 61966-2-1 sRGB transfer with γ=2.4 + linear toe), `build_linear_to_srgb_lut()` (65536 → u8 inverse), and `downsample_gamma_aware(src, src_w, src_h, factor)` that for each output pixel sums `factor*factor` source samples through the forward LUT, divides by the sample count, then maps back through the inverse LUT. Alpha was averaged in plain 8-bit because alpha is a coverage fraction, not a light intensity. Premultiplied-alpha approximation noted in code: visually correct on the white page background but mathematically not a true premul-aware downsample.
+- The `into_rgba()` call on `SkiaRenderer` produced the 2×-buffer raw bytes, then `downsample_gamma_aware` converted them to the originally-requested resolution before being wrapped in `RenderedPage { width, height, rgba }`. Existing callers (thumbnail render path, JS replay) were unaffected — supersampling was internal.
+
+**Verification — caught a critical regression on every text-heavy and image-heavy run**:
+- **Tekst.pdf** (5 pages, baseline 3 PASS / 2 FAIL): 1.97/1.86/2.49/2.82/0.53 → **2.34/2.28/2.78/3.42/0.65** (1 PASS / 4 FAIL). Net **−2 PASS** on Tekst alone. p0 and p1 both flipped from PASS to FAIL. Every page got worse by +0.13 to +0.60pp.
+- **Text pdf gecombineerd.pdf** (28 pages): EVERY page got worse, by +0.01 to +1.88pp. p1 0.79 → 1.08, p2 2.05 → 2.59, p7 3.43 → 4.81 (+1.38pp), p9 4.44 → 5.74 (+1.29pp), p23 3.38 → 5.26 (+1.88pp), p24 2.86 → 4.48 (+1.61pp). No flip yet visible at this magnitude, but the entire diff distribution shifted up.
+- **2885 Demo project.pdf** (14 pages, baseline 12 PASS / 2 FAIL): catastrophic regression on raster-image pages. p2 0.06 → **5.76** (+5.70pp), p4 0.08 → **8.26** (+8.18pp), p6 0.05 → **5.16** (+5.11pp). All three pages flipped PASS → FAIL. Net **−3 PASS** on 2885.
+
+**Why it failed**:
+- **Text/glyphs**: tiny_skia's linear-coverage AA at 1× already produces glyph edges very close to PyMuPDF's. When we render at 2× then downsample with gamma-correct averaging, we get *softer*, wider AA edges — gamma-correct AA is mathematically more accurate but PyMuPDF (libfontconfig + libfreetype + MuPDF blitter) doesn't use it either. The diff is now between "tiny_skia 2× + gamma downsample" and "MuPDF 1× plain", which is *farther* than "tiny_skia 1× plain" vs "MuPDF 1× plain". Iter-17's bias-band analysis predicted this: the mismatch is anisotropic — it isn't fixed by making *our* renderer more gamma-correct, only by matching MuPDF's *specific* AA.
+- **Raster images**: this is the killer. PDF Image XObjects on 2885 are paint via `draw_pixmap` with `FilterQuality::Bilinear`. At 2× resolution, the bilinear filter samples differ — and when we then box-filter downsample, the result is a *triple-resampled* image (source → 2×-bilinear → 1× box). PyMuPDF resamples once (source → 1×-bilinear). The pages that were near-zero diff (p2 0.06%, p4 0.08%, p6 0.05%) blew up to 5–8% because the multi-pass resample produces visibly different sub-pixel positioning along entire image boundaries.
+- **Memory + perf**: a side note — at 2000-px width, the 2× buffer is 4000 × Y × 4 = ~50 MB per page during render. Downsample is O(width × height × 4) per page; LUT tables (1 KB + 64 KB) build per call. Not a correctness issue but a 4× cost for a guaranteed regression is not worth it.
+
+**Decision matrix → REVERT**:
+- 0 net improvement OR ANY real regression → revert. Confirmed: net −2 (Tekst) + −3 (2885) = **−5 PASS** before even running the other PDFs. The full corpus would have lost more (Text gecombineerd's 28-page-uniform diff increase implied at least 2-3 more flips). Per the explicit decision rule, this is a clear revert.
+- `git checkout HEAD -- open-pdf-render/src/parser.rs` reverts the change to the file. The Tauri app was rebuilt at the reverted HEAD; smoke-tested via the test runner before declaring the iter complete.
+
+**Architectural takeaway**:
+- Gamma-aware downsample is genuinely a "correct" operation, but it's only useful when the *target* (the reference) was also rendered through a gamma-aware pipeline. PyMuPDF/MuPDF does NOT use gamma-correct AA. So matching PyMuPDF requires us to NOT use gamma-correct AA either. The bias-band analysis from iter-17 was already conclusive on this front; this iteration confirmed the conclusion empirically across both glyph- and image-heavy pages.
+- The `--pdf=2885 p2/p4/p6` regression is the biggest single signal: pages with raster images (which is ~half the corpus) will REGRESS under any pre-resample-then-resample scheme, regardless of AA strategy. Future rasterizer-quality work that touches image pipelines must preserve the single-bilinear-resample invariant.
+- The remaining 48 failures still decompose into the four clusters from iter-14: text-AA glyph hinting, image-rasterizer subpixel, JPEG tile drift, residual SMask soft-edges. None of these are addressable from inside tiny_skia without forking it. **58/106 is the rasterizer-quality ceiling for this stack.**
+
+**Status**: NO_PROGRESS — supersample-then-downsample reverted after confirming −5 net PASS in two-PDF spot-check. 6 consecutive NO_PROGRESS iterations now (15, 16, 17, 18 since the last pass-count win at iter-7 / iter-12 / iter-15-as-correctness-fix). The rasterizer-quality cluster is exhausted at the current level of indirection.
+
+**Commit**: (revert-only — no commit; this entry is the only persisted artifact).
+
+
+
+### Iteration 19 — TJ operator audit (no bug found, parity confirmed)
+
+**Iter-18 baseline at HEAD 80419c04**: 58/106 passing. 6 consecutive NO_PROGRESS iterations on rasterizer-quality. This iteration was a **single-iteration spec-conformance audit** of the PDF `TJ` operator (PDF 1.7 §9.4.3) — the per-string kerning operator — looking for any sign-flip, scaling, or Tc/Tw interaction bug whose accumulated drift could explain the residual text-AA mismatch.
+
+**Inspected sites**:
+- `open-pdf-render/src/interpreter.rs::TextState::apply_tj_kern` (line 94-99) — kern-application helper.
+- `open-pdf-render/src/interpreter.rs::execute_show_array` (line 555-603) — TJ-array dispatcher (string → glyph render, number → kern).
+- `open-pdf-render/src/interpreter.rs::execute_show_string` (line 516-550) — Tj single-string dispatcher.
+- `open-pdf-render/src/text_renderer.rs::render_text_glyphs_skia` (line 247-323) — per-byte glyph-painting + advance.
+- `open-pdf-render/src/text_renderer.rs::render_cid_text_glyphs_skia` (line 389-465) — per-CID glyph-painting + advance.
+
+**TJ implementation found correct against PDF 1.7 §9.4.4 / Table 109**:
+1. **Sign convention** ✓ — `tx = -(kern / 1000.0) * font_size * horizontal_scaling`. PDF spec: positive kern → glyph moves LEFT (subtract from horizontal coordinate). Our negation produces a leftward translation, matching the spec.
+2. **Scaling factor** ✓ — kern is in 1/1000 of an em (text-space unit), so divide by 1000 then multiply by Tfs (font_size) and Th (horizontal_scaling). Matches the spec formula `tx = ((w0 - Tj/1000) × Tfs + Tc + Tw) × Th`.
+3. **Math factorisation** ✓ — the spec's combined-formula `((w0 - Tj/1000)*Tfs + Tc + Tw) × Th` is split between two sites in our code:
+   - Per-glyph advance handles `(w0 × Tfs + Tc + Tw_for_space) × Th`
+   - `apply_tj_kern` handles `-(Tj/1000 × Tfs × Th)` separately, BETWEEN strings within a TJ array
+   The split is **algebraically equivalent** because Tc/Tw are not multiplied by the kern.
+4. **Tc applies to every glyph** ✓ — including the last glyph in a TJ-array string, including across strings in the same TJ array (each per-glyph advance picks up the current Tc).
+5. **Tw applies only on the space character** ✓ — for simple fonts: `if byte == 32`. For CID fonts: `if cid == 3 || cid == 32` (the `cid == 3` is a heuristic for embedded subset CMaps; harmless because Tw is 0 across the test corpus).
+6. **CTM application** ✓ — TJ kern modifies Tm (text-space). Glyph painting later applies CTM via `state.concat_matrix(sh*tm[0], sh*tm[1], s*tm[2], s*tm[3], sgx, sgy)` at glyph-render time. The kern correctly stays in text space and is composed through Tm before reaching device space.
+7. **Tj (single string) vs TJ (array)** ✓ — both dispatch to `render_text_glyphs_skia` / `render_cid_text_glyphs_skia`, and both advance Tm via the same per-byte/per-CID loop. There is no path-difference bug.
+
+**Test-corpus TJ characteristics** (Tekst.pdf p2 sample):
+- 34 TJ operations on the page, 0 Tj operations
+- 679 numeric kern values across all TJ arrays on the page
+- Kern range: −3 to +4 (sub-em); average +0.88; sum +596 over the entire page
+- Cumulative drift per TJ at 12pt: ~12 × (4/1000) = 0.048pt per kern → 0.067px @ 1.4 DPI
+- Tw and Tc on the page: BOTH 0 (no word spacing, no char spacing operators set on this page)
+
+**Tw/Tc audit across full corpus**:
+| PDF | Tw ops | Tc ops | non-zero Tw |
+|-----|--------|--------|-------------|
+| 20260316 - Barn Relocation | 0 | 0 | none |
+| 2885 Demo project | 0 | 0 | none |
+| Combinatie Raster vector | 0 | 0 | none |
+| rapport-constructie | 1 | 47 | none (Tw=0) |
+| Technische tekening | 0 | 0 | none |
+| Tekst | 0 | 0 | none |
+| Text pdf gecombineerd | 1 | 47 | none (Tw=0) |
+| Zware vector PDF | 0 | 0 | none |
+
+Only 2 PDFs set Tc, BOTH with Tw=0. The `cid == 3` Tw-trigger heuristic in CID renderer is therefore moot across the entire corpus — it cannot affect any test page.
+
+**No code change made**. The TJ operator handling is verifiably spec-conformant per PDF 1.7. No sign error, no off-by-1000 scaling, no Tc/Tw interaction surface that could produce the observed text-AA bias. The accumulated kern drift on a typical text page is sub-pixel even before considering pixel snapping in `snap_glyph_origin`.
+
+**Verification**:
+- No build / no test-suite run executed — there is no code change to verify.
+- Source files unchanged: `git diff --stat open-pdf-render/src/interpreter.rs open-pdf-render/src/text_renderer.rs` is empty.
+- Improvement-log entry added (this section). HEAD 80419c04 → new commit with this doc-only diff.
+
+**Cumulative dead-end inventory** (across iter-15 / 16 / 17 / 18 / 19):
+- iter-15: image rasterizer subpixel — tiny_skia rasterizer is the limit
+- iter-16: transparency-group off-screen buffer — spec-conformant, no test coverage
+- iter-17 path A: gamma post-correction — anisotropic mismatch, redistributes diff sideways
+- iter-17 path B: glyph stem-stroke widening — over-darkens halo, narrow parameter window
+- iter-17 path C: tiny_skia gamma-correct AA option — does not exist in the API
+- iter-18: 2× supersample + gamma-aware downsample — wrong target model (PyMuPDF/MuPDF is also linear-AA), also breaks bilinear image resample chain
+- iter-19: TJ operator audit — spec-conformant, no bug found
+
+**Status**: NO_FEATURE_GAP_FOUND — TJ operator handling is verifiably correct per PDF 1.7 §9.4.3. The remaining 48 failures cannot be attributed to a per-spec-section bug at the interpreter layer. They are confirmed to be at the rasterizer (tiny_skia AA / image filter) layer, which is unreachable from outside without forking the dependency.
+
+**Continue**: NO — recommend pause. 7 consecutive NO_PROGRESS / no-feature-gap iterations is a strong signal that the single-iteration spec-audit channel is exhausted. Further progress on the rasterizer cluster requires a multi-iteration project (tiny_skia fork, or migration to skia-safe / piet / fontdue+custom-blitter) that does not fit the single-iter loop budget.
+
+**Commit**: doc-only — adds this entry; no source changes.
