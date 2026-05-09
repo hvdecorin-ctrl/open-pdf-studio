@@ -302,27 +302,93 @@ impl DocumentHandle {
         }
     }
 
-    /// Analyze whether a page is pure vector or contains raster content (images/shading)
+    /// Analyze whether a page is pure vector or contains raster content (images/shading).
+    ///
+    /// Pages classified as `Tile` are skipped by the JS-side background vector
+    /// prefetch in `loader.js`, which would otherwise call `extract_draw_commands`
+    /// (decoding all images on the page) for every page on PDF load. For PDFs
+    /// with many or large embedded images that would freeze the app — see the
+    /// Barn Relocation test case (7 pages × 124M total pixels of FlateDecode).
+    ///
+    /// Heuristic for Tile classification:
+    /// 1. Content stream uses `sh` (shading) operator, OR
+    /// 2. Page resources contain > 5 Image XObjects, OR
+    /// 3. Any single Image XObject's pixel count exceeds 2 million (≥ ~1500×1300)
+    ///
+    /// These thresholds are conservative — pure-vector pages with small icons
+    /// (logos, signatures) keep their Vector classification and benefit from
+    /// the BG prefetch + JS replay path. Image-heavy diagram/photo pages fall
+    /// back to the Rust `render_thumbnail` path which honors `skip_images`
+    /// for fast (low-fidelity) thumbnails and only does full image decode
+    /// when the user actually navigates to the page in the main view.
     pub fn analyze_page_type(&self, page: usize) -> Result<crate::PageType, RenderError> {
         let page_id = self.get_page_id(page)?;
         let content_bytes = self.get_content_stream(page_id)?;
         let content = lopdf::content::Content::decode(&content_bytes)
             .map_err(|e| RenderError::ParseError(format!("{}", e)))?;
 
-        let mut has_raster_images = false;
+        // 1. Shading operator → Tile
         for op in &content.operations {
-            match op.operator.as_str() {
-                // Only classify as Tile if there are shading patterns
-                // Do (XObjects) can be Form XObjects (vector) — we try vector mode first
-                "sh" => has_raster_images = true,
-                _ => {}
+            if op.operator.as_str() == "sh" {
+                return Ok(crate::PageType::Tile);
             }
         }
-        if has_raster_images {
-            Ok(crate::PageType::Tile)
-        } else {
-            Ok(crate::PageType::Vector)
+
+        // 2 + 3. Inspect XObjects in page resources. Walk the /XObject dict
+        // and count Image entries + their pixel counts.
+        let resources = self.get_page_resources(page_id)?;
+        if let Ok(xobj_obj) = resources.get(b"XObject") {
+            let xobj_dict_opt = match xobj_obj {
+                lopdf::Object::Dictionary(d) => Some(d.clone()),
+                lopdf::Object::Reference(id) => {
+                    self.doc.get_object(*id).ok()
+                        .and_then(|o| o.as_dict().ok().cloned())
+                }
+                _ => None,
+            };
+            if let Some(xobj_dict) = xobj_dict_opt {
+                const MAX_IMAGE_COUNT: usize = 5;
+                const MAX_SINGLE_IMAGE_PIXELS: u64 = 2_000_000;
+
+                let mut image_count: usize = 0;
+                for (_name, val) in xobj_dict.iter() {
+                    // Resolve indirect refs to the actual stream.
+                    let stream_obj = match val {
+                        lopdf::Object::Stream(s) => Some(s.clone()),
+                        lopdf::Object::Reference(id) => {
+                            self.doc.get_object(*id).ok().and_then(|o| match o {
+                                lopdf::Object::Stream(s) => Some(s.clone()),
+                                _ => None,
+                            })
+                        }
+                        _ => None,
+                    };
+                    let Some(stream) = stream_obj else { continue };
+
+                    // Must be /Subtype /Image
+                    let is_image = stream.dict.get(b"Subtype").ok()
+                        .and_then(|o| o.as_name().ok())
+                        .map(|n| n == b"Image")
+                        .unwrap_or(false);
+                    if !is_image { continue; }
+
+                    image_count += 1;
+                    if image_count > MAX_IMAGE_COUNT {
+                        return Ok(crate::PageType::Tile);
+                    }
+
+                    let w = stream.dict.get(b"Width").ok()
+                        .and_then(|o| o.as_i64().ok()).unwrap_or(0) as u64;
+                    let h = stream.dict.get(b"Height").ok()
+                        .and_then(|o| o.as_i64().ok()).unwrap_or(0) as u64;
+                    if w * h > MAX_SINGLE_IMAGE_PIXELS {
+                        return Ok(crate::PageType::Tile);
+                    }
+                }
+            }
         }
+
+        Ok(crate::PageType::Vector)
     }
 
     /// Extract draw commands without rendering to bitmap.
