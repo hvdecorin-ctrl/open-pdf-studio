@@ -87,4 +87,4 @@ Per-PDF stats from initial harness run:
 
 **Total passing**: 25/106 → 26/106
 
-**Commit**: (added below)
+**Commit**: b93814d6
