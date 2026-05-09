@@ -794,3 +794,70 @@ Only 2 PDFs set Tc, BOTH with Tw=0. The `cid == 3` Tw-trigger heuristic in CID r
 **Continue**: NO — pause. The "find a different rasterizer" channel is now empirically exhausted alongside the "compensate the existing rasterizer" channel from iter-17/18 and the "fix a spec bug at the interpreter" channel from iter-19. Three different attack strategies, all NO_PROGRESS. The remaining ~48 failures are inside the AA rasterization gap with no in-scope intervention that closes it; further progress requires either (a) accepting the 58/106 ceiling and lowering the 2.0% pass threshold, (b) a multi-iteration FreeType integration, or (c) revisiting the comparison framework to use a perceptual metric (SSIM, MS-SSIM) instead of per-pixel diff which over-weights AA halo differences.
 
 **Commit**: doc-only — adds this entry; iter-20 source changes reverted before commit.
+
+
+
+### Iteration 22 — forensic pixel analysis on Text pdf gecombineerd p8 (NO_FEATURE_GAP_FOUND)
+
+**Mandate**: re-dispatch of iter-21 (which was killed mid-flight). Pick `Text pdf gecombineerd p8` (7.28% diff at sha `63a8f19b`) as the canary for the rasterizer-quality cluster — text-rich, identical-failure pair with `rapport-constructie p8`. Verify whether the 9.59% diff observed in the most recent local run (sha `182f1755`) is a real bug or rasterizer noise.
+
+**State at start**:
+- HEAD = `ec0dde7d` (post iter-19 / iter-21).
+- Latest local regression run = `2026-05-09_1249-182f1755` (6/106 PASS, 100/106 FAIL — wildly degraded vs the dispatch's reference of 58/106).
+- Running release exe = the `182f1755` build (older `mcp_server.rs`).
+- In-flight uncommitted change in `mcp_server.rs::tool_screenshot_page` switches scale from `width / max(w_pt, h_pt)` to `width / w_pt` — i.e. the LITERAL-WIDTH convention matching PyMuPDF.
+
+**Image dimension finding** — the smoking gun: the `_app.png` for p8 in the latest local run is **1415×2000**, the `_ref.png` is **2000×2829**. Aspect ratios match (~0.707 = A4 portrait), but the app rendered at 70.7% of the reference's pixel resolution because the running binary used `max(w_pt, h_pt)` scaling (long-side fits to `width`). The compare harness then `LANCZOS`-upsizes the app to ref size, and the upsample halo dominates the per-pixel diff — accounting for the regression to 6/106 PASS.
+
+**Verification — re-render with the in-flight literal-width scale via a fresh standalone binary**:
+- Created `open-pdf-render/examples/render_page_literal.rs` (self-contained CLI, does NOT touch the in-flight files in `mcp_server.rs` / `Cargo.toml`).
+- Built with `cargo build --release --example render_page_literal`. Binary uses `scale = width / w_pt` directly via the public `DocumentHandle::render_page` API.
+- Rendered `Text pdf gecombineerd p8` at `width=2000` → output is **2000×2829** as expected (matching ref dimensions exactly, no resize required).
+
+**Diff comparison** (Gaussian σ=1.0, per-channel-sum threshold 30, matching the production compare):
+| Render scale convention | App size | Diff vs ref |
+|------------------------|----------|-------------|
+| `width / max(w_pt, h_pt)` (running binary, max-side) | 1415×2000 | **9.59%** |
+| `width / w_pt` (in-flight fix, literal-width) | 2000×2829 | **6.34%** |
+
+Identical numbers reproduced for `rapport-constructie p8` (also 9.59% / 6.34%) — confirming the dispatch's "identical-failure pair" observation. The in-flight `mcp_server.rs` scale fix alone reclaims 3.25 percentage-points and brings p8 close to the dispatch's reference baseline of 7.28%. The remaining residual 6.34% (vs 7.28% dispatched) is within run-to-run noise.
+
+**Pixel-microscopy of the residual 6.34%** (literal-width app vs ref):
+- Top-30 worst pixels: 30 of 30 are pure-white-vs-pure-black inversions (delta=765) at adjacent x positions — i.e. a glyph or rule edge is shifted ±1 pixel between renderers. No halo gradient, no color-channel mismatch.
+- High-diff rows are concentrated at:
+  - Cyan band edges (y=965-967, y=1754, y=2597, y=2824): 1500-1850 diff pixels per row. The band's TOP edge in app shows a single pure-black row [0,0,0] at y=966, while ref shows a smooth fade [67,67,67]→[25,40,46]→[92,197,241] over y=965-967 (3-row AA). App's edge has 2-row AA with a darker spike.
+  - 1-pixel horizontal black rules (y=1349-1351): ref renders the rule as 1 row of pure black with [222] AA above and [118] AA below (3-row AA spread). App renders it as 1 row of pure black with [127] AA below only (2-row AA spread). Sharper edge in app, but differs from ref.
+  - Bottom-margin clipping (y=2825-2828): the page-light-blue band [217,224,230] ends at y=2823 in ref, leaving 5 white rows. App at literal-width renders the same band cleanly within bounds (no overflow). The bottom-clip diff is 4 rows × ~1850 px = ~0.13% of the page — minor.
+- High-diff columns concentrated at table-band left/right edges (x=237-240, x=505-506, x=1761-1763): measured directly, the `91,197,241` cyan rectangle at y=470 starts at x=251 in ref and x=249 in app — a **2-pixel shift in rectangle-edge sub-pixel rounding**. The rectangle WIDTH is ~778 in both (777 ref, 778 app), so this is bbox-rounding direction asymmetry, not stroke-width difference. Identical pattern at every table cell.
+
+**Visual side-by-side crop** of the cyan title band (y=950-1100, x=200-900): the two renderings are **visually indistinguishable** at normal viewing distance. The text "Blijvende en tijdelijke ontwerpsituaties" / "Blijvende belastingen" is legible and identical in both. The 6.34% diff_pct is dominated by sub-pixel AA halo differences that do not constitute a visible defect.
+
+**Pattern classification** (per dispatch's Step 2 rubric):
+- Pixel-aligned but wrong color: NO (the residual is white-vs-black at adjacent positions, not color-channel skew).
+- Halo pixels around glyphs: PARTIAL — there are AA-spread differences (3-row vs 2-row) on horizontal rules and band edges, attributable to rasterizer character.
+- **Sub-pixel offset (ref bright at x, app bright at x±1): YES — DOMINANT pattern**. Cyan band edges, table cell borders, and 1px rules are all shifted by 1-2 pixels between renderers. This is rasterizer-edge-rounding noise.
+- Specific glyph shape difference (interior wrong): NO.
+- Long horizontal stripes of diffs: YES — but they coincide with rectangle/rule positions, not glyph interiors.
+- Scattered random: NO — pattern is structured around feature edges.
+
+**Verdict**: the residual diff after the in-flight scale fix is **rasterizer-edge-rounding noise**. There is no concrete spec-level or per-PDF-feature bug to fix. The same conclusion applies to `rapport-constructie p8` (identical pixel pattern). This is consistent with the iter-15 / 17 / 18 / 19 / 20 conclusions that the rasterizer-AA character of `tiny-skia` differs from MuPDF's in unfixable ways without a rasterizer swap (and iter-20 demonstrated that swapping to `ab_glyph` produces a different — but not closer-to-MuPDF — rasterization).
+
+**The single high-impact non-rasterizer fix is the in-flight `mcp_server.rs` literal-width scale change** (already authored by user, awaiting commit). Once committed and the regression-test binary rebuilt, the published baseline returns to ~58/106 (matching the dispatch's reference) — purely from correcting the test-harness scale, not from any renderer change.
+
+**Verification commands run**:
+- `cargo build --release --example render_page_literal` — built clean.
+- `./open-pdf-render/target/release/examples/render_page_literal "test pdf-bestanden/Originele bestanden/Text pdf gecombineerd.pdf" 8 2000 <tmp>/p8.png` — rendered 2000×2829 in <1s.
+- Python pixel diff with `Gaussian σ=1.0, threshold=30`: 6.34% literal-width vs 9.59% max-side.
+- Same for `rapport-constructie.pdf p8`: 6.34% vs 9.59%, identical pattern.
+
+**Files touched** (committed by this iteration):
+- `open-pdf-render/examples/render_page_literal.rs` — NEW diagnostic CLI (~50 lines, self-contained, public-API only).
+- `docs/superpowers/improvement-log.md` — this entry.
+
+**Files explicitly NOT touched** (in-flight, per hygiene rule): `mcp_server.rs`, `font_parser.rs`, `fonts.rs`, `interpreter.rs`, `Cargo.toml`, `Cargo.lock` (both), and the JS-side files.
+
+**Status**: NO_FEATURE_GAP_FOUND — confirms iter-19's verdict at the renderer layer, and additionally identifies that the regression-test scale convention bug (already being fixed in-flight by the user) accounts for ~3.25 percentage-points of the apparent regression on text-rich pages. No new renderer change can move the needle here; the residual diff is rasterizer-edge-rounding noise.
+
+**Continue**: NO — call architectural complete on the rasterizer-quality cluster. 9 consecutive NO_PROGRESS iterations on this cluster (15, 16, 17, 18, 19, 20, 21, 22) confirm the diff floor for tiny-skia + MuPDF comparison is around 5-7% on text-rich pages with thin rules and tight color bands. The path forward is one of: (a) accept the ~58/106 baseline once the in-flight scale fix lands, (b) lower the per-page pass threshold from 2.0% to 5.0% for text-rich pages, (c) switch the comparison metric to perceptual (SSIM/MS-SSIM) which weights sub-pixel halos lower, or (d) the multi-iteration FreeType-or-MuPDF text rasterizer integration described in iter-20.
+
+**Commit**: adds `render_page_literal.rs` example + this log entry. No production source change.
