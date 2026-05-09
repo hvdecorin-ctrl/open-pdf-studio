@@ -547,7 +547,7 @@ impl Interpreter {
         let is_jpeg = filter_name == b"DCTDecode";
 
         // ─── JPEG: use turbojpeg with native scaled DCT decoding ─────────
-        let (img_w, img_h, rgba) = if is_jpeg {
+        let (img_w, img_h, mut rgba) = if is_jpeg {
             let raw = &stream.content;
             match Self::decode_jpeg_scaled(raw, max_decode_pixels) {
                 Some(result) => result,
@@ -561,10 +561,124 @@ impl Interpreter {
             }
         };
 
+        // ─── Apply /SMask soft alpha for JPEGs ────────────────────────────
+        // The non-JPEG path already bakes SMask alpha into the RGBA buffer
+        // inside decode_raw_image. The JPEG decoder produces an opaque
+        // (a=255) buffer so we must apply the SMask here. Without this,
+        // tiled-JPEG photo grids (e.g. Zware vector PDF p3/p5) render with
+        // their alpha-edged matte blending discarded — every tile becomes
+        // a hard rectangle on a (255,255,255) backdrop instead of softly
+        // composited content with a (253,253,253) backdrop bleeding
+        // through transparent edge pixels.
+        if is_jpeg {
+            if let Some((sm_w, sm_h, alpha_bytes)) = Self::read_smask_alpha(dict, doc) {
+                Self::premultiply_with_smask(&mut rgba, img_w, img_h, &alpha_bytes, sm_w, sm_h);
+            }
+        }
+
         state.save();
         state.concat_matrix(1.0, 0.0, 0.0, -1.0, 0.0, 1.0);
         renderer.draw_image(img_w, img_h, &rgba, &state.current);
         state.restore();
+    }
+
+    /// Resolve and decode an Image XObject's `/SMask` soft-alpha mask.
+    /// Returns `(sm_width, sm_height, alpha_bytes)` (single byte per pixel,
+    /// length = sm_width * sm_height) or `None` if no SMask is present or
+    /// the mask cannot be decoded.
+    ///
+    /// The mask is itself an Image XObject (DeviceGray, 8 bpc) whose pixel
+    /// values become the per-pixel alpha for the parent image. /Matte
+    /// (un-matting against a background colour) is intentionally ignored;
+    /// the silhouette alone matches PyMuPDF's edge-blending closely enough.
+    fn read_smask_alpha(dict: &Dictionary, doc: &Document) -> Option<(u32, u32, Vec<u8>)> {
+        let stream = match dict.get(b"SMask").ok()? {
+            Object::Stream(s) => Some(s.clone()),
+            Object::Reference(id) => doc.get_object(*id).ok().and_then(|obj| {
+                if let Object::Stream(s) = obj { Some(s.clone()) } else { None }
+            }),
+            _ => None,
+        }?;
+        let sm_dict = &stream.dict;
+        let sm_w = sm_dict.get(b"Width").ok().and_then(|o| match o {
+            Object::Integer(i) => Some(*i as u32),
+            _ => None,
+        })?;
+        let sm_h = sm_dict.get(b"Height").ok().and_then(|o| match o {
+            Object::Integer(i) => Some(*i as u32),
+            _ => None,
+        })?;
+        if sm_w == 0 || sm_h == 0 { return None; }
+
+        // Identify the outermost filter — SMasks may be FlateDecode (raw
+        // grayscale bytes) or DCTDecode (JPEG-encoded grayscale).
+        let filters: Vec<Vec<u8>> = match sm_dict.get(b"Filter").ok() {
+            Some(Object::Name(n)) => vec![n.clone()],
+            Some(Object::Array(arr)) => arr.iter().filter_map(|o| match o {
+                Object::Name(n) => Some(n.clone()),
+                _ => None,
+            }).collect(),
+            _ => Vec::new(),
+        };
+        let outermost = filters.last().map(|v| v.as_slice()).unwrap_or(&[]);
+
+        let needed = (sm_w as usize) * (sm_h as usize);
+
+        if outermost == b"DCTDecode" {
+            // JPEG-encoded grayscale SMask: decode the JPEG and extract
+            // the gray channel. turbojpeg returns RGBA for grayscale JPEGs
+            // by replicating the gray byte across R/G/B with a=255 — we
+            // pull the R channel back out as the alpha source.
+            let (jw, jh, rgba) = Self::decode_jpeg_scaled(&stream.content, 0)?;
+            if jw != sm_w || jh != sm_h { return None; }
+            if rgba.len() < needed * 4 { return None; }
+            let mut out = Vec::with_capacity(needed);
+            for px in 0..needed { out.push(rgba[px * 4]); }
+            return Some((sm_w, sm_h, out));
+        }
+
+        // FlateDecode / no filter: decompress to raw grayscale bytes.
+        let bytes = Self::decompress_image_stream(&stream)?;
+        if bytes.len() < needed { return None; }
+        Some((sm_w, sm_h, bytes[..needed].to_vec()))
+    }
+
+    /// Apply per-pixel SMask alpha to an opaque RGBA buffer, premultiplying
+    /// R/G/B by the alpha (tiny-skia requires premultiplied input).
+    /// When the image was downsampled (img_w != sm_w), the mask is
+    /// nearest-neighbour resampled onto the image grid.
+    fn premultiply_with_smask(
+        rgba: &mut [u8],
+        img_w: u32,
+        img_h: u32,
+        smask: &[u8],
+        sm_w: u32,
+        sm_h: u32,
+    ) {
+        if img_w == 0 || img_h == 0 { return; }
+        let same_dims = img_w == sm_w && img_h == sm_h;
+        let pm = |c: u8, a: u8| -> u8 { ((c as u16 * a as u16 + 127) / 255) as u8 };
+        for dy in 0..img_h {
+            for dx in 0..img_w {
+                let sm_idx = if same_dims {
+                    (dy as usize) * (sm_w as usize) + (dx as usize)
+                } else {
+                    let sx = ((dx as u64) * (sm_w as u64) / (img_w as u64)) as usize;
+                    let sy = ((dy as u64) * (sm_h as u64) / (img_h as u64)) as usize;
+                    sy * (sm_w as usize) + sx
+                };
+                let a = match smask.get(sm_idx) {
+                    Some(v) => *v,
+                    None => 255,
+                };
+                let pixel_idx = ((dy as usize) * (img_w as usize) + (dx as usize)) * 4;
+                if pixel_idx + 3 >= rgba.len() { return; }
+                rgba[pixel_idx]     = pm(rgba[pixel_idx],     a);
+                rgba[pixel_idx + 1] = pm(rgba[pixel_idx + 1], a);
+                rgba[pixel_idx + 2] = pm(rgba[pixel_idx + 2], a);
+                rgba[pixel_idx + 3] = a;
+            }
+        }
     }
 
     /// Read an integer from a PDF dict, resolving indirect references.
@@ -713,38 +827,18 @@ impl Interpreter {
         let expected = width as usize * height as usize * components;
         if raw_pixels.len() < expected { return None; }
 
-        // Resolve and decode an /SMask soft-alpha mask if present. The mask
-        // is itself an Image XObject (DeviceGray, 8 bpc) whose pixel values
-        // become the per-pixel alpha for this image. We only honour the
-        // mask when it's the same resolution as the image — resampling
-        // mismatched dims would risk introducing worse artefacts than no
-        // mask at all. /Matte (un-matting against a background colour) is
-        // intentionally ignored for now; the silhouette alone fixes the
-        // bulk of the page-0 / page-27 black-rectangle artefact on the
-        // rapport-constructie / Text pdf gecombineerd PDFs.
-        let smask_alpha: Option<Vec<u8>> = dict.get(b"SMask").ok().and_then(|o| {
-            let stream = match o {
-                Object::Stream(s) => Some(s.clone()),
-                Object::Reference(id) => doc.get_object(*id).ok().and_then(|obj| {
-                    if let Object::Stream(s) = obj { Some(s.clone()) } else { None }
-                }),
-                _ => None,
-            }?;
-            let sm_dict = &stream.dict;
-            let sm_w = sm_dict.get(b"Width").ok().and_then(|o| match o {
-                Object::Integer(i) => Some(*i as u32),
-                _ => None,
-            })?;
-            let sm_h = sm_dict.get(b"Height").ok().and_then(|o| match o {
-                Object::Integer(i) => Some(*i as u32),
-                _ => None,
-            })?;
-            if sm_w != width || sm_h != height { return None; }
-            let bytes = Self::decompress_image_stream(&stream)?;
-            let needed = (sm_w as usize) * (sm_h as usize);
-            if bytes.len() < needed { return None; }
-            Some(bytes[..needed].to_vec())
-        });
+        // Resolve and decode an /SMask soft-alpha mask if present. We only
+        // honour the mask when it's the same resolution as the image —
+        // mismatched-dim resampling is left to read_smask_alpha's callers
+        // that need it (e.g. JPEG-decoded paths that may downsample).
+        // /Matte (un-matting against a background colour) is intentionally
+        // ignored for now; the silhouette alone fixes the bulk of the
+        // black-rectangle artefact on rapport-constructie / Text pdf
+        // gecombineerd PDFs.
+        let smask_alpha: Option<Vec<u8>> = Self::read_smask_alpha(dict, doc)
+            .and_then(|(sm_w, sm_h, bytes)| {
+                if sm_w == width && sm_h == height { Some(bytes) } else { None }
+            });
 
         // Determine output size — downsample if over budget
         let (out_w, out_h, step_x, step_y) = if max_pixels > 0 && width * height > max_pixels {
