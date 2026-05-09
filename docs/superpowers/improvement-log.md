@@ -206,5 +206,5 @@ Per-PDF stats from initial harness run:
 - 2885 Demo project p4 = 8.09% is now the worst page; visual inspection would be the next iter target if pursuing < 7%.
 - Tekst.pdf p0-p3 still in 2.16-3.70% just-over-the-line band — same anti-aliasing story.
 
-**Commit**: (filled in below)
+**Commit**: fe6ce578
 
