@@ -47,3 +47,7 @@ open-pdf-studio/ROADMAP.md
 # Backup files
 *.backup
 PROMPTS.md
+
+# Render regression test harness
+test pdf-bestanden/render-regression-runs/
+scripts/.venv-test/
