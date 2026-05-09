@@ -1,6 +1,8 @@
 use crate::font_parser::OutlineCommand;
 use crate::fonts::{FontEntry, FontRegistry};
 use crate::draw_commands::DrawCommandBuffer;
+use crate::renderer::SkiaRenderer;
+use crate::graphics_state::GraphicsStateStack;
 
 /// Render a text string as vector glyph outlines.
 ///
@@ -175,6 +177,164 @@ pub fn render_cid_text_glyphs(
 
             let w0 = outline.advance_width / upm;
             // CID space char is typically U+0020 = CID 3 (font-dependent)
+            let tw = if cid == 3 || cid == 32 { word_spacing } else { 0.0 };
+            let tx = (w0 * font_size + char_spacing + tw) * horizontal_scaling;
+            tm[4] += tx * tm[0];
+            tm[5] += tx * tm[1];
+        }
+    }
+}
+
+/// Render simple-encoded (1-byte char codes) text directly into a SkiaRenderer.
+///
+/// Mirrors `render_text_glyphs` but emits paths through the renderer +
+/// graphics-state stack rather than into a binary draw-command buffer. Used
+/// by `Interpreter::execute_internal` so server-side rasterization (e.g. the
+/// MCP `screenshot_page` tool) actually paints text glyphs instead of
+/// silently dropping them.
+///
+/// Geometry follows PDF spec §9.4.4: per glyph we save state, pre-concat
+/// `Trm = [Tfs×Th 0; 0 Tfs; 0 Trise] × Tm` onto the CTM, fill the outline,
+/// then advance Tm by `(w0 × Tfs + Tc + Tw) × Th`.
+pub fn render_text_glyphs_skia(
+    text_bytes: &[u8],
+    font_entry: &FontEntry,
+    font_size: f32,
+    horizontal_scaling: f32,
+    char_spacing: f32,
+    word_spacing: f32,
+    rise: f32,
+    tm: &mut [f32; 6],
+    fill_rgba: (u8, u8, u8, u8),
+    renderer: &mut SkiaRenderer,
+    state: &mut GraphicsStateStack,
+) {
+    let parsed = match &font_entry.parsed {
+        Some(p) => p,
+        None => return,
+    };
+
+    let upm = parsed.units_per_em as f32;
+
+    for &byte in text_bytes {
+        let glyph_id = match FontRegistry::char_to_glyph_id(font_entry, byte) {
+            Some(id) => id,
+            None => {
+                // Unknown glyph — still advance by estimated width
+                let w0 = 0.5;
+                let tw = if byte == 32 { word_spacing } else { 0.0 };
+                let tx = (w0 * font_size + char_spacing + tw) * horizontal_scaling;
+                tm[4] += tx * tm[0];
+                tm[5] += tx * tm[1];
+                continue;
+            }
+        };
+
+        if let Some(outline) = parsed.glyphs.get(&glyph_id) {
+            if !outline.commands.is_empty() {
+                let s = font_size / upm;
+                let sh = s * horizontal_scaling;
+                let gx = rise * tm[2] + tm[4];
+                let gy = rise * tm[3] + tm[5];
+
+                state.save();
+                let saved_fill = state.current.fill_color;
+                state.current.fill_color = fill_rgba;
+                state.concat_matrix(sh * tm[0], sh * tm[1], s * tm[2], s * tm[3], gx, gy);
+
+                renderer.begin_path();
+                for cmd in &outline.commands {
+                    match cmd {
+                        OutlineCommand::MoveTo(x, y) => renderer.move_to(*x, *y),
+                        OutlineCommand::LineTo(x, y) => renderer.line_to(*x, *y),
+                        OutlineCommand::CubicTo(x1, y1, x2, y2, x, y) => {
+                            renderer.cubic_to(*x1, *y1, *x2, *y2, *x, *y)
+                        }
+                        OutlineCommand::Close => renderer.close_path(),
+                    }
+                }
+                renderer.fill(&state.current, false);
+                let _ = saved_fill; // restored via state.restore() below
+                state.restore();
+            }
+
+            let w0 = outline.advance_width / upm;
+            let tw = if byte == 32 { word_spacing } else { 0.0 };
+            let tx = (w0 * font_size + char_spacing + tw) * horizontal_scaling;
+            tm[4] += tx * tm[0];
+            tm[5] += tx * tm[1];
+        }
+    }
+}
+
+/// Render CID-encoded (2-byte char codes) text directly into a SkiaRenderer.
+///
+/// Mirrors `render_cid_text_glyphs` but paints into the renderer instead of
+/// emitting draw-command bytes. See `render_text_glyphs_skia` for the
+/// design rationale.
+pub fn render_cid_text_glyphs_skia(
+    text_bytes: &[u8],
+    font_entry: &FontEntry,
+    font_size: f32,
+    horizontal_scaling: f32,
+    char_spacing: f32,
+    word_spacing: f32,
+    rise: f32,
+    tm: &mut [f32; 6],
+    fill_rgba: (u8, u8, u8, u8),
+    renderer: &mut SkiaRenderer,
+    state: &mut GraphicsStateStack,
+) {
+    let parsed = match &font_entry.parsed {
+        Some(p) => p,
+        None => return,
+    };
+
+    let upm = parsed.units_per_em as f32;
+
+    let mut i = 0;
+    while i + 1 < text_bytes.len() {
+        let cid = u16::from_be_bytes([text_bytes[i], text_bytes[i + 1]]);
+        i += 2;
+
+        let glyph_id = match FontRegistry::cid_to_glyph_id(font_entry, cid) {
+            Some(id) => id,
+            None => {
+                let w0 = 0.5;
+                let tx = (w0 * font_size + char_spacing) * horizontal_scaling;
+                tm[4] += tx * tm[0];
+                tm[5] += tx * tm[1];
+                continue;
+            }
+        };
+
+        if let Some(outline) = parsed.glyphs.get(&glyph_id) {
+            if !outline.commands.is_empty() {
+                let s = font_size / upm;
+                let sh = s * horizontal_scaling;
+                let gx = rise * tm[2] + tm[4];
+                let gy = rise * tm[3] + tm[5];
+
+                state.save();
+                state.current.fill_color = fill_rgba;
+                state.concat_matrix(sh * tm[0], sh * tm[1], s * tm[2], s * tm[3], gx, gy);
+
+                renderer.begin_path();
+                for cmd in &outline.commands {
+                    match cmd {
+                        OutlineCommand::MoveTo(x, y) => renderer.move_to(*x, *y),
+                        OutlineCommand::LineTo(x, y) => renderer.line_to(*x, *y),
+                        OutlineCommand::CubicTo(x1, y1, x2, y2, x, y) => {
+                            renderer.cubic_to(*x1, *y1, *x2, *y2, *x, *y)
+                        }
+                        OutlineCommand::Close => renderer.close_path(),
+                    }
+                }
+                renderer.fill(&state.current, false);
+                state.restore();
+            }
+
+            let w0 = outline.advance_width / upm;
             let tw = if cid == 3 || cid == 32 { word_spacing } else { 0.0 };
             let tx = (w0 * font_size + char_spacing + tw) * horizontal_scaling;
             tm[4] += tx * tm[0];

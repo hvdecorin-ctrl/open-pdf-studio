@@ -110,7 +110,17 @@ impl SkiaRenderer {
             blend_mode: BlendMode::SourceOver,
             quality: FilterQuality::Bilinear,
         };
-        self.pixmap.draw_pixmap(0, 0, img, &paint, gs.ctm, None);
+        // PDF Image XObjects live in a 1×1 unit square; the caller's CTM is
+        // set up so that unit square maps to the destination region. But
+        // `draw_pixmap` consumes a transform that maps the SOURCE PIXMAP
+        // PIXEL SPACE (0..width × 0..height) to the destination. So we
+        // need to pre-scale by 1/width and 1/height to convert pixel
+        // coordinates into the unit square before the caller's CTM
+        // applies its unit-square → destination mapping.
+        if width == 0 || height == 0 { return; }
+        let pixel_to_unit = Transform::from_scale(1.0 / width as f32, 1.0 / height as f32);
+        let final_xform = gs.ctm.pre_concat(pixel_to_unit);
+        self.pixmap.draw_pixmap(0, 0, img, &paint, final_xform, None);
     }
 
     pub fn into_rgba(self) -> Vec<u8> {

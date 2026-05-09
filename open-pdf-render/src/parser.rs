@@ -90,11 +90,14 @@ impl DocumentHandle {
 
         let content_bytes = self.get_content_stream(page_id)?;
         let resources = self.get_page_resources(page_id)?;
+        let mut font_registry = self.font_registry.lock()
+            .map_err(|e| RenderError::RenderError(format!("Font registry poisoned: {}", e)))?;
         if max_image_pixels > 0 {
-            crate::interpreter::Interpreter::execute_with_image_limit(&content_bytes, &mut renderer, &mut state, &self.doc, &resources, max_image_pixels)?;
+            crate::interpreter::Interpreter::execute_with_image_limit(&content_bytes, &mut renderer, &mut state, &self.doc, &resources, &mut *font_registry, max_image_pixels)?;
         } else {
-            crate::interpreter::Interpreter::execute(&content_bytes, &mut renderer, &mut state, &self.doc, &resources)?;
+            crate::interpreter::Interpreter::execute(&content_bytes, &mut renderer, &mut state, &self.doc, &resources, &mut *font_registry)?;
         }
+        drop(font_registry);
 
         Ok(RenderedPage { width, height, rgba: renderer.into_rgba() })
     }
