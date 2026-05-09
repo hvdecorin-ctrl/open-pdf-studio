@@ -250,4 +250,4 @@ Per-PDF stats from initial harness run:
 - Several pages now in the 5-6% band (Text/rapport p8/11/17/20/21, 2885 p8/p13, Zware p3/p5) — same text-rasterizer-difference shape as iter-7 targeted. Most likely need additional rasterizer-level work (gamma-correct AA, stem snapping, font hinting) which is more invasive than this iteration.
 - Worth investigating: could `tiny_skia::Paint::force_hq_pipeline` or different stroke/fill quality knobs nudge the AA closer? Current `paint.anti_alias = true` is already on.
 
-**Commit**: TBD
+**Commit**: e8fc0262
