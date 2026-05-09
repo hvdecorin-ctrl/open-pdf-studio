@@ -327,4 +327,4 @@ Per-PDF stats from initial harness run:
 - Modest absolute gain (+1) but the fix unlocks a previously-completely-discarded PDF feature (SMask on JPEG images) that other PDFs may benefit from going forward. Future PDFs with JPEG photographs (typical for scanned documents, embedded illustrations) will now composite correctly.
 - The unified `read_smask_alpha` helper is a small architectural improvement that future iterations can extend (e.g. for /Matte un-matting per PDF spec §11.6.5) without touching multiple call sites.
 
-**Commit**: TBD
+**Commit**: 9415766c
