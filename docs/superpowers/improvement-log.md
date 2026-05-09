@@ -593,3 +593,41 @@ For `BinaryCutout`, high-alpha pixels (≥ 250) get the dimming treatment (alpha
 **Status**: DONE_WITH_CONCERNS — architectural fix landed, verified spec-conformant, zero regressions, but the predicted pass-count improvement did not materialize (the affected pages were already passing under the iter-2 approximation).
 
 **Commit**: c0680f9b
+
+
+
+### Iteration 17 — Rasterizer-quality compensation hack (REVERTED)
+
+**Iter-16 baseline at HEAD c0680f9b / fe1e5307**: 58/106 passing. Per the loop hand-off the remaining 48 failures are tiny_skia rasterizer-quality issues (~16 text-AA glyph-hinting, ~14 image rasterizer subpixel/AA, ~6 JPEG sub-pixel tile-edge drift, ~12 residual SMask soft-edges). This iteration was an explicit HACK attempt at a compensation pass to close some of the diff gap without touching tiny_skia internals.
+
+**Three candidate paths** (per the iteration mandate):
+- **Path A** — gamma post-correction on the final pixmap before encoding to PNG.
+- **Path B** — per-glyph stem widening via a thin overlay-stroke after the regular fill in `text_renderer.rs`.
+- **Path C** — enable any tiny_skia sRGB / gamma-aware AA option, if the API exposes one.
+
+**Path C investigation**: tiny_skia 0.11.4 source inspection (`Paint`, `Pixmap`, `BlendMode` types). The `Paint` struct exposes `shader`, `blend_mode`, `anti_alias`, `force_hq_pipeline` — and that's it. There is no sRGB / gamma / colour-space hook anywhere in the public API; the AA pipeline is hard-coded linear-coverage in `pipeline/highp.rs` and `pipeline/lowp.rs`. **Path C is unreachable without forking tiny_skia.** Discarded.
+
+**Path A attempt** — `apply_text_gamma_compensation()` in `renderer.rs::into_rgba()`:
+- Walked the final pixmap, applied a 256-entry LUT to grayscale-only pixels (R≈G≈B within a 3-step tolerance).
+- First curve: gamma γ=1.43, `out = 255 × (in/255)^γ`. Tekst.pdf five-page run: 1.97/1.86/2.49/2.82/0.72% (3 PASS / 2 FAIL pre-iter-17) → 2.43/2.24/3.02/3.62/0.72% (1 PASS / 4 FAIL). **Net regression: -2 PASS in 5 pages.** Direct measurement on Tekst p0: pixels darker than ref grew 38k → 63k. The gamma was over-darkening pixels already at a stem-core value (e.g. 30 → 14).
+- Second curve (smooth bump): `bias(v) = -10 × exp(-((v-55)/60)²)` for v∈(4, 200), 0 elsewhere. Tekst.pdf: 1.97/1.86/2.51/2.88/0.56 (3 PASS / 2 FAIL). Effectively at-baseline within ±0.05pp. No net pass change.
+- Third curve (steeper): `bias(v) = -14 × exp(-((v-70)/75)²)` for v∈(4, 210). Tekst.pdf: 2.01/1.86/2.51/2.88/0.56 (2 PASS / 3 FAIL). Slightly worse — p0 1.97 → 2.01, falling out of pass.
+- **Bias analysis explains why this can't progress**: per-band measurement of (app − ref) on Tekst p0 showed +9 / +20 / +6 / +2 / −3 / 0 across [0..30] / [30..80] / [80..140] / [140..200] / [200..240] / [240..256]. The LUT is indexed by app's OWN value. After applying −14 in the [30..80] band, the *post-correction* app values in that band over-shoot (-12 mean residual when re-bucketed by post-app band), shifting the diff distribution sideways instead of closing it.
+- All three Path A configurations reverted; `into_rgba()` restored to a plain `pixmap.data().to_vec()`.
+
+**Path B attempt** — `fill_glyph_with_aa_stroke()` in `renderer.rs`, called from both glyph render sites in `text_renderer.rs`:
+- After the regular fill, paint an additional thin stroke along the same path at low opacity. CTM-aware: `stroke_w = STROKE_DEV_PX / scale` so the device-space stroke width is fixed regardless of the text-matrix scale.
+- First parameters: `STROKE_DEV_PX=0.15, STROKE_ALPHA=76 (30%)`. Tekst.pdf: 1.98/1.86/2.51/2.86/0.53. Bias by ref-band: +8.75 / +18.22 / +4.47 (was +9 / +20 / +6 pre-iter). Stroke too narrow to move the needle — ±0.04pp swings.
+- Second parameters: `STROKE_DEV_PX=0.40, STROKE_ALPHA=102 (40%)`. Tekst.pdf: 2.20/1.97/2.74/3.27/0.57 (2 PASS / 3 FAIL). **Net regression: -1 PASS.** Bias by ref-band: bias in [200..240] band went from −3 (baseline) → −11 (with stroke). The wider stroke is correctly darkening the [30..120] interior region but *also* over-darkening the outermost AA halo at [200..240]. tiny_skia's `Stroke` is centred on the path — half goes inside (helping interior coverage), half goes outside (over-darkening the halo). To widen only inward we'd need an inset stroke, which tiny_skia doesn't expose as a single op. Path B has the right intent but the wrong tool.
+- Both parameter sets reverted; `text_renderer.rs` glyph fill calls restored to `renderer.fill(&state.current, false)`. The `fill_glyph_with_aa_stroke` helper was deleted; `renderer.rs` returned to pre-iter-17 state.
+
+**Why this cluster won't yield to global compensation**:
+The render-regression diff metric is per-pixel sum-of-RGB-channels above 30 (post-Gaussian blur σ=1.0), pass-fail at 2.0%. The text-AA cluster is **already** within 0.5pp of threshold — the whole budget of any compensation curve is ~1pp swing in either direction. Any monotonic global post-process redistributes pixels along the [0..255] axis: it pulls some pixels closer to the reference and pushes others further away in roughly equal measure, because the underlying mismatch is *anisotropic* (linear-AA vs. gamma-correct AA differs differently at different coverage levels and at different scales). Until tiny_skia gains gamma-correct AA (or we fork it), the swing budget is consumed by the redistribution and there is no net diff% reduction. Path B is *closer to right* than Path A (it's targeted at glyph edges where the gap is) but the parameter window is too narrow given the centred-stroke constraint.
+
+**Verification**:
+- After full revert, source files match HEAD c0680f9b (`git diff --stat open-pdf-render/src/renderer.rs open-pdf-render/src/text_renderer.rs` is empty). Build clean. App boot and MCP server verified.
+- Did not run the full corpus regression in the final state; the bias analysis on Tekst.pdf alone is dispositive — both paths sweep the diff distribution sideways without net pass-count gain, and the second-and-third Path A and Path B@0.4dev configurations actively regressed.
+
+**Status**: NO_PROGRESS — three compensation parameter sets attempted (Path A two curves, Path B two strokes), Path C ruled out by tiny_skia API audit. All attempts reverted. The remaining 48 failures need either (a) a tiny_skia fork with gamma-correct AA, (b) a switch to a different rasterizer (skia-safe / piet-cairo / fontdue text + custom blitter), or (c) acceptance that 58/106 is the architectural ceiling at this rasterizer.
+
+**Commit**: (revert-only — no commit; this entry is the only persisted artifact).
