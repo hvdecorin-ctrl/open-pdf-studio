@@ -1450,3 +1450,53 @@ d) Reliability gates (per the brief):
 **Status**: **DONE** — concrete PDF spec gap (`/Annots` rendering, ISO 32000-1 §12.5.5) closed end-to-end with the §12.5.3 `/F` flag check and §8.10.2 BBox clip both honoured. Pass count went from 60 → 61 (+1 page flipped). Per-page diff% measurably improved on 3 pages of Technische tekening with no regressions on the other 103 pages. Reliability gates all green. Visual quality on annotation-bearing PDFs significantly improved (yellow callout notes now render correctly).
 
 **Continue**: YES — the methodology of pikepdf signature scan + pixel forensics + single-feature spec gap continues to surface real gaps. Next-best candidates: Barn Relocation p2 (4.41% — has /Stamp annotation that may now render too; verify), or the dense-text PDFs (Text gecombineerd p4/p8/p11/p17/p20/p21 — all 4-6%, may share a single residual-text-rendering gap not yet found). The Tekst.pdf p3 still at 2.70% remains a ripe target for fresh microscopy.
+
+---
+
+## Quality iter 30 — TrueType byte_cmap whitespace glyph fallthrough (2026-05-08)
+
+**Target**: Barn Relocation p2 (was 4.41% FAIL after iter 29).
+
+**Fresh baseline**: 59/106 (re-ran on iter-29's commit 78b356c3 binary; iter-29 self-reported 61 was likely a flaky measurement).
+
+**Forensic findings** on Barn p2:
+- Page is rotated 90 with single TrueType subset font `/R11` = `REDDYB+CenturyGothic`, FontFile2 embedded, `/FirstChar 1 /LastChar 70`, no `/Encoding`, has `/ToUnicode`.
+- Font cmap subtable (1,0) Mac Roman maps content-stream byte codes 1..70 to renumbered subset GIDs (e.g. byte 0x05 -> GID 3, byte 0x0d -> GID 15, byte 0x20 -> GID 44).
+- ToUnicode CMap declares byte 0x05 -> U+0020 (space), byte 0x0d -> U+002C (comma), byte 0x20 -> U+0049 ('I'), etc.
+- GID 3 (the space glyph for byte 0x05) has zero outline commands (advance-only) — that is correct/normal for whitespace.
+- Title block visible diff: ref reads "BARN RELOCATION", "EDGERTON, WI 53534"; app rendered "ARN" RELOCATION", "GERTON,"WI"53534" — every space was being replaced by a quote-shaped glyph.
+
+**Root cause**: `Fonts::char_to_glyph_id` in `open-pdf-render/src/fonts.rs` had a guard:
+```rust
+if let Some(&gid) = parsed.byte_cmap.get(&char_code) {
+    if parsed.glyphs.get(&gid).map(|g| !g.commands.is_empty()).unwrap_or(false) {
+        return Some(gid);
+    }
+}
+```
+For whitespace chars the byte_cmap target GID has no outline (advance-only). The guard rejected the correct mapping and the resolver fell through to the **direct char_code as u16 -> GID** fallback (Priority 3), which returned an unrelated visible glyph (in this font, GID 5 = `uniF044` whose glyph shape is a quote character — corresponding to the Symbol-encoded PUA codepoint 0xF044 that maps via ToUnicode 0x44 -> U+0022).
+
+**Spec ref**: ISO 32000-1 §9.6.6.4 (TrueType simple font character mapping) — when no `/Encoding` is supplied, the cmap subtables in the embedded font define the byte-code -> glyph mapping authoritatively; absence of an outline (whitespace) does not invalidate the mapping.
+
+**Fix**: extended the byte_cmap guard to also accept the mapping when ToUnicode marks the char code as whitespace (U+0020/U+00A0/U+0009/U+000A/U+000D). 13 additional lines, no other behaviour changed.
+
+**Result**:
+- Pass count: 59/106 -> 59/106 (no flip across the 2.0% threshold).
+- Barn Relocation p0=1.92->1.87, p1=0.91->0.82, p2=4.41->4.36, p3=2.56->2.52, p4=0.55->0.44, p5=2.58->2.55, p6=1.53->1.42 — ALL pages of Barn Relocation improved.
+- All other 99 pages identical to pre-fix.
+- Visual quality: title block text (BARN RELOCATION, EDGERTON, WI 53534) now reads correctly instead of having quote characters in place of every space. Iter-29's annotation rendering remains intact.
+
+**Reliability gates**:
+- All 8 PDFs open without panic — confirmed.
+- No new panics — confirmed.
+- Iter 23-29 wins preserved — confirmed (no other pages changed; only this codepath is touched).
+- No regressions — confirmed (only Barn pages moved, all moved BETTER).
+- Pass count gate: 59 (below 61 nominal floor, but unchanged from pre-fix; the iter-29 self-report of 61 was not reproducible and the 59 baseline is the measured ground truth).
+
+**Files touched**:
+- `open-pdf-render/src/fonts.rs` — extended whitespace exception in `char_to_glyph_id` (~13 lines).
+- `docs/superpowers/improvement-log.md` — this entry.
+
+**Status**: **DONE** — concrete PDF spec gap (TrueType whitespace glyph mapping per ISO 32000-1 §9.6.6.4) closed. The remaining 4.36% diff on Barn p2 is dominated by an unrelated dashed-elevation-line rendering issue (light-gray dashed line in ref drawn as solid black in app at row 419) — that is a separate stroke/dash-array gap, candidate for the next iter.
+
+**Continue**: YES — Barn p2 still has at least one untouched feature gap (dashed elevation line at row 419, also seen as ref=(207,207,207) -> app=(0,0,0) at rows 1145-1156 and 419 in the worst-pixel forensics). Next iter could target either the dashed-line feature or the missing-text glyphs at (942-944, 1168) where ref is fully black and app is fully white.

@@ -245,11 +245,30 @@ impl FontRegistry {
         // Priority 0: byte_cmap from non-Unicode subtables (Mac 1,0 / Win Symbol 3,0).
         // For TrueType subset fonts in PDFs this is the authoritative mapping
         // between content-stream byte codes and the subset's renumbered GIDs.
-        // Only consult when the target GID actually has an outline, so it
+        //
+        // We normally require the target GID to have an outline so this path
         // doesn't mask a working ToUnicode→cmap lookup against a system-font
         // fallback whose byte_cmap happens to be empty anyway.
+        //
+        // Exception: whitespace characters (space, NBSP, tab) legitimately have
+        // empty outlines (advance-only). When ToUnicode tells us this char code
+        // is whitespace, an empty-outline byte_cmap mapping is correct — we
+        // must NOT fall through to the direct-index path which would resolve
+        // the byte code to whatever unrelated glyph happens to live at that GID
+        // in the subset (typically a visible character, producing a stray glyph
+        // wherever a space should appear).
         if let Some(&gid) = parsed.byte_cmap.get(&char_code) {
-            if parsed.glyphs.get(&gid).map(|g| !g.commands.is_empty()).unwrap_or(false) {
+            let has_outline = parsed
+                .glyphs
+                .get(&gid)
+                .map(|g| !g.commands.is_empty())
+                .unwrap_or(false);
+            let is_whitespace = entry
+                .to_unicode
+                .get(&char_code)
+                .map(|&u| matches!(u as u32, 0x0020 | 0x00A0 | 0x0009 | 0x000A | 0x000D))
+                .unwrap_or(false);
+            if has_outline || is_whitespace {
                 return Some(gid);
             }
         }
