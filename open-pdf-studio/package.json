@@ -10,7 +10,9 @@
     "tauri:dev": "tauri dev",
     "tauri:build": "npm run build && tauri build",
     "bump": "node scripts/bump-version.js",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test:render": "..\\scripts\\.venv-test\\Scripts\\python.exe ../scripts/render-regression-test.py",
+    "test:render:auto": "node ../scripts/run-render-regression.mjs"
   },
   "keywords": [
     "tauri",
