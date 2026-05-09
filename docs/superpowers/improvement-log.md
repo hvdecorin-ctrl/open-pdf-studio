@@ -467,5 +467,5 @@ Per-PDF stats from initial harness run:
 - 2885 Demo project p0 (10.6% diff in older summaries) showed similar +1 background offset, but this fix doesn't help — 2885 has zero SMasks; its +1 offset comes from transparency-group rendering with `/ca=0.61, 0.65` (real partial alpha). That's a separate compositing issue (group-knockout / non-isolated blending) — same root cause family but different code path. Worth investigating in iter-14 if the loop continues.
 - The signature pattern (uniform R/G/B +1 background offset) is now diagnostic-grade: any future iteration spotting this pattern can immediately classify it as a compositing-formula issue rather than a feature gap.
 
-**Commit**: <pending>
+**Commit**: f005eba9
 
