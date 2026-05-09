@@ -393,6 +393,25 @@ impl Interpreter {
                 }
             }
         }
+        // PDF 8.10.2: a Form XObject's content is implicitly clipped to the
+        // rectangle in /BBox (in the form's own coordinate space, after the
+        // form's /Matrix has been applied). Without this clip, oversized
+        // contents (e.g. an image positioned outside the bbox) bleed onto
+        // the parent canvas — visible in the 2885 demo as a missing/over-
+        // painted hero image and as red anti-aliasing fringes around form-
+        // local backgrounds.
+        if let Some((x0, y0, x1, y1)) = Self::extract_form_bbox(&stream.dict) {
+            use tiny_skia::PathBuilder;
+            let mut pb = PathBuilder::new();
+            pb.move_to(x0, y0);
+            pb.line_to(x1, y0);
+            pb.line_to(x1, y1);
+            pb.line_to(x0, y1);
+            pb.close();
+            if let Some(path) = pb.finish() {
+                renderer.apply_clip(&mut state.current, &path, false);
+            }
+        }
         // Transparency-group Form XObjects (PDF 1.4+) should be rendered
         // into an isolated buffer at full alpha and then composited onto
         // the parent at the parent's current /ca. We don't allocate a
@@ -1895,6 +1914,19 @@ impl Interpreter {
                 }
             }
         }
+        // PDF 8.10.2: clip the form's content to /BBox in form-coordinate
+        // space (after /Matrix). Mirrors the renderer-side clip in
+        // execute_form_xobject; without it the cached vector path used by
+        // the JS renderer overlays content that should have been clipped.
+        if let Some((x0, y0, x1, y1)) = Self::extract_form_bbox(&stream.dict) {
+            buf.begin_path();
+            buf.move_to(x0, y0);
+            buf.line_to(x1, y0);
+            buf.line_to(x1, y1);
+            buf.line_to(x0, y1);
+            buf.close_path();
+            buf.clip();
+        }
         let form_resources = Self::extract_form_resources(&stream.dict, doc);
         let res = form_resources.as_ref().unwrap_or(resources);
         if let Ok(content_bytes) = stream.decompressed_content() {
@@ -2327,6 +2359,31 @@ impl Interpreter {
             Object::Dictionary(d) => Some(d.clone()),
             _ => None,
         }
+    }
+
+    /// Extract a Form XObject's `/BBox` rectangle as `(x_min, y_min, x_max, y_max)`,
+    /// normalising the corners (PDF allows the bbox to be specified in either
+    /// diagonal order). Returns `None` if no BBox is present or it isn't a
+    /// 4-element numeric array. Per PDF spec 8.10.2 the form's content stream
+    /// is implicitly clipped to this rectangle in form-coordinate space.
+    fn extract_form_bbox(dict: &Dictionary) -> Option<(f32, f32, f32, f32)> {
+        let arr = dict.get(b"BBox").ok()?.as_array().ok()?;
+        if arr.len() < 4 { return None; }
+        let x0 = Self::f(&arr[0]);
+        let y0 = Self::f(&arr[1]);
+        let x1 = Self::f(&arr[2]);
+        let y1 = Self::f(&arr[3]);
+        let xmin = x0.min(x1);
+        let xmax = x0.max(x1);
+        let ymin = y0.min(y1);
+        let ymax = y0.max(y1);
+        // Reject degenerate rectangles — they'd clip everything to nothing,
+        // which is almost certainly not what the producer intended (and would
+        // hide content the reference renderer paints).
+        if (xmax - xmin) <= 0.0 || (ymax - ymin) <= 0.0 {
+            return None;
+        }
+        Some((xmin, ymin, xmax, ymax))
     }
 
     /// Walk a content stream and emit one TextSpan per Tj/TJ run.

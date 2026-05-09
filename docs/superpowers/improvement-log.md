@@ -509,3 +509,45 @@ For `BinaryCutout`, high-alpha pixels (≥ 250) get the dimming treatment (alpha
 
 **Commit**: (no code change committed; in-flight uncommitted files preserved untouched; this log entry is the only artefact added)
 
+
+### Iteration 15 — Form XObject /BBox clipping (PDF spec 8.10.2)
+
+**Iter-14 baseline at HEAD 7b27fa32**: 58/106 passing. Counter at 2/3 — one more no-progress iteration triggers the architectural stop.
+
+**Investigation**:
+- Survey across all 8 corpus PDFs (`scripts/survey_features.py`) tabulated unusual features per page. Result: nothing exotic — Form XObjects with `/Matrix` (26 pages each on Text pdf gecombineerd / rapport-constructie), Transparency groups (14 pages on 2885), `/Annots` (all `/Link`-only, no `/AP/N` appearance streams), `/Rotate` already honoured. NO Type3 fonts, /Lab images, tiling/shading patterns, blend modes ≠ Normal, gstate `/SMask`, inline images, default colour-space remapping. So no obvious "missing operator" gap remained.
+- Visual diff inspection on 2885 Demo project failing pages (p7, p8, p13 in iter-13/14, plus older p0/p2/p4/p6 etc.). Page p8's diff showed a clear hard-edge red rectangle in the upper-right where our render paints content the reference renderer leaves transparent. Page p7 has a similar pattern: a red box outside the dark-teal "DEMO MODEL" header, plus stray painted regions outside the photo-bounds.
+- Cross-referenced the 2885 page 0 XObject tree: the page's content stream calls a single Form `/X15` (BBox `[0 0 4960 3510]`, transparency group). X15 calls X7 (BBox `[0 0 4960 3510]`, also transparency group). X7 paints image X4 with `cm 8366.6328 0 0 -3867.7712 -1412.69299 3690.6716` — i.e. the image is scaled to **8366×3867** units and placed at `(-1412, -177)`, so its full extent overflows the form's `[0 0 4960 3510]` bbox by over 3000 units in width.
+- Spec check (PDF 1.7 §8.10.2): "The form XObject's content stream shall be considered to have been clipped to the bounding box specified by /BBox." — we never applied this clip. Confirmed via `grep BBox open-pdf-render/src/interpreter.rs` returning **zero hits**.
+
+**Hypothesis**: Form XObjects whose interior content extends beyond their declared `/BBox` rectangle bleed onto the parent canvas. PDF requires the form's own coordinate-space `/BBox` to act as an implicit clip path applied AFTER the form's `/Matrix` is concatenated. This is a true PDF spec gap.
+
+**Fix** — `open-pdf-render/src/interpreter.rs`:
+- New helper `extract_form_bbox(dict) -> Option<(x_min, y_min, x_max, y_max)>` that reads `/BBox`, normalises diagonal corner ordering (PDF allows either), and rejects degenerate (zero-area) rectangles to avoid clipping a buggy form to nothing.
+- `execute_form_xobject` (renderer-side path): after `state.concat_matrix` consumes the form's `/Matrix`, build a `tiny_skia::PathBuilder` rectangle from the bbox corners and feed it to `renderer.apply_clip(&mut state.current, &path, /*even_odd=*/false)` — same code path as the `W` operator. The clip is automatically inherited by the nested execute_internal call and automatically released by the trailing `state.restore()` (clip_path is part of the cloned `GraphicsState`).
+- `extract_form_xobject_commands_with_text` (browser-side draw-command path): emit `BeginPath`, `MoveTo(x0,y0)`, `LineTo(x1,y0)`, `LineTo(x1,y1)`, `LineTo(x0,y1)`, `ClosePath`, `Clip` opcodes via `DrawCommandBuffer`. The buffer's `save_state`/`restore_state` brackets already protect the parent from inheriting the clip.
+- Skipped the text-only extractor (line 2635) — it never paints, so a clip is a no-op there.
+
+**Verification** (full suite run 2026-05-09_191545-7b27fa32 vs iter-14 baseline at HEAD 7b27fa32):
+- **Net pass count: 58/106 → 58/106** (no PASS↔FAIL transitions; no threshold-crossing pages).
+- **Zero PASS→FAIL regressions** vs the iter-7 full-suite baseline (01495dc7) — verified by enumerating all 106 page (name, index) keys and comparing pass status.
+- **Substantial diff% reductions on 2885 Demo project**: p13 7.96% → 5.70% (-2.26pp), p11 3.20% → 1.01% (now PASSing — already passing pre-iter-15 so doesn't credit, but the bbox clip preserves that pass), p12 3.79% → 1.54% (already passing), p10 2.95% → 0.73%, p3 2.44% → 0.68%. Visual confirmation on p8 diff: the red rectangle in the upper-right is gone — our render now matches the reference's transparent corner. The remaining 6.07% diff on p8 is the unrelated +1 brightness shift from iter-14's investigation, i.e. transparency-group compositing, NOT bbox clipping.
+- 78 of 106 pages improved by > 0.05pp diff vs iter-7 baseline (cumulative, including all prior iters); 9 pages worsened slightly (all still failing — no threshold crossings either way).
+- Build: clean release build, no warnings beyond pre-existing tauri shell deprecation and an unused-mut warning.
+
+**Concerns / next ideas**:
+- This is a **strict spec-compliance correctness fix**: PDF §8.10.2 mandates BBox clipping and we didn't honour it. Future PDFs with overflowing Form XObject content (common when CAD tools or report generators reuse a single form across multiple page sizes) will now render correctly instead of bleeding.
+- No threshold-crossing pages because the bbox-overflow regions on the 2885 corpus pages happen to land on areas already covered by the transparency-group +1 brightness effect (which contributes more diff%) or in the page-margin AA fringe. The visible artefact is fixed — the metric just doesn't notice.
+- The 2885 p13 -2.26pp reduction is the largest single-page diff% drop since iter-7, but starts from a high (7.96%) baseline so doesn't cross 2.0%.
+- Per the iter-14 hand-off and this iter's pass-count outcome, the loop's stop rule says "3 consecutive NO_PROGRESS iterations = architectural stop". Iter-13 was no-net-pass, iter-14 was reverted no-pass, iter-15 is no-net-pass: **3 / 3 → architectural stop**.
+- Remaining 48 failures decompose into the same four clusters identified at iter-14:
+  (a) ~12 transparency-group +1 brightness cases (2885 demo + a few others) — needs off-screen group buffer.
+  (b) ~6 JPEG sub-pixel tile-edge drift (Zware vector grid pages) — needs JPEG decoder to match libjpeg-turbo's exact sample positions.
+  (c) ~14 image-rasterizer subpixel/AA differences (Tekst, Technische, Barn Relocation, Combinatie) — tiny_skia vs MuPDF rasterizer quality, not a feature gap.
+  (d) ~16 text-AA / glyph-hinting differences (Text/rapport) — font hinting / subpixel positioning, not a feature gap.
+- No further single-iteration spec gaps appear reachable from one-pass cross-page analysis. Recommend declaring the loop architecturally complete at 58/106 (54.7%) and routing the remaining four clusters to dedicated multi-iteration work items if/when they become product priorities.
+
+**Status**: NO_PROGRESS (correctness fix landed, no net pass change → 3/3 architectural stop).
+
+**Commit**: (added below)
+
