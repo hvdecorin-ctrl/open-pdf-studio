@@ -1012,3 +1012,73 @@ These are both candidate iter-25 targets but lie outside iter-24's scope.
 2. SIMD vectorise the PNG predictor (Sub/Up/Average/Paeth — all data-parallel).
 
 **Status**: **DONE** — 2.31× speedup on Zware (the heaviest tiled-image PDF), 0 regressions, 58/106 PASS preserved.
+
+---
+
+## Speed iter 25 — parallel image-XObject pre-decode (Barn Relocation, 2.4× p3)
+
+**Date**: 2026-05-08
+
+**Branch**: `main` — base commit `4d60ae04`.
+
+**Target**: Barn Relocation pages (p3/p5 ~360-380 ms each, 7-page total ~1626 ms). Iter-24's per-page image cache was a no-op for Barn because every Image XObject is referenced exactly once per page — there's no reuse to dedupe. The work pile (Flate decompress + PNG predictor + per-pixel RGBA pipeline) was paid serially for all 14 unique images per page.
+
+**Approach** (Option A from the brief): walk the content stream once before the serial render loop, collect all unique Image XObject IDs from the resources `/XObject` dict, decode them in parallel via rayon, and seed the existing per-page `ImageCache`. The serial walk afterwards hits the cache for every `Do` and pays draw-only cost.
+
+The decode helper (`decode_image_xobject`) was extracted from `handle_image_execute` as a pure function, so both the parallel pre-pass and the serial fallback (cache miss → e.g. images deeper inside Form XObjects) share the same decode path. Form-XObject Do refs are NOT followed in the pre-pass; instead each recursive `execute_internal` call runs its own pre-pass against the form's own resources dict — so nested images get parallelised at their level.
+
+**Profile baseline (Barn p3, before iter-25)**:
+```
+[img-stages n=14]
+  flate=125 ms  predictor=62 ms  raw=318 ms  premul=0  draw=19 ms
+  total = 360 ms render wall-time
+```
+
+The "raw" stage is the per-pixel RGBA loop in `decode_raw_image` (CMYK→RGB, palette expansion, SMask premul). All three CPU stages (flate + predictor + raw) are pure-data, embarrassingly parallel across images.
+
+**After iter-25 (Barn p3)**:
+```
+[img-stages n=14]   (sums grow because parallel tasks accumulate independently)
+  flate=165 ms (across threads)  predictor=72 ms  raw=384 ms  premul=0  draw=19 ms
+  total = 150 ms render wall-time
+```
+
+CPU work per stage went up (overhead of rayon work-stealing) but wall-time dropped 2.4× — confirms saturation across cores.
+
+**Per-page deltas (Barn Relocation, full PDF)**:
+| Page | Before | After | Δ |
+|------|--------|-------|---|
+| p0 | ~250 ms | 198 ms | −21% |
+| p1 | ~210 ms | 171 ms | −19% |
+| p2 | ~180 ms | 114 ms | −37% |
+| **p3** | **~360 ms** | **151 ms** | **−58%** (2.4× faster) |
+| p4 | ~50 ms | 47 ms | flat |
+| **p5** | **~370 ms** | **155 ms** | **−58%** (2.4× faster) |
+| p6 | ~250 ms | 221 ms | −12% |
+| **Barn total (7 pp)** | **~1626 ms** | **1057 ms** | **−35%** (1.54× faster) |
+
+p4 (the lightest page) is unchanged — it has too few images to benefit from parallelism. p3 and p5 (the heaviest pages) take the biggest win, exactly as predicted.
+
+**Other PDFs (no regression):**
+- Tekst.pdf: 646 ms total (unchanged — text-only, no images to parallelise)
+- Zware vector PDF.pdf: ~1.78 s total (iter-24's cache wins preserved; pre-pass is no-op when all-but-one Do refs hit the warm cache after the first decode; we still decode each unique image once but in parallel rather than serial — modest extra win on top of iter-24)
+
+**Regression test gate**: `render_test_iter23.py`, same harness as iter-23/24.
+- Before iter-25: 58/106 PASS
+- After iter-25: **59/106 PASS** (+1 — slight rounding flip on a borderline page, no regressions)
+
+**Why parallel pre-decode is safe**:
+- `lopdf::Document::get_object` is read-only index lookup; `Document` is `Sync`.
+- `decode_image_xobject` is a pure function on `(stream, doc, max_pixels)` returning `CachedDecodedImage`. No shared mutable state.
+- The cache is mutated only in the main thread after `par_iter().collect()` joins — no race.
+- Skip the rayon overhead for trivial work (`< 2` images): direct serial decode path keeps single-image pages from paying thread-pool cost.
+
+**Files touched**:
+- `open-pdf-render/src/interpreter.rs` — added `predecode_images_parallel` + extracted pure `decode_image_xobject`; refactored `handle_image_execute` to call the shared decoder for cache-miss path; pre-pass invoked at top of `execute_internal`.
+- `docs/superpowers/improvement-log.md` — this entry.
+
+**Files explicitly NOT touched** (in-flight per hygiene rule): `saver.js`, `manager.js`, `hand-tool.js`, `vector-renderer.js`, `left-panel.js`, `font_parser.rs`, `fonts.rs`, `mcp_server.rs`, `Cargo.lock` (both), `Cargo.toml`. Iter-23's `get_font_with_id`, iter-24's `CachedDecodedImage`/`ImageCache` plumbing both preserved (built on, not replaced). `rayon = "1"` was already a dependency from iter-19, no Cargo.toml change.
+
+**Continue**: YES — there's still room. The serial per-pixel `raw` loop (~25 ms per CMYK image at 384/14 = 27 ms each) is now the per-image floor. SIMD-vectorising the CMYK→RGB conversion or the PNG predictor inner loop would shrink that further. But the wins from parallelism alone justify pausing here for the round.
+
+**Status**: **DONE** — 2.4× on Barn p3/p5 (the worst pages), 1.54× on Barn total, +1 PASS, all iter-23/24 wins preserved.

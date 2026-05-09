@@ -236,6 +236,18 @@ impl Interpreter {
         let content = Content::decode(content_bytes)
             .map_err(|e| RenderError::ParseError(format!("Content decode: {}", e)))?;
 
+        // ─── iter-25: parallel image pre-decode ──────────────────────────
+        // Walk the operations to find Image XObject references made by this
+        // content stream's `Do` operators, then decode them in parallel via
+        // rayon and seed the per-page cache. The serial walk below then
+        // hits the cache for every /Do — making decode wall-time roughly
+        // (slowest_image_ms) instead of (sum_of_all_decode_ms).
+        //
+        // Targets pages like Barn Relocation p3/p5 (14 unique large
+        // FlateDecode + PNG-predictor images per page) where iter-24's
+        // dedup cache was a no-op (each image referenced exactly once).
+        Self::predecode_images_parallel(&content, doc, resources, max_image_pixels, &mut img_cache);
+
         let mut has_active_path = false;
         let mut text_state = TextState::new();
         // Per-render glyph path cache. Speed iter-23: each text-show op
@@ -731,10 +743,6 @@ impl Interpreter {
         img_cache: &mut ImageCache,
     ) {
         let prof = profile_enabled();
-        let dict = &stream.dict;
-        let width = Self::read_int(dict, b"Width", doc).unwrap_or(0);
-        let height = Self::read_int(dict, b"Height", doc).unwrap_or(0);
-        if width == 0 || height == 0 { return; }
 
         // ─── Cache lookup ────────────────────────────────────────────────
         // Speed iter-24: tiled photo-grid PDFs reuse the same XObject many
@@ -743,6 +751,11 @@ impl Interpreter {
         // Arc<Vec<u8>> so the second-and-subsequent paint of the same
         // XObject is a free clone of the Arc handle — no JPEG re-decode,
         // no SMask premul, no allocation.
+        //
+        // Speed iter-25: Image XObjects referenced from this page (incl.
+        // unique ones — Barn Relocation has 14 unique images per page) are
+        // pre-decoded in parallel via rayon BEFORE this serial walk runs,
+        // so the cache is already warm here for most images.
         if let Some(cached) = img_cache.get(&xobj_id) {
             let t_draw = if prof { Some(std::time::Instant::now()) } else { None };
             state.save();
@@ -755,6 +768,139 @@ impl Interpreter {
             }
             return;
         }
+
+        // Cache miss (image not seen by the parallel pre-pass — e.g. a
+        // form XObject's nested image stream that the pre-pass didn't
+        // enumerate). Fall back to serial decode.
+        let decoded = match Self::decode_image_xobject(stream, doc, max_decode_pixels) {
+            Some(d) => d,
+            None => return,
+        };
+        let CachedDecodedImage { w: img_w, h: img_h, rgba: rgba_arc } = decoded;
+        img_cache.insert(xobj_id, CachedDecodedImage { w: img_w, h: img_h, rgba: rgba_arc.clone() });
+
+        let t_draw = if prof { Some(std::time::Instant::now()) } else { None };
+        state.save();
+        state.concat_matrix(1.0, 0.0, 0.0, -1.0, 0.0, 1.0);
+        renderer.draw_image(img_w, img_h, rgba_arc.as_slice(), &state.current);
+        state.restore();
+        if let Some(t) = t_draw {
+            PROF_DRAW_US.fetch_add(t.elapsed().as_micros() as u64, Ordering::Relaxed);
+            PROF_IMG_COUNT.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+
+    /// iter-25: Walk the content stream's `Do` operations, collect every
+    /// Image XObject ID referenced from the given resources dictionary, and
+    /// decode them in parallel via rayon. Decoded buffers are inserted into
+    /// `img_cache` so the subsequent serial walk pays draw-only cost per /Do.
+    ///
+    /// Form XObject `Do` references are NOT followed here — those execute
+    /// recursively in `handle_do_execute` and trigger their own pre-pass
+    /// against the form's own resources dict. So images embedded inside a
+    /// Form XObject are pre-decoded by the recursive pre-pass when the Form
+    /// itself executes.
+    fn predecode_images_parallel(
+        content: &Content,
+        doc: &Document,
+        resources: &Dictionary,
+        max_image_pixels: u32,
+        img_cache: &mut ImageCache,
+    ) {
+        use rayon::prelude::*;
+
+        // Resolve the resources XObject sub-dictionary once (may be missing
+        // — e.g. text-only form streams). Tolerate failure silently — the
+        // serial walk will still call handle_do_execute and any cache miss
+        // simply falls through to the serial decode path.
+        let xobj_dict = match resources.get(b"XObject").and_then(|o| Self::resolve_dict(o, doc)) {
+            Ok(d) => d,
+            _ => return,
+        };
+
+        // Pass 1 — collect unique Image XObject ObjectIds referenced via Do.
+        // Names appearing >1× resolve to the same ID and are deduplicated by
+        // the HashSet check.
+        let mut seen: std::collections::HashSet<lopdf::ObjectId> = std::collections::HashSet::new();
+        let mut to_decode: Vec<lopdf::ObjectId> = Vec::new();
+        for op in &content.operations {
+            if op.operator.as_str() != "Do" { continue; }
+            let name = match op.operands.first() {
+                Some(Object::Name(n)) => n,
+                _ => continue,
+            };
+            let obj_ref = match xobj_dict.get(name.as_slice()) {
+                Ok(o) => o,
+                _ => continue,
+            };
+            let resolved_id = match obj_ref {
+                Object::Reference(id) => *id,
+                _ => continue,
+            };
+            // Already cached? Already queued? Skip.
+            if img_cache.contains_key(&resolved_id) || !seen.insert(resolved_id) {
+                continue;
+            }
+            // Confirm subtype is Image — Form XObjects are handled by the
+            // recursive walk, not pre-decoded here.
+            let is_image = doc.get_object(resolved_id).ok()
+                .and_then(|o| if let Object::Stream(s) = o { Some(s) } else { None })
+                .and_then(|s| s.dict.get(b"Subtype").ok().and_then(|x| x.as_name().ok()).map(|n| n.to_vec()))
+                == Some(b"Image".to_vec());
+            if is_image {
+                to_decode.push(resolved_id);
+            }
+        }
+
+        // Skip the rayon overhead for trivial work (single image or empty).
+        if to_decode.len() < 2 {
+            for id in to_decode {
+                if let Ok(Object::Stream(s)) = doc.get_object(id) {
+                    if let Some(decoded) = Self::decode_image_xobject(s, doc, max_image_pixels) {
+                        img_cache.insert(id, decoded);
+                    }
+                }
+            }
+            return;
+        }
+
+        // Pass 2 — parallel decode. Each task reads its own stream from the
+        // shared &Document (lopdf::Document is Sync, get_object is read-only
+        // index lookup) and produces a CachedDecodedImage value to be moved
+        // into the cache after the join.
+        let decoded_pairs: Vec<(lopdf::ObjectId, CachedDecodedImage)> = to_decode
+            .par_iter()
+            .filter_map(|&id| {
+                let stream = match doc.get_object(id).ok()? {
+                    Object::Stream(s) => s,
+                    _ => return None,
+                };
+                Self::decode_image_xobject(stream, doc, max_image_pixels)
+                    .map(|d| (id, d))
+            })
+            .collect();
+
+        for (id, decoded) in decoded_pairs {
+            img_cache.insert(id, decoded);
+        }
+    }
+
+    /// Decode an Image XObject stream into a CachedDecodedImage.
+    ///
+    /// Pure function (Send + thread-safe): performs Flate/JPEG decompress,
+    /// per-pixel pipeline, and SMask premul, producing the same RGBA buffer
+    /// that handle_image_execute would have computed serially. Used by both
+    /// the parallel pre-pass (iter-25) and the serial fallback path.
+    pub(crate) fn decode_image_xobject(
+        stream: &lopdf::Stream,
+        doc: &Document,
+        max_decode_pixels: u32,
+    ) -> Option<CachedDecodedImage> {
+        let prof = profile_enabled();
+        let dict = &stream.dict;
+        let width = Self::read_int(dict, b"Width", doc).unwrap_or(0);
+        let height = Self::read_int(dict, b"Height", doc).unwrap_or(0);
+        if width == 0 || height == 0 { return None; }
 
         let t_deref = if prof { Some(std::time::Instant::now()) } else { None };
         let filter = dict.get(b"Filter").ok().and_then(|o| match o {
@@ -782,10 +928,7 @@ impl Interpreter {
             if let Some(t) = t {
                 PROF_JPEG_US.fetch_add(t.elapsed().as_micros() as u64, Ordering::Relaxed);
             }
-            match res {
-                Some(result) => result,
-                None => return,
-            }
+            res?
         } else {
             // ─── Non-JPEG: raw pixel decode + optional box downsample ────
             let t = if prof { Some(std::time::Instant::now()) } else { None };
@@ -793,21 +936,13 @@ impl Interpreter {
             if let Some(t) = t {
                 PROF_RAW_DECODE_US.fetch_add(t.elapsed().as_micros() as u64, Ordering::Relaxed);
             }
-            match res {
-                Some(result) => result,
-                None => return,
-            }
+            res?
         };
 
         // ─── Apply /SMask soft alpha for JPEGs ────────────────────────────
         // The non-JPEG path already bakes SMask alpha into the RGBA buffer
         // inside decode_raw_image. The JPEG decoder produces an opaque
-        // (a=255) buffer so we must apply the SMask here. Without this,
-        // tiled-JPEG photo grids (e.g. Zware vector PDF p3/p5) render with
-        // their alpha-edged matte blending discarded — every tile becomes
-        // a hard rectangle on a (255,255,255) backdrop instead of softly
-        // composited content with a (253,253,253) backdrop bleeding
-        // through transparent edge pixels.
+        // (a=255) buffer so we must apply the SMask here.
         if is_jpeg {
             if let Some((sm_w, sm_h, alpha_bytes)) = Self::read_smask_alpha(dict, doc) {
                 let t = if prof { Some(std::time::Instant::now()) } else { None };
@@ -818,19 +953,8 @@ impl Interpreter {
             }
         }
 
-        // Cache the decoded buffer for any subsequent /Do refs on this page.
         let rgba_arc = std::sync::Arc::new(rgba);
-        img_cache.insert(xobj_id, CachedDecodedImage { w: img_w, h: img_h, rgba: rgba_arc.clone() });
-
-        let t_draw = if prof { Some(std::time::Instant::now()) } else { None };
-        state.save();
-        state.concat_matrix(1.0, 0.0, 0.0, -1.0, 0.0, 1.0);
-        renderer.draw_image(img_w, img_h, rgba_arc.as_slice(), &state.current);
-        state.restore();
-        if let Some(t) = t_draw {
-            PROF_DRAW_US.fetch_add(t.elapsed().as_micros() as u64, Ordering::Relaxed);
-            PROF_IMG_COUNT.fetch_add(1, Ordering::Relaxed);
-        }
+        Some(CachedDecodedImage { w: img_w, h: img_h, rgba: rgba_arc })
     }
 
     /// Resolve and decode an Image XObject's `/SMask` soft-alpha mask.
