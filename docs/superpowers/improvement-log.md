@@ -145,4 +145,4 @@ Per-PDF stats from initial harness run:
 - Bounded blast radius: only 1 of 8 PDFs (Text pdf gecombineerd) has any `w 0` operators (1 of 16, 6%); the other 6 PDFs have zero `w 0`. Confirmed by re-running the full suite — every page outside Technische tekening has the EXACT same diff% as the iter-3 baseline (`Text pdf gecombineerd: 7/28 4.39%`, `rapport-constructie: 7/28 4.39%`, `2885 Demo project: 2/14 5.80%`, `Zware vector PDF: 12/19 2.15%`, `Barn Relocation: 2/7 4.00%`, `Tekst.pdf: 1/5 3.99%`, `Combinatie: 0/1 3.47%` — all unchanged). Zero regressions.
 - Total passing: 31/106 → **34/106 (+3)**.
 
-**Commit**: TBD
+**Commit**: ac39648e
