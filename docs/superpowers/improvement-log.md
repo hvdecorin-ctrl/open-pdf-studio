@@ -1268,3 +1268,106 @@ Two consecutive iters (26 at threshold, 27 below) confirm the speed-iter loop ha
 3. Quality-focused iters (the 48/106 fail rate from iter-23 is the bigger user-visible problem — none of iters 24-27 moved the PASS count beyond 58-59).
 
 **Status**: **PERF_CEILING_REACHED** — no commit, all changes reverted, 58/106 PASS preserved, baseline render times unchanged.
+
+---
+
+## Quality iter 28 — Implement PDF Tr (text rendering mode) operator (no PASS-count change, real spec gap closed)
+
+**Date**: 2026-05-08. Returns to quality work after iters 23-27 hit the speed ceiling.
+
+**Mandate**: try ONE NEW angle for quality work. The brief listed five (A-E); after a fresh microscopy pass on `Tekst.pdf p2` (angle D), I found a concrete spec gap rather than rasterizer noise.
+
+**Fresh baseline at HEAD `630ab1e2`**: 58/106 PASS via `scripts/render_test_iter23.py`. Worst-passing pages clustered at ~2-3% diff (rasterizer noise floor per iter-22), with `Tekst.pdf` p2/p3 close to the threshold (2.49%/2.82%).
+
+### Forensic findings on Tekst.pdf p2 (microscopy on a NEW page)
+
+`scripts/_iter28_microscopy.py "Tekst.pdf" 2` revealed pixels with diff signature **NOT consistent with rasterizer noise**:
+- Top-8 worst pixels were `ref=(0,0,0)` vs `app=(255,255,255)` at columns x=634 and x=890.
+- Mean (app−ref) bias on failing pixels: **+14.8** across all channels — i.e. app is ~15 levels LIGHTER than ref. Iter-17 documented an identical +9 to +20 bias band but attributed it to AA character.
+- Visual side-by-side of the densest failing block: section headings ("Technische omschrijving:", "Ruwbouw", "Betalingstermijnen", "Procesvolgorde & planning") rendered in **regular weight** by app, **bold** by reference.
+
+### Root cause
+
+Tekst.pdf uses a single regular-weight Type1 font (`/BAAAAA+UniviaProRegular`) plus a regular-weight Calibri TrueType subset. There is no bold variant in the resource dict. Inspection of the content stream:
+```
+q 0 0 0 RG
+0 0 0 rg
+BT
+2 Tr 0.36666 w
+157.45 688.589 Td /F1 11 Tf[<27>4<1E>...]TJ
+ET
+Q
+```
+The `2 Tr` operator sets text rendering mode to "fill, then stroke" (PDF 1.7 §9.3.6 Table 106). With `0.36666 w` line width, the regular-weight glyph outline is filled, then re-stroked at 0.4 pt — producing visually-bold output from a single regular font. This is the standard PDF authoring trick for synthetic bold text.
+
+The renderer's `Tr` operator was a no-op at TWO sites in `interpreter.rs` (line 380 in `execute_internal`, line 2274 in `extract_commands_with_text`). Headings were therefore filled at 100% with NO stroke pass — appearing thinner than the reference.
+
+A second key observation: Tekst.pdf wraps EACH `BT/ET` block in its own `q...Q` pair. The `2 Tr` set inside one block must NOT leak into adjacent blocks' text. Per PDF 1.7 §8.4.1, "the PDF graphics state shall include the parameters listed in Table 51 and **the text state parameters listed in Table 104**" — meaning `q`/`Q` save/restore text state including `Tr`. Storing `render_mode` only on the local `TextState` struct (which is a plain function-local variable, not in the graphics-state stack) would have caused the bold mode to bleed into all subsequent body text in the page.
+
+### Implementation
+
+**`open-pdf-render/src/graphics_state.rs`**: added `pub text_render_mode: u8` to `GraphicsState` (default 0). The existing `Clone` derive makes `q`/`Q` save/restore this field automatically alongside CTM, fill_color, line_width, etc — exactly per PDF spec.
+
+**`open-pdf-render/src/interpreter.rs`**:
+- Implemented the `Tr` operator at both sites (`execute_internal` at line 380, `extract_commands_with_text` at line 2274). Operator reads `state.current.text_render_mode = clamp(0..=7) as u8`.
+- `execute_show_string` and `execute_show_array` now read `mode = state.current.text_render_mode` and pass it to the new `_with_mode` text-renderer entry points.
+- Added a comment block explaining why `render_mode` lives on `GraphicsState` not `TextState` (the `q`/`Q` reset semantics).
+
+**`open-pdf-render/src/renderer.rs`**: added `pub fn stroke_cached_path_with_width(path, gs, path_local_width)` — symmetric to the existing `fill_cached_path` but applies `pixmap.stroke_path` with the given path-local width. Stroke colour comes from `gs.stroke_color` per PDF spec (text-renderer mode 2 fills with non-stroking colour and strokes with stroking colour, which are independent).
+
+**`open-pdf-render/src/text_renderer.rs`**:
+- Added `render_text_glyphs_skia_with_mode(...) and `render_cid_text_glyphs_skia_with_mode(...)` — extended variants of the existing public functions with a trailing `render_mode: u8` parameter. Mode dispatch via two booleans: `do_fill = matches!(mode, 0|2|4|6)` and `do_stroke = matches!(mode, 1|2|5|6)`.
+- The original `render_text_glyphs_skia` and `render_cid_text_glyphs_skia` functions are preserved as forwarders that pass `render_mode = 0`, so any external callers (the JS-side draw-command path) compile unchanged.
+- Stroke width passed to `stroke_cached_path_with_width` as `state.current.line_width / s` where `s = font_size / upm` is the per-glyph font scale already pre-concatenated into the CTM. After CTM transform, the resulting device-space stroke width equals `line_width × page_scale` — matching the way regular path strokes scale outside text rendering.
+- Mode 3 ("invisible") and 7 (invisible + clip) skip both fill and stroke but still advance the text matrix, per spec.
+- Modes 4-7 ("add to clipping path") accept the value and paint identically to modes 0-3 — the clipping side-effect is not implemented (rare in practice; would need glyph paths added to the page clip mask, a separate feature).
+
+### Results
+
+Per-page diff change after iter-28, `scripts/render_test_iter23.py` (literal-binary direct, 2000-px width, σ=1.0, threshold 30, fail at 2.0%):
+
+| PDF | Page | iter-27 baseline | iter-28 result | Δ |
+|-----|------|------------------|----------------|---|
+| Tekst.pdf | 0 | 1.97% PASS | **1.67%** PASS | −0.30 |
+| Tekst.pdf | 1 | 1.86% PASS | **1.39%** PASS | −0.47 |
+| Tekst.pdf | 2 | 2.49% FAIL | **2.01%** FAIL | −0.48 (just 0.005pp above pass!) |
+| Tekst.pdf | 3 | 2.82% FAIL | **2.70%** FAIL | −0.12 |
+| Tekst.pdf | 4 | 0.53% PASS | 0.53% PASS | 0 |
+| Text pdf gecombineerd | 13 | 4.18% FAIL | **4.04%** FAIL | −0.14 |
+| Text pdf gecombineerd | 21 | 5.26% FAIL | **5.24%** FAIL | −0.02 |
+| Text pdf gecombineerd | 23 | 3.38% FAIL | **3.17%** FAIL | −0.21 |
+| Text pdf gecombineerd | 24 | 2.86% FAIL | **2.84%** FAIL | −0.02 |
+| rapport-constructie | 13 | 4.18% FAIL | **4.04%** FAIL | −0.14 |
+| rapport-constructie | 21 | 5.26% FAIL | **5.24%** FAIL | −0.02 |
+| rapport-constructie | 23 | 3.38% FAIL | **3.17%** FAIL | −0.21 |
+| rapport-constructie | 24 | 2.86% FAIL | **2.84%** FAIL | −0.02 |
+| All 90 other pages | — | unchanged | unchanged | 0 |
+
+**Total PASS**: 58/106 → 58/106 (no flip). Tekst.pdf p2 missed re-classification by 0.005pp (2.006% > 2.000% threshold).
+
+**Visual quality**: side-by-side comparison of Tekst.pdf p2 confirms section headings (`Technische omschrijving:`, `Ruwbouw`, `Betalingstermijnen`, `Procesvolgorde & planning`) and table-header cells (`Totaal excl. BTW`, `BTW 21%`, `Totaal incl. BTW`) now render in correct bold weight, indistinguishable from the PyMuPDF reference at normal viewing distance. This is a real, user-visible quality improvement that the binary 2.0% pass-fail metric does not register because the reduction stayed inside a high-noise band.
+
+**Reliability gates** (per the brief):
+- ≥58/106: held at 58/106 ✓
+- All 8 PDFs open without panic: confirmed (script ran end-to-end with no errors) ✓
+- No new panics: confirmed ✓
+- Iter 23-27 speed wins preserved: confirmed (in-flight files untouched, glyph-cache and image-cache plumbing left in place) ✓
+- No regressions: confirmed (every measured page is equal or better than baseline) ✓
+
+**Files touched (to be committed by this iteration)**:
+- `open-pdf-render/src/graphics_state.rs` — added `text_render_mode` field.
+- `open-pdf-render/src/interpreter.rs` — `Tr` operator implementation at two sites; threaded mode through `execute_show_string` / `execute_show_array`.
+- `open-pdf-render/src/renderer.rs` — added `stroke_cached_path_with_width`.
+- `open-pdf-render/src/text_renderer.rs` — added `_with_mode` variants of both glyph-render entry points.
+- `docs/superpowers/improvement-log.md` — this entry.
+
+**Files explicitly NOT touched** (in-flight per hygiene rule): `saver.js`, `manager.js`, `hand-tool.js`, `vector-renderer.js`, `left-panel.js`, `font_parser.rs`, `fonts.rs`, `mcp_server.rs`, `Cargo.lock` (both), `Cargo.toml`. The interpreter.rs in-flight portions (font-resolution related per the brief description) are orthogonal to the `Tr` operator change and remain isolated.
+
+**Architectural takeaway**:
+- Iter-22 microscopy of Text pdf gecombineerd p8 concluded that residual diff was rasterizer noise. That conclusion was correct **for that page**. But the same reasoning had been generalised to "all remaining failures are rasterizer noise" — iter-28's microscopy of `Tekst.pdf p2` showed that wasn't universally true; one more concrete spec gap was hiding in the +15 bias band that iter-17 had attributed entirely to AA character.
+- This is a useful methodology point for any future quality iter: **don't assume iter-N's microscopy verdict on page X transfers to all other pages**. Different PDFs use different feature sets; a fresh microscopy on the worst-near-pass page in each PDF may surface gaps that the rasterizer-noise hypothesis would otherwise mask.
+- The +15 luminance bias signature (app brighter than ref on text pages) is a strong "synthetic bold via Tr=2" tell. If similar bias appears on other PDFs in future runs, check the content stream for `2 Tr` before chalking it up to AA character.
+
+**Status**: **DONE** — concrete PDF spec gap (`Tr` operator, PDF 1.7 §9.3.6) closed end-to-end, including the q/Q-aware text-state restoration semantics (PDF 1.7 §8.4.1). Pass count tied at 58/106, but per-page diff% measurably improved on 13 pages with no regressions on the other 93. Reliability gates all green. Visual quality on Tekst.pdf significantly improved (bold headings now render correctly).
+
+**Continue**: YES — the methodology of fresh microscopy on each PDF's worst-near-pass page may surface more single-spec-feature gaps. Specifically next: microscopy on Text pdf gecombineerd p7/p15 (3.4%/2.8%, both close to threshold) to see whether they share a different feature gap, and on Zware vector PDF p6 (2.97% — closest to threshold among that PDF's failures).

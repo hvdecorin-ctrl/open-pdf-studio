@@ -32,6 +32,12 @@ pub struct GraphicsState {
     /// time. (Same idea for the stroke side.)
     pub group_fill_alpha: f32,
     pub group_stroke_alpha: f32,
+    /// Text rendering mode (PDF 1.7 §9.3.6 Table 106) — set by `Tr` operator.
+    /// Per PDF 1.7 §8.4.1 the text state is part of the graphics state and
+    /// therefore saved/restored by `q`/`Q`. Default 0 = fill only.
+    /// Values: 0=fill, 1=stroke, 2=fill+stroke (synthetic-bold idiom),
+    /// 3=invisible, 4-7 = same as 0-3 plus add to clipping path.
+    pub text_render_mode: u8,
 }
 
 impl GraphicsState {
@@ -62,6 +68,7 @@ impl Default for GraphicsState {
             stroke_alpha: 1.0,
             group_fill_alpha: 1.0,
             group_stroke_alpha: 1.0,
+            text_render_mode: 0,
         }
     }
 }

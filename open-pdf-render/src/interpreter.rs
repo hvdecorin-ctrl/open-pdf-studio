@@ -112,6 +112,11 @@ struct TextState {
     tlm: [f32; 6],            // Text line matrix
     in_text: bool,
     current_font_name: String,
+    // Note: text rendering mode (Tr) lives on the graphics state
+    // (`GraphicsState::text_render_mode`) — per PDF 1.7 §8.4.1 the text
+    // state is part of the graphics state and is saved/restored by q/Q.
+    // Many PDFs (Tekst.pdf is one) wrap each BT/ET block in a q...Q pair
+    // so a `Tr` set inside one block must NOT leak into the next block.
 }
 
 impl TextState {
@@ -377,7 +382,20 @@ impl Interpreter {
                 "Tz" => { if let Some(v) = op.operands.first() { text_state.horizontal_scaling = Self::f(v) / 100.0; } }
                 "TL" => { if let Some(v) = op.operands.first() { text_state.leading = Self::f(v); } }
                 "Ts" => { if let Some(v) = op.operands.first() { text_state.rise = Self::f(v); } }
-                "Tr" => {} // text rendering mode — fill-only path used for now
+                "Tr" => {
+                    // PDF 1.7 §9.3.6 — text rendering mode. Mode 2 ("fill,
+                    // then stroke") is the standard authoring trick for
+                    // synthetic bold text using a single Regular font: the
+                    // glyph outline is filled normally, then the same path
+                    // is stroked at the current line width (set by `w`).
+                    // Stored on graphics state so q/Q properly restore the
+                    // mode at the end of a wrapping `q...BT...ET...Q` block
+                    // (see TextState comment).
+                    if let Some(v) = op.operands.first() {
+                        let m = Self::f(v) as i32;
+                        state.current.text_render_mode = m.clamp(0, 7) as u8;
+                    }
+                }
                 "Td" => {
                     if op.operands.len() >= 2 {
                         let tx = Self::f(&op.operands[0]);
@@ -633,8 +651,11 @@ impl Interpreter {
 
     /// Server-side text-show for the Tj operator. Resolves the current font
     /// through the FontRegistry, then dispatches to the simple- or
-    /// CID-text path in `text_renderer` to paint glyphs straight into the
-    /// SkiaRenderer (text rendering mode is treated as fill-only for now).
+    /// CID-text path in `text_renderer`. Honours the current text rendering
+    /// mode (`text_state.render_mode`), which is set by the `Tr` operator.
+    /// Mode 2 ("fill, then stroke") is the standard PDF authoring trick for
+    /// synthetic bold text; without it, headings authored as Tr=2 with a
+    /// thin line width appear too light in the rendered output.
     fn execute_show_string(
         operands: &[Object],
         text_state: &mut TextState,
@@ -655,27 +676,29 @@ impl Interpreter {
         };
         if font_entry.parsed.is_none() { return; }
         let fill = state.current.fill_color;
+        let mode = state.current.text_render_mode;
         let cache_arg = font_id_opt.map(|id| (id, &mut *glyph_cache));
         if font_entry.is_cid {
-            crate::text_renderer::render_cid_text_glyphs_skia(
+            crate::text_renderer::render_cid_text_glyphs_skia_with_mode(
                 &bytes, &*font_entry, text_state.font_size,
                 text_state.horizontal_scaling, text_state.char_spacing,
                 text_state.word_spacing, text_state.rise,
-                &mut text_state.tm, fill, renderer, state, cache_arg,
+                &mut text_state.tm, fill, renderer, state, cache_arg, mode,
             );
         } else {
-            crate::text_renderer::render_text_glyphs_skia(
+            crate::text_renderer::render_text_glyphs_skia_with_mode(
                 &bytes, &*font_entry, text_state.font_size,
                 text_state.horizontal_scaling, text_state.char_spacing,
                 text_state.word_spacing, text_state.rise,
-                &mut text_state.tm, fill, renderer, state, cache_arg,
+                &mut text_state.tm, fill, renderer, state, cache_arg, mode,
             );
         }
     }
 
     /// Server-side text-show for the TJ operator. Walks the array, calling
     /// the simple- or CID-glyph painter for every string and applying kern
-    /// adjustments for every numeric entry.
+    /// adjustments for every numeric entry. Honours `text_state.render_mode`
+    /// (see `execute_show_string`).
     fn execute_show_array(
         operands: &[Object],
         text_state: &mut TextState,
@@ -697,6 +720,7 @@ impl Interpreter {
         if font_entry.parsed.is_none() { return; }
         let is_cid = font_entry.is_cid;
         let fill = state.current.fill_color;
+        let mode = state.current.text_render_mode;
 
         for item in arr {
             match item {
@@ -704,18 +728,18 @@ impl Interpreter {
                     if !bytes.is_empty() {
                         let cache_arg = font_id_opt.map(|id| (id, &mut *glyph_cache));
                         if is_cid {
-                            crate::text_renderer::render_cid_text_glyphs_skia(
+                            crate::text_renderer::render_cid_text_glyphs_skia_with_mode(
                                 bytes, &*font_entry, text_state.font_size,
                                 text_state.horizontal_scaling, text_state.char_spacing,
                                 text_state.word_spacing, text_state.rise,
-                                &mut text_state.tm, fill, renderer, state, cache_arg,
+                                &mut text_state.tm, fill, renderer, state, cache_arg, mode,
                             );
                         } else {
-                            crate::text_renderer::render_text_glyphs_skia(
+                            crate::text_renderer::render_text_glyphs_skia_with_mode(
                                 bytes, &*font_entry, text_state.font_size,
                                 text_state.horizontal_scaling, text_state.char_spacing,
                                 text_state.word_spacing, text_state.rise,
-                                &mut text_state.tm, fill, renderer, state, cache_arg,
+                                &mut text_state.tm, fill, renderer, state, cache_arg, mode,
                             );
                         }
                     }
@@ -2251,7 +2275,12 @@ impl Interpreter {
                         text_state.rise = Self::f(v);
                     }
                 }
-                "Tr" => {}
+                "Tr" => {
+                    if let Some(v) = op.operands.first() {
+                        let m = Self::f(v) as i32;
+                        state.current.text_render_mode = m.clamp(0, 7) as u8;
+                    }
+                }
                 "Do" => {
                     Self::handle_do_extract_with_text(&op.operands, buf, state, doc, resources, font_registry, text_spans.as_deref_mut());
                 }

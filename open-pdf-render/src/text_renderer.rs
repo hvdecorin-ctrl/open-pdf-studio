@@ -268,6 +268,40 @@ pub fn render_text_glyphs_skia(
     state: &mut GraphicsStateStack,
     glyph_cache: Option<(lopdf::ObjectId, &mut GlyphPathCache)>,
 ) {
+    render_text_glyphs_skia_with_mode(
+        text_bytes, font_entry, font_size, horizontal_scaling,
+        char_spacing, word_spacing, rise, tm, fill_rgba,
+        renderer, state, glyph_cache, 0,
+    );
+}
+
+/// PDF 1.7 §9.3.6 text rendering mode dispatch (`Tr` operator).
+/// `render_mode`:
+///   0 = fill (default)
+///   1 = stroke
+///   2 = fill, then stroke (synthetic-bold idiom)
+///   3 = invisible (skip painting; advance only — for selection overlays)
+///   4-7 = same as 0-3 plus add to clipping path (clipping side-effect not
+///         implemented here — the visible paint matches mode 0-3).
+///
+/// The fill colour is `fill_rgba`; the stroke colour and line width come from
+/// `state.current.stroke_color` / `state.current.line_width`. Both colours
+/// already include the ExtGState `/ca`/`/CA` opacity from `gs.effective_*`.
+pub fn render_text_glyphs_skia_with_mode(
+    text_bytes: &[u8],
+    font_entry: &FontEntry,
+    font_size: f32,
+    horizontal_scaling: f32,
+    char_spacing: f32,
+    word_spacing: f32,
+    rise: f32,
+    tm: &mut [f32; 6],
+    fill_rgba: (u8, u8, u8, u8),
+    renderer: &mut SkiaRenderer,
+    state: &mut GraphicsStateStack,
+    glyph_cache: Option<(lopdf::ObjectId, &mut GlyphPathCache)>,
+    render_mode: u8,
+) {
     let parsed = match &font_entry.parsed {
         Some(p) => p,
         None => return,
@@ -278,6 +312,10 @@ pub fn render_text_glyphs_skia(
         Some((id, cache)) => (Some(id), Some(cache)),
         None => (None, None),
     };
+
+    // Mode 3 / 7 = invisible — advance only, no painting.
+    let do_fill = matches!(render_mode, 0 | 2 | 4 | 6);
+    let do_stroke = matches!(render_mode, 1 | 2 | 5 | 6);
 
     for &byte in text_bytes {
         let glyph_id = match FontRegistry::char_to_glyph_id(font_entry, byte) {
@@ -294,7 +332,7 @@ pub fn render_text_glyphs_skia(
         };
 
         if let Some(outline) = parsed.glyphs.get(&glyph_id) {
-            if !outline.commands.is_empty() {
+            if !outline.commands.is_empty() && (do_fill || do_stroke) {
                 let s = font_size / upm;
                 let sh = s * horizontal_scaling;
                 let gx = rise * tm[2] + tm[4];
@@ -330,7 +368,22 @@ pub fn render_text_glyphs_skia(
                             sh * tm[0], sh * tm[1], s * tm[2], s * tm[3], sgx, sgy,
                         ),
                     );
-                    renderer.fill_cached_path(&path, &state.current, false);
+                    if do_fill {
+                        renderer.fill_cached_path(&path, &state.current, false);
+                    }
+                    if do_stroke {
+                        // The CTM was just pre-concated with a per-glyph scale
+                        // `s = font_size / upm`. The user-space line width
+                        // (`gs.line_width`) must therefore be divided by `s`
+                        // here so the resulting device-space stroke width is
+                        // the same as a regular path stroke at the same line
+                        // width. Note: `s` is positive and bounded > 0
+                        // because `font_size > 0` and `upm > 0`.
+                        let local_width = state.current.line_width / s;
+                        renderer.stroke_cached_path_with_width(
+                            &path, &state.current, local_width,
+                        );
+                    }
                     state.current.ctm = saved_ctm;
                     state.current.fill_color = saved_fill;
                 }
@@ -459,6 +512,30 @@ pub fn render_cid_text_glyphs_skia(
     state: &mut GraphicsStateStack,
     glyph_cache: Option<(lopdf::ObjectId, &mut GlyphPathCache)>,
 ) {
+    render_cid_text_glyphs_skia_with_mode(
+        text_bytes, font_entry, font_size, horizontal_scaling,
+        char_spacing, word_spacing, rise, tm, fill_rgba,
+        renderer, state, glyph_cache, 0,
+    );
+}
+
+/// CID-text variant of `render_text_glyphs_skia_with_mode`. See that
+/// function's docs for the meaning of `render_mode`.
+pub fn render_cid_text_glyphs_skia_with_mode(
+    text_bytes: &[u8],
+    font_entry: &FontEntry,
+    font_size: f32,
+    horizontal_scaling: f32,
+    char_spacing: f32,
+    word_spacing: f32,
+    rise: f32,
+    tm: &mut [f32; 6],
+    fill_rgba: (u8, u8, u8, u8),
+    renderer: &mut SkiaRenderer,
+    state: &mut GraphicsStateStack,
+    glyph_cache: Option<(lopdf::ObjectId, &mut GlyphPathCache)>,
+    render_mode: u8,
+) {
     let parsed = match &font_entry.parsed {
         Some(p) => p,
         None => return,
@@ -469,6 +546,9 @@ pub fn render_cid_text_glyphs_skia(
         Some((id, cache)) => (Some(id), Some(cache)),
         None => (None, None),
     };
+
+    let do_fill = matches!(render_mode, 0 | 2 | 4 | 6);
+    let do_stroke = matches!(render_mode, 1 | 2 | 5 | 6);
 
     let mut i = 0;
     while i + 1 < text_bytes.len() {
@@ -487,7 +567,7 @@ pub fn render_cid_text_glyphs_skia(
         };
 
         if let Some(outline) = parsed.glyphs.get(&glyph_id) {
-            if !outline.commands.is_empty() {
+            if !outline.commands.is_empty() && (do_fill || do_stroke) {
                 let s = font_size / upm;
                 let sh = s * horizontal_scaling;
                 let gx = rise * tm[2] + tm[4];
@@ -513,7 +593,15 @@ pub fn render_cid_text_glyphs_skia(
                             sh * tm[0], sh * tm[1], s * tm[2], s * tm[3], sgx, sgy,
                         ),
                     );
-                    renderer.fill_cached_path(&path, &state.current, false);
+                    if do_fill {
+                        renderer.fill_cached_path(&path, &state.current, false);
+                    }
+                    if do_stroke {
+                        let local_width = state.current.line_width / s;
+                        renderer.stroke_cached_path_with_width(
+                            &path, &state.current, local_width,
+                        );
+                    }
                     state.current.ctm = saved_ctm;
                     state.current.fill_color = saved_fill;
                 }

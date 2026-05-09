@@ -156,6 +156,54 @@ impl SkiaRenderer {
         self.pixmap.fill_path(path, &paint, rule, gs.ctm, gs.clip_path.as_ref());
     }
 
+    /// Stroke a pre-built glyph path with an explicit path-local stroke
+    /// width. Used by the text-renderer to honour PDF text rendering modes
+    /// 1, 2, 5 and 6 (PDF 1.7 §9.3.6 Table 106). The caller is responsible
+    /// for converting the user-space line width (`gs.line_width`) to the
+    /// path-local width by dividing by the per-glyph font scale `s`, so
+    /// that after the CTM (which already includes `s` via pre_concat) the
+    /// device-space stroke width equals `gs.line_width * page_scale` —
+    /// matching the way path strokes outside text behave.
+    ///
+    /// The stroke colour comes from `gs.stroke_color` (NOT `fill_color`),
+    /// per PDF spec: text-rendering mode 2 fills with the non-stroking
+    /// colour space and strokes with the stroking colour space. Common
+    /// authoring tools set both to the same value when emulating bold,
+    /// but the spec is explicit that they are independent.
+    pub fn stroke_cached_path_with_width(
+        &mut self,
+        path: &Path,
+        gs: &GraphicsState,
+        path_local_width: f32,
+    ) {
+        if path_local_width <= 0.0 {
+            return;
+        }
+        let mut paint = Paint::default();
+        let (r, g, b, a) = gs.stroke_color;
+        paint.set_color_rgba8(r, g, b, Self::blend_alpha(a, gs.effective_stroke_alpha()));
+        paint.anti_alias = true;
+
+        let mut stroke = Stroke::default();
+        stroke.width = path_local_width;
+        stroke.line_cap = match gs.line_cap {
+            1 => LineCap::Round,
+            2 => LineCap::Square,
+            _ => LineCap::Butt,
+        };
+        stroke.line_join = match gs.line_join {
+            1 => LineJoin::Round,
+            2 => LineJoin::Bevel,
+            _ => LineJoin::Miter,
+        };
+        stroke.miter_limit = gs.miter_limit;
+        if !gs.dash_array.is_empty() {
+            stroke.dash = StrokeDash::new(gs.dash_array.clone(), gs.dash_phase);
+        }
+        self.pixmap
+            .stroke_path(path, &paint, &stroke, gs.ctm, gs.clip_path.as_ref());
+    }
+
     /// Resolve the user-space stroke width applied to tiny_skia.
     ///
     /// PDF spec section 8.4.3.2: `w 0` (line width 0) means "thinnest line
