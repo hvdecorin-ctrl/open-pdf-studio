@@ -134,6 +134,19 @@ fn handle_tools_list() -> Value {
                     "required": ["path"],
                     "additionalProperties": false
                 }
+            },
+            {
+                "name": "screenshot_all",
+                "description": "Render all pages of a PDF as base64 PNGs. For batch rendering; clients with size constraints should call screenshot_page per page instead.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "path":  { "type": "string" },
+                        "width": { "type": "integer", "minimum": 1, "default": 2000 }
+                    },
+                    "required": ["path"],
+                    "additionalProperties": false
+                }
             }
         ]
     })
@@ -153,6 +166,7 @@ async fn handle_tools_call(state: &AppState, params: &Value) -> Result<Value, (i
         "list_test_pdfs" => tool_list_test_pdfs(state).await,
         "screenshot_page" => tool_screenshot_page(state, &arguments).await,
         "get_pdf_metadata" => tool_get_pdf_metadata(state, &arguments).await,
+        "screenshot_all" => tool_screenshot_all(state, &arguments).await,
         other => Err((
             jsonrpc_error::METHOD_NOT_FOUND,
             format!("method not found: {other}"),
@@ -391,6 +405,95 @@ async fn tool_get_pdf_metadata(
 
     Ok(json!({
         "content": [{ "type": "text", "text": payload.to_string() }],
+        "isError": false
+    }))
+}
+
+/// `screenshot_all` tool — renders every page of a PDF and returns each as a
+/// base64 PNG in a `pages` array. Pages are rendered serially to keep memory
+/// bounded for large multi-page PDFs (each render holds DocumentHandle
+/// internals).
+///
+/// Page count is read once via `lopdf` so we know how many render passes to
+/// schedule, then `open_pdf_render` produces the raster for each page using
+/// the same scaling convention as `screenshot_page`:
+/// `scale = width / max(page_w_pt, page_h_pt)`.
+async fn tool_screenshot_all(
+    _state: &AppState,
+    arguments: &Value,
+) -> Result<Value, (i32, String)> {
+    let path = arguments
+        .get("path")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| (jsonrpc_error::INVALID_PARAMS, "missing 'path'".to_string()))?
+        .to_string();
+    let width = arguments
+        .get("width")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(2000) as u32;
+    if width == 0 {
+        return Err((jsonrpc_error::INVALID_PARAMS, "'width' must be > 0".to_string()));
+    }
+
+    // First, count pages via lopdf so we know how many render passes to do.
+    let bytes = tokio::fs::read(&path).await.map_err(|e| {
+        (jsonrpc_error::INTERNAL_ERROR, format!("read {}: {e}", path))
+    })?;
+
+    let total: usize = {
+        let bytes_clone = bytes.clone();
+        tokio::task::spawn_blocking(move || -> Result<usize, String> {
+            let doc = lopdf::Document::load_mem(&bytes_clone)
+                .map_err(|e| format!("parse: {e}"))?;
+            Ok(doc.get_pages().len())
+        })
+        .await
+        .map_err(|e| (jsonrpc_error::INTERNAL_ERROR, format!("count task panic: {e}")))?
+        .map_err(|e| (jsonrpc_error::INTERNAL_ERROR, e))?
+    };
+
+    // Render every page sequentially. Parallelizing would help wall-clock
+    // but each render holds the DocumentHandle internals; sticking to serial
+    // keeps memory bounded for big multi-page PDFs.
+    let bytes_arc = std::sync::Arc::new(bytes);
+    let mut pages_json: Vec<Value> = Vec::with_capacity(total);
+
+    for idx in 0..total {
+        let bytes_clone = bytes_arc.clone();
+        let rendered = tokio::task::spawn_blocking(move || -> Result<open_pdf_render::RenderedPage, String> {
+            let doc = open_pdf_render::DocumentHandle::load(&bytes_clone)
+                .map_err(|e| format!("load PDF: {e}"))?;
+            let (w_pt, h_pt) = doc
+                .page_dimensions(idx)
+                .map_err(|e| format!("page_dimensions[{idx}]: {e}"))?;
+            let scale = width as f32 / w_pt.max(h_pt);
+            doc.render_page(idx, scale, 0)
+                .map_err(|e| format!("render page {idx}: {e}"))
+        })
+        .await
+        .map_err(|e| (jsonrpc_error::INTERNAL_ERROR, format!("render task panic on page {idx}: {e}")))?
+        .map_err(|e| (jsonrpc_error::INTERNAL_ERROR, e))?;
+
+        let png_b64 = crate::render_to_png::encode_rgba_to_png_base64(
+            rendered.width,
+            rendered.height,
+            &rendered.rgba,
+        )
+        .map_err(|e| (jsonrpc_error::INTERNAL_ERROR, format!("encode png[{idx}]: {e}")))?;
+
+        pages_json.push(json!({
+            "index":      idx,
+            "png_base64": png_b64,
+            "width":      rendered.width,
+            "height":     rendered.height
+        }));
+    }
+
+    Ok(json!({
+        "content": [{
+            "type": "text",
+            "text": json!({ "pages": pages_json }).to_string()
+        }],
         "isError": false
     }))
 }
@@ -673,5 +776,58 @@ mod tests {
         assert_eq!(rot0, 90, "Technische tekening.pdf page 0 should have /Rotate 90");
         let mediabox = pages[0]["mediabox"].as_array().unwrap();
         assert_eq!(mediabox.len(), 4, "MediaBox should be 4 numbers");
+    }
+
+    #[test]
+    fn tools_list_advertises_screenshot_all() {
+        let v = handle_tools_list();
+        let names: Vec<&str> = v["tools"].as_array().unwrap().iter()
+            .map(|t| t["name"].as_str().unwrap()).collect();
+        assert!(names.contains(&"screenshot_all"));
+    }
+
+    #[tokio::test]
+    async fn tool_screenshot_all_renders_every_page() {
+        use std::path::PathBuf;
+        let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let corpus = manifest_dir
+            .ancestors()
+            .nth(2)
+            .unwrap()
+            .join("test pdf-bestanden")
+            .join("Originele bestanden");
+        if !corpus.exists() {
+            eprintln!("[skip] corpus dir missing");
+            return;
+        }
+        // Pick the smallest multi-page-or-one PDF so the test runs fast.
+        let pdfs: Vec<_> = std::fs::read_dir(&corpus).unwrap()
+            .filter_map(|e| e.ok())
+            .map(|e| e.path())
+            .filter(|p| p.extension().and_then(|s| s.to_str()) == Some("pdf"))
+            .collect();
+        let smallest = pdfs.iter()
+            .min_by_key(|p| std::fs::metadata(p).map(|m| m.len()).unwrap_or(u64::MAX))
+            .expect("no pdfs in corpus")
+            .clone();
+
+        let state = AppState { test_pdfs_dir: std::sync::Arc::new(corpus) };
+        let args = serde_json::json!({
+            "path": smallest.to_string_lossy(),
+            "width": 200
+        });
+        let result = tool_screenshot_all(&state, &args).await.expect("render ok");
+        assert_eq!(result["isError"], serde_json::Value::Bool(false));
+        let text = result["content"][0]["text"].as_str().unwrap();
+        let body: serde_json::Value = serde_json::from_str(text).unwrap();
+        let pages = body["pages"].as_array().unwrap();
+        assert!(!pages.is_empty(), "should have at least one page");
+        for (i, p) in pages.iter().enumerate() {
+            assert_eq!(p["index"].as_u64().unwrap(), i as u64);
+            let b64 = p["png_base64"].as_str().unwrap();
+            assert!(b64.starts_with("iVBORw0KGgo"), "page {i} not a valid png");
+            assert!(p["width"].as_u64().unwrap() > 0);
+            assert!(p["height"].as_u64().unwrap() > 0);
+        }
     }
 }
