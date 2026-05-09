@@ -18,6 +18,16 @@ pub struct FontEntry {
     pub to_unicode: HashMap<u8, char>,
     /// ToUnicode mapping for CID fonts: 2-byte code → Unicode codepoint
     pub cid_to_unicode: HashMap<u16, char>,
+    /// Per-character advance widths in 1/1000-em units, indexed by char code
+    /// (u8 for simple fonts) or CID (u16 for Type0). Always read from the PDF
+    /// font dictionary's `/Widths` (simple) or `/W` (Type0) array per the
+    /// PDF spec — these are authoritative and may differ from the embedded
+    /// font's internal advance widths (esp. for subsetted fonts).
+    pub widths: HashMap<u32, f32>,
+    /// Default advance width in 1/1000-em units, applied when a code is not
+    /// in `widths`. Read from `/MissingWidth` (simple fonts, default 0) or
+    /// `/DW` (Type0 fonts, default 1000).
+    pub default_width: f32,
 }
 
 /// Registry that caches parsed fonts by their global PDF ObjectId.
@@ -146,6 +156,11 @@ impl FontRegistry {
             // outlines if the subset is usable. For Type1 fonts parsed via
             // hayro-font we key glyphs by character code (GIDs ~32..=255), so
             // additionally check the printable-ASCII range.
+            //
+            // For TrueType subsets that renumber glyphs (where byte codes are
+            // 1..N and the actual glyphs live at high GIDs), neither low nor
+            // ASCII GID ranges contain outlines. Check `byte_cmap` (populated
+            // from non-Unicode cmap subtables) to detect this case.
             let embedded_usable = parsed.as_ref().map(|p| {
                 let count_outlines = |range: std::ops::RangeInclusive<u16>| -> usize {
                     range.filter(|gid| {
@@ -154,7 +169,13 @@ impl FontRegistry {
                 };
                 let low = count_outlines(1..=10);
                 let ascii = count_outlines(0x41..=0x5A); // 'A'..'Z'
-                low > 5 || ascii > 5
+
+                // Subset font: count how many byte_cmap targets have outlines.
+                let byte_cmap_outlines = p.byte_cmap.values().filter(|&&gid| {
+                    p.glyphs.get(&gid).map(|g| !g.commands.is_empty()).unwrap_or(false)
+                }).count();
+
+                low > 5 || ascii > 5 || byte_cmap_outlines > 5
             }).unwrap_or(false);
 
             if parsed.is_none() || !embedded_usable {
@@ -169,6 +190,28 @@ impl FontRegistry {
             }
         }
 
+        // Extract authoritative advance widths from the PDF font dictionary.
+        // Per PDF spec §9.7.3 (simple) / §9.7.4.3 (CID), these override any
+        // widths embedded in the font program — they are the values the
+        // content stream's text-matrix advance must use.
+        let (widths, default_width) = if is_cid {
+            let (cid_w, dw) = Self::extract_cid_widths(font_dict, doc);
+            let mut w_u32: HashMap<u32, f32> = HashMap::with_capacity(cid_w.len());
+            for (cid, w) in cid_w {
+                w_u32.insert(cid as u32, w);
+            }
+            (w_u32, dw)
+        } else {
+            let simple_w = Self::extract_widths(font_dict, doc);
+            let mut w_u32: HashMap<u32, f32> = HashMap::with_capacity(simple_w.len());
+            for (code, w) in simple_w {
+                w_u32.insert(code as u32, w);
+            }
+            // Simple fonts: /MissingWidth from FontDescriptor (default 0).
+            let dw = Self::extract_missing_width(font_dict, doc).unwrap_or(0.0);
+            (w_u32, dw)
+        };
+
         FontEntry {
             parsed,
             encoding_name,
@@ -178,12 +221,26 @@ impl FontRegistry {
             cid_to_gid_identity,
             to_unicode,
             cid_to_unicode,
+            widths,
+            default_width,
         }
     }
 
     /// Resolve a character code to a glyph ID using the font entry.
     pub fn char_to_glyph_id(entry: &FontEntry, char_code: u8) -> Option<u16> {
         let parsed = entry.parsed.as_ref()?;
+
+        // Priority 0: byte_cmap from non-Unicode subtables (Mac 1,0 / Win Symbol 3,0).
+        // For TrueType subset fonts in PDFs this is the authoritative mapping
+        // between content-stream byte codes and the subset's renumbered GIDs.
+        // Only consult when the target GID actually has an outline, so it
+        // doesn't mask a working ToUnicode→cmap lookup against a system-font
+        // fallback whose byte_cmap happens to be empty anyway.
+        if let Some(&gid) = parsed.byte_cmap.get(&char_code) {
+            if parsed.glyphs.get(&gid).map(|g| !g.commands.is_empty()).unwrap_or(false) {
+                return Some(gid);
+            }
+        }
 
         // Priority 1: ToUnicode → font cmap (works when cmap is populated)
         if let Some(&unicode_char) = entry.to_unicode.get(&char_code) {
@@ -370,6 +427,136 @@ impl FontRegistry {
         }
 
         out
+    }
+
+    /// Read `/MissingWidth` from the font's FontDescriptor.
+    /// Per PDF spec §9.7.3, default is 0 for simple fonts.
+    fn extract_missing_width(font_dict: &Dictionary, doc: &Document) -> Option<f32> {
+        let desc_obj = font_dict.get(b"FontDescriptor").ok()?;
+        let desc_obj = Self::resolve_obj(desc_obj, doc)?;
+        let desc = match desc_obj {
+            Object::Dictionary(d) => d,
+            _ => return None,
+        };
+        match Self::resolve_obj(desc.get(b"MissingWidth").ok()?, doc)? {
+            Object::Integer(n) => Some(n as f32),
+            Object::Real(n) => Some(n as f32),
+            _ => None,
+        }
+    }
+
+    /// Extract per-CID widths from a Type0 font dict's descendant `/W` array.
+    /// PDF spec §9.7.4.3 supports two forms:
+    ///   `c [w1 w2 ... wn]` — widths for cids c..c+n-1
+    ///   `c1 c2 w` — width w for all cids c1..=c2
+    /// Returns (cid_widths, dw_default_in_glyph_units).
+    fn extract_cid_widths(
+        font_dict: &Dictionary,
+        doc: &Document,
+    ) -> (HashMap<u16, f32>, f32) {
+        let mut out = HashMap::new();
+        let mut dw = 1000.0_f32; // PDF default
+
+        let desc_fonts_obj = match font_dict.get(b"DescendantFonts").ok() {
+            Some(o) => o,
+            None => return (out, dw),
+        };
+        let desc_fonts = match Self::resolve_obj(desc_fonts_obj, doc) {
+            Some(Object::Array(a)) => a,
+            _ => return (out, dw),
+        };
+        let cid_dict = match desc_fonts.first().and_then(|o| Self::resolve_obj(o, doc)) {
+            Some(Object::Dictionary(d)) => d,
+            _ => return (out, dw),
+        };
+
+        // /DW default width
+        if let Some(dw_obj) = cid_dict.get(b"DW").ok().and_then(|o| Self::resolve_obj(o, doc)) {
+            match dw_obj {
+                Object::Integer(n) => dw = n as f32,
+                Object::Real(n) => dw = n as f32,
+                _ => {}
+            }
+        }
+
+        // /W array
+        let w_arr = match cid_dict.get(b"W").ok().and_then(|o| Self::resolve_obj(o, doc)) {
+            Some(Object::Array(a)) => a,
+            _ => return (out, dw),
+        };
+
+        let to_num = |o: &Object| -> Option<f32> {
+            match o {
+                Object::Integer(n) => Some(*n as f32),
+                Object::Real(n) => Some(*n as f32),
+                _ => None,
+            }
+        };
+
+        let mut i = 0;
+        while i < w_arr.len() {
+            // First element must be the start CID (integer)
+            let first_cid = match Self::resolve_obj(&w_arr[i], doc) {
+                Some(Object::Integer(n)) if n >= 0 => n as u32,
+                _ => {
+                    i += 1;
+                    continue;
+                }
+            };
+            i += 1;
+            if i >= w_arr.len() {
+                break;
+            }
+            // Next is either an Array (form 1) or a number (form 2)
+            match Self::resolve_obj(&w_arr[i], doc) {
+                Some(Object::Array(widths_arr)) => {
+                    // Form: c [w1 w2 ... wn]
+                    for (j, w_obj) in widths_arr.iter().enumerate() {
+                        if let Some(w) = to_num(w_obj) {
+                            let cid = first_cid + j as u32;
+                            if cid <= 0xFFFF {
+                                out.insert(cid as u16, w);
+                            }
+                        }
+                    }
+                    i += 1;
+                }
+                Some(num_obj) => {
+                    // Form: c1 c2 w  (already consumed c1, just read num as c2)
+                    let last_cid = match num_obj {
+                        Object::Integer(n) if n >= 0 => n as u32,
+                        _ => {
+                            i += 1;
+                            continue;
+                        }
+                    };
+                    i += 1;
+                    if i >= w_arr.len() {
+                        break;
+                    }
+                    let w = match Self::resolve_obj(&w_arr[i], doc).as_ref().and_then(to_num) {
+                        Some(v) => v,
+                        None => {
+                            i += 1;
+                            continue;
+                        }
+                    };
+                    i += 1;
+                    let lo = first_cid.min(last_cid);
+                    let hi = first_cid.max(last_cid);
+                    for cid in lo..=hi {
+                        if cid <= 0xFFFF {
+                            out.insert(cid as u16, w);
+                        }
+                    }
+                }
+                None => {
+                    i += 1;
+                }
+            }
+        }
+
+        (out, dw)
     }
 
     /// Check if CIDToGIDMap is /Identity in the DescendantFont

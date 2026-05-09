@@ -4,6 +4,41 @@ use crate::draw_commands::DrawCommandBuffer;
 use crate::renderer::SkiaRenderer;
 use crate::graphics_state::GraphicsStateStack;
 
+/// Resolve the advance width for a character code, in text-space units
+/// (i.e. fraction of `font_size`).
+///
+/// PDF spec §9.4.4 / §9.7.3 / §9.7.4.3: the authoritative advance width for
+/// each character code is read from the PDF font dictionary's `/Widths`
+/// (simple fonts) or `/W` (Type0/CID fonts) array, in 1/1000-em units. The
+/// embedded font program's internal advance widths can differ — especially
+/// for subsetted fonts where the PDF preserves the original widths but the
+/// embedded `hmtx` table may have been pruned or replaced. Using the PDF
+/// widths is required to match other PDF renderers' line-breaking and
+/// glyph positioning.
+///
+/// Falls back to the embedded font's `outline.advance_width / units_per_em`
+/// when the PDF dictionary has no entry for the code (and no /MissingWidth
+/// or /DW default), which preserves correct rendering for fonts whose
+/// width tables happen to be omitted (rare).
+#[inline]
+fn pdf_advance_width(
+    font_entry: &FontEntry,
+    code: u32,
+    fallback_advance_em: f32,
+) -> f32 {
+    if let Some(&w) = font_entry.widths.get(&code) {
+        return w / 1000.0;
+    }
+    // /MissingWidth (simple) or /DW (Type0). Treat 0.0 as "not specified" so
+    // the embedded fallback runs — most PDFs that omit a code in /Widths
+    // genuinely want the embedded font's width, and a default of 0 would
+    // collapse the glyph onto the previous one.
+    if font_entry.default_width > 0.0 {
+        return font_entry.default_width / 1000.0;
+    }
+    fallback_advance_em
+}
+
 /// Render a text string as vector glyph outlines.
 ///
 /// PDF text rendering follows the spec §9.4.4 exactly:
@@ -102,7 +137,14 @@ pub fn render_text_glyphs(
             // w0 = advance_width / units_per_em (displacement in text space)
             // tx = (w0 × Tfs + Tc + Tw) × Th
             // Tm = [1 0 0 1 tx 0] × Tm
-            let w0 = outline.advance_width / upm;
+            //
+            // Width source: PDF /Widths array first, embedded font hmtx as
+            // fallback (see pdf_advance_width comment).
+            let w0 = pdf_advance_width(
+                font_entry,
+                byte as u32,
+                outline.advance_width / upm,
+            );
             let tw = if byte == 32 { word_spacing } else { 0.0 };
             let tx = (w0 * font_size + char_spacing + tw) * horizontal_scaling;
             tm[4] += tx * tm[0];
@@ -175,7 +217,13 @@ pub fn render_cid_text_glyphs(
                 buf.restore_state();
             }
 
-            let w0 = outline.advance_width / upm;
+            // Width source: PDF /W array first (keyed by CID), embedded font
+            // hmtx as fallback (see pdf_advance_width comment).
+            let w0 = pdf_advance_width(
+                font_entry,
+                cid as u32,
+                outline.advance_width / upm,
+            );
             // CID space char is typically U+0020 = CID 3 (font-dependent)
             let tw = if cid == 3 || cid == 32 { word_spacing } else { 0.0 };
             let tx = (w0 * font_size + char_spacing + tw) * horizontal_scaling;
@@ -259,7 +307,13 @@ pub fn render_text_glyphs_skia(
                 state.restore();
             }
 
-            let w0 = outline.advance_width / upm;
+            // Width source: PDF /Widths array first, embedded font hmtx
+            // as fallback (see pdf_advance_width comment).
+            let w0 = pdf_advance_width(
+                font_entry,
+                byte as u32,
+                outline.advance_width / upm,
+            );
             let tw = if byte == 32 { word_spacing } else { 0.0 };
             let tx = (w0 * font_size + char_spacing + tw) * horizontal_scaling;
             tm[4] += tx * tm[0];
@@ -395,7 +449,13 @@ pub fn render_cid_text_glyphs_skia(
                 state.restore();
             }
 
-            let w0 = outline.advance_width / upm;
+            // Width source: PDF /W array first (keyed by CID), embedded
+            // font hmtx as fallback (see pdf_advance_width comment).
+            let w0 = pdf_advance_width(
+                font_entry,
+                cid as u32,
+                outline.advance_width / upm,
+            );
             let tw = if cid == 3 || cid == 32 { word_spacing } else { 0.0 };
             let tx = (w0 * font_size + char_spacing + tw) * horizontal_scaling;
             tm[4] += tx * tm[0];

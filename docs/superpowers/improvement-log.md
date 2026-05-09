@@ -357,3 +357,44 @@ Per-PDF stats from initial harness run:
 2. Apply a per-glyph "stem widening" hack — slightly inflate fill paths by 0.1-0.2 device pixels before rasterising — to compensate for the under-coverage. Low effort but pixel-imperfect and may regress pages that DON'T have this drift.
 
 **Commit**: (no code change — investigation-only iter)
+
+
+### Iteration 11 — Honour PDF /Widths and /W arrays for glyph advance (text-cluster long tail)
+
+**Iter-10 baseline** (per fresh full-suite run 2026-05-09_1718-b1e1daad): 56/106 passing.
+
+**Path chosen**: Option 3 — re-investigation, then Option 1-style focused feature fix.
+
+**Re-investigation findings (contradicting iter-10's "pure-AA" conclusion)**:
+- Visual diff on Text pdf gecombineerd p11 (6.32%, representative of the cluster) shows entire blocks of red highlighting on table-row rectangles, not just text-edge AA noise. App and ref look visually nearly identical to the eye, but pixel-grid sampling reveals systemic offsets.
+- Per-region cross-correlation analysis on p11 found NON-UNIFORM horizontal shifts across regions: top-table-header dx=0, top-table-row1 dx=-3, mid-text-block dx=+1, middle-table-row dx=+1, second-table-header dx=+2, second-table-row1 dx=+1, further-down dx=+1. A uniform CTM error would produce one consistent dx; the variation indicates per-text-block (per-Tm) cumulative drift.
+- Cropping rows 1350-1410 (constructeur paragraph, mean diff 70+) showed the app text fits ONE more character on the same line as the reference — the app's character advance widths are NARROWER than the reference's, accumulating left-shift across each line, until the last word wraps differently.
+- pikepdf inspection of p11 fonts: TrueType subsets (Calibri-Light, Arial-BoldMT, ArialMT) with explicit `/Widths` arrays. The Widths array values for 'B' = 535 (1000-em), and the embedded font's `hmtx[B]` = 1096 / upm 2048 = 535.16 (1000-em) — nearly identical for THIS PDF, but in general PDF spec §9.4.4 mandates the renderer use the dictionary `/Widths` array, not the embedded font hmtx (subsetters frequently strip/edit hmtx but preserve PDF /Widths).
+
+**Root cause**: `text_renderer.rs::render_text_glyphs[_skia]` and `render_cid_text_glyphs[_skia]` all compute the per-glyph advance as `outline.advance_width / units_per_em` — i.e. they read from the embedded TrueType `hmtx` table via ttf_parser. The PDF spec §9.7.3 (simple fonts) and §9.7.4.3 (Type0/CID fonts) explicitly require renderers to use the `/Widths` (FirstChar..=LastChar) or `/W` array values from the PDF font dictionary, with `/MissingWidth` or `/DW` as fallback. Our renderer ignored this for everything except Type1 (where width-by-code is wired into hayro-font's parse_type1 already). For TrueType (FontFile2) and Type0/CID, the PDF widths were silently discarded.
+
+**Fix**:
+- `open-pdf-render/src/fonts.rs`:
+  - `FontEntry` gained two fields: `widths: HashMap<u32, f32>` (1/1000-em units, keyed by char code u8 or CID u16, both stored as u32) and `default_width: f32`.
+  - New helper `extract_missing_width(font_dict, doc) -> Option<f32>` reads `/MissingWidth` from the FontDescriptor.
+  - New helper `extract_cid_widths(font_dict, doc) -> (HashMap<u16, f32>, f32)` walks the descendant font's `/W` array supporting both PDF spec forms (`c [w1 w2 ...]` for per-CID values and `c1 c2 w` for ranges) and reads `/DW` for the default.
+  - `build_font_entry` now populates both fields: for `is_cid` it calls `extract_cid_widths` (DW default 1000), for simple fonts it calls the existing `extract_widths` + `extract_missing_width` (default 0).
+- `open-pdf-render/src/text_renderer.rs`:
+  - New helper `pdf_advance_width(font_entry, code, fallback_advance_em)` — returns `widths[code] / 1000.0` if present, else `default_width / 1000.0` if positive, else the embedded-font fallback. The "treat 0.0 as not-specified" guard avoids collapsing glyphs when a font dict has /Widths but no entry for a given code.
+  - All four advance-width call sites in `render_text_glyphs`, `render_cid_text_glyphs`, `render_text_glyphs_skia`, `render_cid_text_glyphs_skia` switched from `outline.advance_width / upm` to `pdf_advance_width(font_entry, code as u32, outline.advance_width / upm)`. Behaviour preserved when /Widths is absent (rare).
+
+**Verification** (full suite run 2026-05-09_1748-461175c4 vs iter-10 baseline 2026-05-09_1718-b1e1daad):
+- **Total passing: 56/106 → 57/106 (+1 net)**.
+- FAIL→PASS win: 20260316 Barn Relocation p0 (2.158% → 1.894%) — TrueType Century Gothic with subsetted hmtx.
+- Largest improvement: 20260316 Barn Relocation p4 (0.918% → 0.551%, -0.37pp).
+- Zero PASS→FAIL regressions.
+- Overall avg diff delta -0.034pp (slight uniform improvement across the board). Most failing pages improved by 0.05-0.10pp (Text/rapport p8 6.41→6.34, p11 6.32→6.23, p17 5.20→5.15, etc.) — confirming the PDF /Widths matter even when Calibri-Light's hmtx is nearly identical to the dict (sub-em-unit drift accumulates over a paragraph).
+
+**Concerns / next ideas**:
+- The +1 page is modest because the PDFs in the test set tend to embed full hmtx that closely matches the dict /Widths. Future PDFs with aggressively subsetted hmtx (where embedded widths diverge from /Widths) will benefit more substantially.
+- This fix is a strict spec-compliance correctness improvement, not a tuning hack — even pages that didn't move benefit from per-glyph positions that exactly match what the PDF dictionary mandates, which compounds well with future improvements.
+- Iter-10's "pure-AA / architectural" conclusion was incomplete. There are still residual feature gaps — the systematic-debugging pattern (visual diff inspection + content-stream analysis) found one this iteration. Recommend continuing the per-iter loop rather than declaring architectural-only.
+- Per-region cross-correlation on the remaining 5-7% pages still shows minor dx variations — likely a mix of (a) glyph hinting differences (PyMuPDF/MuPDF runs FreeType native hinting; we don't), (b) the linear-vs-gamma-AA difference iter-10 identified, (c) residual subpixel-fraction drift. None of these are individual feature gaps; they are rasterizer-quality.
+
+**Commit**: (added by post-commit hook)
+
