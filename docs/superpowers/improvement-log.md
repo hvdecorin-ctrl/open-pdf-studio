@@ -396,5 +396,5 @@ Per-PDF stats from initial harness run:
 - Iter-10's "pure-AA / architectural" conclusion was incomplete. There are still residual feature gaps — the systematic-debugging pattern (visual diff inspection + content-stream analysis) found one this iteration. Recommend continuing the per-iter loop rather than declaring architectural-only.
 - Per-region cross-correlation on the remaining 5-7% pages still shows minor dx variations — likely a mix of (a) glyph hinting differences (PyMuPDF/MuPDF runs FreeType native hinting; we don't), (b) the linear-vs-gamma-AA difference iter-10 identified, (c) residual subpixel-fraction drift. None of these are individual feature gaps; they are rasterizer-quality.
 
-**Commit**: (added by post-commit hook)
+**Commit**: 246fd7b4
 
