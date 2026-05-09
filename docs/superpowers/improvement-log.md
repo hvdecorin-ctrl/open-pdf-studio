@@ -733,3 +733,64 @@ Only 2 PDFs set Tc, BOTH with Tw=0. The `cid == 3` Tw-trigger heuristic in CID r
 **Continue**: NO — recommend pause. 7 consecutive NO_PROGRESS / no-feature-gap iterations is a strong signal that the single-iteration spec-audit channel is exhausted. Further progress on the rasterizer cluster requires a multi-iteration project (tiny_skia fork, or migration to skia-safe / piet / fontdue+custom-blitter) that does not fit the single-iter loop budget.
 
 **Commit**: doc-only — adds this entry; no source changes.
+
+
+
+### Iteration 20 — partial rasterizer swap for text via `ab_glyph` (REVERTED)
+
+**Iter-19 baseline at HEAD 63a8f19b**: 58/106 passing (verified end-of-iteration by reverting iter-20 source changes and re-running the full suite — got 58 PASS / 48 FAIL, matching the mandate). 7 consecutive NO_PROGRESS iterations on the rasterizer-quality cluster. Per the iter-20 mandate, attempt a **partial rasterizer swap** — keep `tiny-skia` for paths/strokes/images, but route text glyph rasterization through `ab_glyph::OutlinedGlyph::draw` instead of building a `tiny_skia::Path` and calling `Pixmap::fill_path`. The hypothesis: ab_glyph's coverage-mask AA is closer to MuPDF's text-AA character than tiny-skia's path-fill AA.
+
+**Architectural change** — three new components, all reverted:
+1. `open-pdf-render/Cargo.toml` — added `ab_glyph = "0.2"` dependency. The crate brought in `ab_glyph_rasterizer 0.1.10` and `owned_ttf_parser 0.25.1` transitively; total compile-time impact 4 new crates.
+2. `open-pdf-render/src/font_parser.rs::ParsedFont` — added `raw_ttf_bytes: Option<Vec<u8>>` field. `parse_truetype` now returns `Some(font_data.to_vec())`, while `parse_type1` (hayro-font) returns `None` because hayro doesn't expose a TTF-parseable byte slice. The bytes survive across page renders via the existing `FontRegistry` cache, so the per-page cost is one-time.
+3. `open-pdf-render/src/text_renderer.rs::rasterize_glyph_ab_glyph` — new function (~70 lines) that, when called from `render_text_glyphs_skia` / `render_cid_text_glyphs_skia`, parses the font with `AbFontRef::try_from_slice`, builds an `OutlinedGlyph` at the device-space PxScale, and walks `outlined.draw(|x,y,c| renderer.blend_pixel_coverage(...))`. The accompanying `SkiaRenderer::blend_pixel_coverage` (added to renderer.rs) does a Source-over composite of one premultiplied RGBA pixel onto the destination, honouring the active clip mask and effective fill alpha. Returns `false` on rotated CTMs / sub-pixel-tiny glyphs / parse failures so the existing tiny-skia outline fallback handles those cases without correctness regression.
+
+**Coordinate convention worked out from first principles** (verified empirically that ab_glyph fired correctly on Calibri/Arial pages):
+- For axis-aligned text on an unrotated page CTM `(scale, 0, 0, -scale, 0, h)`: `px_per_em_x = |ctm.sx · font_size · horizontal_scaling · tm[0]|`, `px_per_em_y = |ctm.sy · font_size · tm[3]|`. ab_glyph wants pixels-per-em (NOT per-font-unit) since it queries `units_per_em` internally and divides.
+- Baseline device position: `(ctm.sx · gx + ctm.tx, ctm.sy · gy + ctm.ty).round()` — rounded to integer device pixels to match MuPDF's pixel-grid alignment (same convention as the iter-7 `snap_glyph_origin` for the tiny-skia path).
+- `outlined.draw(|lx, ly, c| ...)` callbacks deliver `(local_x, local_y)` relative to `outlined.px_bounds().min`. We add the bounds offset to get absolute device pixel coords before blending.
+
+**Verification — full corpus run with iter-20 active**:
+
+| PDF | iter-19 baseline | iter-20 result | Net |
+|-----|-----------------|----------------|-----|
+| 20260316 - Barn Relocation | 4P/3F | 4P/3F | 0 |
+| 2885 Demo project | 12P/2F | **10P/4F** | **−2** |
+| Combinatie Raster vector | 0P/1F | **1P/0F** | **+1** |
+| Technische tekening | 3P/1F | 3P/1F | 0 |
+| Tekst | 3P/2F | 3P/2F | 0 |
+| Text pdf gecombineerd | 11P/17F | 11P/17F | 0 |
+| Zware vector PDF | 12P/7F | 12P/7F | 0 |
+| rapport-constructie | 13P/15F | 11P/17F | **−2** |
+| **TOTAL** | **58/106** | **55/106** | **−3** |
+
+**Why it failed**:
+- **Type1 fonts have no TTF bytes**: Tekst.pdf uses `BAAAAA+UniviaProRegular`, parsed via hayro-font into a Type1-charstring outline collection. `raw_ttf_bytes = None`, so 1987/2000 simple-font glyph calls on Tekst pages immediately fell back to the tiny-skia path. The ab_glyph code path was effectively dead on Tekst.pdf — explaining the unchanged 3P/2F result. Type1 is a structural blocker for the partial swap on this PDF (and likely others using legacy Type1 fonts).
+- **2885 p0 catastrophic regression**: 0.35% → 4.94% diff (PASS → FAIL). The page is nominally raster-image-heavy (one of the 12P/2F pages from iter-15), but contains text overlay annotations rendered in TrueType subset fonts. ab_glyph's per-pixel blend produces visibly different glyph edges from tiny-skia's path fill; on this page, the glyph-edge differences compound into a ~14× diff increase. Reproduces deterministically.
+- **2885 p7 sub-failure**: 1.85% (PASS) → 2.30% (FAIL). Same mechanism — text edges shifted just enough to push it past the 2.0% threshold.
+- **rapport-constructie −2 PASS**: identical font set to Text pdf gecombineerd (Calibri/Arial subsets) so ab_glyph is active on most glyphs. Most pages drift up by 0.05–0.40pp, two pages cross the threshold (p15 and p18 in the original run, IIRC).
+- **Combinatie +1**: the page has very little text, mostly raster, so the ab_glyph delta on a few glyphs apparently nudged it just under the threshold. Genuine but tiny win.
+
+**Diagnostic instrumentation that pinned this down** (removed before revert):
+- Per-call counter inside `rasterize_glyph_ab_glyph`: `CALLS / REJECT_ROT / REJECT_SCALE / REJECT_PARSE`. Confirmed `REJECT_PARSE = 0` on Calibri/Arial fonts.
+- Per-font-entry trace at `FontEntry` construction: `[font_entry] base_font=... has_raw_bytes=true/false`. Showed UniviaPro pages had `has_raw_bytes=false` because Type1 doesn't fill the field.
+- Glyph outline-found counter (`OUTLINE_HIT` vs `OUTLINE_MISS`): on Text pdf gecombineerd, 95%+ of glyphs returned a valid `OutlinedGlyph` from ab_glyph — the path was active and producing distinct rasterization, but its output simply doesn't match MuPDF closely enough to flip pages.
+- Verified pixel-snap with `(ctm.sx · gx + ctm.tx).round()` improved most pages by 0.05–0.20pp vs unsnapped — but not enough to reverse the regressions.
+
+**Decision matrix → REVERT**:
+- Net pass count change: **−3 PASS** (55/106 vs baseline 58/106).
+- Real regressions on previously-correct pages: 2885 p0 (PASS→FAIL, +4.59pp diff), 2885 p7 (PASS→FAIL, +0.45pp diff), and 2 pages on rapport-constructie. Per the explicit "Real regressions on previously-correct → REVERT" rule, this is a clear revert.
+- Even the relaxed criteria don't apply: no major diff% reductions on text PDFs — the wins on Combinatie are tiny, and Tekst/Text PDF/rapport are mostly flat or worse.
+- Reverted `open-pdf-render/Cargo.toml` (`ab_glyph` line removed), `open-pdf-render/Cargo.lock` (transitive deps removed via `git checkout HEAD --`), `open-pdf-render/src/text_renderer.rs` (full revert via `git checkout HEAD --`), `open-pdf-render/src/renderer.rs` (removed `blend_pixel_coverage`), `open-pdf-render/src/font_parser.rs` (removed `raw_ttf_bytes` field and its initializers in both `parse_truetype` and `parse_type1`). Tauri app re-built at the reverted state and the full regression suite re-run; result was 58P/48F = **back to 58/106 baseline exactly**, confirming the revert is clean.
+
+**Architectural takeaways**:
+- **Partial rasterizer swap is technically feasible but doesn't move the needle**: ab_glyph DOES produce text glyph rasters that differ from tiny-skia's. The differences are real (per-pixel diff images visibly change). But the differences vs PyMuPDF/MuPDF are not systematically smaller — sometimes better, sometimes worse, with the worse cases pushing previously-passing pages over the failure threshold. ab_glyph and tiny-skia are both "correct" linear-coverage AA rasterizers; MuPDF's AA character is something else neither matches.
+- **Type1 is a structural blocker**: hayro-font's Type1 path doesn't yield TTF-parseable bytes, so any future ab_glyph-style swap (or fontdue, etc.) will not help PDFs that use Type1 fonts. Tekst.pdf is the canonical example. To attack the rasterizer mismatch on Tekst we'd have to either (a) re-implement Type1 → TTF transcoding, (b) write a custom rasterizer that consumes the hayro Type1 outlines directly, or (c) compile-time-link a system font as the substitute earlier. None of these is a small change.
+- **"Different rasterizer" ≠ "more like MuPDF"**: this iter empirically refutes the hope that swapping the rasterizer would close the AA gap. ab_glyph's gamma-correct coverage AA produces glyph edges that, on average, differ from PyMuPDF's by about the same amount as tiny-skia's — just in different pixels. The bias-band analysis from iter-17 (gamma post-correction) predicted this; iter-20 confirms it for a second rasterizer.
+- **What COULD work** (none feasible in single-iter): (a) statically linking MuPDF / FreeType for text only, (b) sub-pixel-positioned (LCD-stripe) rasterization with FreeType-style hinting, (c) FreeType bytecode-hinted glyphs through `freetype-rs` with the `OS/2` and `prep` tables of the embedded font respected. Each is a 200–500-line dependency drop-in; the fontdue alternative is similar in scope to ab_glyph and would likely produce similar results.
+
+**Status**: DONE_WITH_CONCERNS — partial-rasterizer-swap implemented end-to-end, verified architecturally sound (ab_glyph fires on Calibri/Arial subset pages, produces distinct rasterization, snapping helps), and reverted because the empirical pass-count change is **−3 (55 vs baseline 58)** with concrete regressions on 2885 p0/p7 and rapport-constructie. 8 consecutive NO_PROGRESS iterations now (15, 16, 17, 18, 19, 20).
+
+**Continue**: NO — pause. The "find a different rasterizer" channel is now empirically exhausted alongside the "compensate the existing rasterizer" channel from iter-17/18 and the "fix a spec bug at the interpreter" channel from iter-19. Three different attack strategies, all NO_PROGRESS. The remaining ~48 failures are inside the AA rasterization gap with no in-scope intervention that closes it; further progress requires either (a) accepting the 58/106 ceiling and lowering the 2.0% pass threshold, (b) a multi-iteration FreeType integration, or (c) revisiting the comparison framework to use a perceptual metric (SSIM, MS-SSIM) instead of per-pixel diff which over-weights AA halo differences.
+
+**Commit**: doc-only — adds this entry; iter-20 source changes reverted before commit.
