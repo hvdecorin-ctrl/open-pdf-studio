@@ -4,6 +4,16 @@ use crate::draw_commands::DrawCommandBuffer;
 use crate::renderer::SkiaRenderer;
 use crate::graphics_state::GraphicsStateStack;
 
+/// Per-render glyph path cache keyed by (font ObjectId, glyph_id). Speed
+/// iter-23 cache: building a `tiny_skia::Path` from `OutlineCommand`s is
+/// the largest single cost in text-heavy pages (~70% of render time on
+/// Zware vector PDF p3/p5). The cache lives for one page render so the
+/// same glyph outline is materialised at most once even when it appears
+/// thousands of times. The cached Path is in glyph-units; the per-call
+/// `concat_matrix(sh*tm[0], …)` then maps it to user space, so a single
+/// cached entry is reusable at every position and every scale.
+pub type GlyphPathCache = std::collections::HashMap<(lopdf::ObjectId, u32), tiny_skia::Path>;
+
 /// Resolve the advance width for a character code, in text-space units
 /// (i.e. fraction of `font_size`).
 ///
@@ -256,6 +266,7 @@ pub fn render_text_glyphs_skia(
     fill_rgba: (u8, u8, u8, u8),
     renderer: &mut SkiaRenderer,
     state: &mut GraphicsStateStack,
+    glyph_cache: Option<(lopdf::ObjectId, &mut GlyphPathCache)>,
 ) {
     let parsed = match &font_entry.parsed {
         Some(p) => p,
@@ -263,6 +274,10 @@ pub fn render_text_glyphs_skia(
     };
 
     let upm = parsed.units_per_em as f32;
+    let (font_id_opt, mut cache_opt) = match glyph_cache {
+        Some((id, cache)) => (Some(id), Some(cache)),
+        None => (None, None),
+    };
 
     for &byte in text_bytes {
         let glyph_id = match FontRegistry::char_to_glyph_id(font_entry, byte) {
@@ -286,25 +301,39 @@ pub fn render_text_glyphs_skia(
                 let gy = rise * tm[3] + tm[5];
                 let (sgx, sgy) = snap_glyph_origin(gx, gy, &state.current.ctm);
 
-                state.save();
-                let saved_fill = state.current.fill_color;
-                state.current.fill_color = fill_rgba;
-                state.concat_matrix(sh * tm[0], sh * tm[1], s * tm[2], s * tm[3], sgx, sgy);
+                // Build (or fetch) the cached glyph Path. Keyed by
+                // (font ObjectId, glyph_id) — both stable for the lifetime
+                // of the document so the cached Path is reusable across
+                // pages within the same render. We re-build the Path if
+                // there's no cache (e.g. inline font dict with no ObjectId).
+                let path_opt = if let (Some(font_id), Some(cache)) = (font_id_opt, cache_opt.as_deref_mut()) {
+                    Some(cache.entry((font_id, glyph_id as u32))
+                        .or_insert_with(|| build_glyph_path(&outline.commands))
+                        .clone())
+                } else {
+                    build_glyph_path_opt(&outline.commands)
+                };
 
-                renderer.begin_path();
-                for cmd in &outline.commands {
-                    match cmd {
-                        OutlineCommand::MoveTo(x, y) => renderer.move_to(*x, *y),
-                        OutlineCommand::LineTo(x, y) => renderer.line_to(*x, *y),
-                        OutlineCommand::CubicTo(x1, y1, x2, y2, x, y) => {
-                            renderer.cubic_to(*x1, *y1, *x2, *y2, *x, *y)
-                        }
-                        OutlineCommand::Close => renderer.close_path(),
-                    }
+                if let Some(path) = path_opt {
+                    // Speed iter-23: avoid the full state.save() / restore()
+                    // round-trip — that path clones the entire GraphicsState
+                    // including the clip-mask bitmap (≈ width × height bytes,
+                    // multiple MB on 2000-pixel renders). For thousands of
+                    // glyphs per page this dominated the render cost.
+                    // Instead, save just the CTM + fill_color, mutate, fill,
+                    // and restore the two scalars by hand.
+                    let saved_ctm = state.current.ctm;
+                    let saved_fill = state.current.fill_color;
+                    state.current.fill_color = fill_rgba;
+                    state.current.ctm = state.current.ctm.pre_concat(
+                        tiny_skia::Transform::from_row(
+                            sh * tm[0], sh * tm[1], s * tm[2], s * tm[3], sgx, sgy,
+                        ),
+                    );
+                    renderer.fill_cached_path(&path, &state.current, false);
+                    state.current.ctm = saved_ctm;
+                    state.current.fill_color = saved_fill;
                 }
-                renderer.fill(&state.current, false);
-                let _ = saved_fill; // restored via state.restore() below
-                state.restore();
             }
 
             // Width source: PDF /Widths array first, embedded font hmtx
@@ -320,6 +349,36 @@ pub fn render_text_glyphs_skia(
             tm[5] += tx * tm[1];
         }
     }
+}
+
+/// Build a tiny-skia `Path` for a single glyph from its outline commands.
+/// Used by the per-render glyph path cache. Returns a guaranteed-non-empty
+/// Path; callers that need to handle the empty-outline case should use
+/// `build_glyph_path_opt`.
+fn build_glyph_path(cmds: &[OutlineCommand]) -> tiny_skia::Path {
+    build_glyph_path_opt(cmds).unwrap_or_else(|| {
+        // The cache contract assumes the caller already filtered empty
+        // outlines (commands.is_empty() check at the call site). If we
+        // somehow get here, return a dummy single-point path so the
+        // type signature stays infallible — it will never paint anything.
+        let mut pb = tiny_skia::PathBuilder::new();
+        pb.move_to(0.0, 0.0);
+        pb.line_to(0.0, 0.0);
+        pb.finish().expect("dummy 1-pt path")
+    })
+}
+
+fn build_glyph_path_opt(cmds: &[OutlineCommand]) -> Option<tiny_skia::Path> {
+    let mut pb = tiny_skia::PathBuilder::new();
+    for cmd in cmds {
+        match cmd {
+            OutlineCommand::MoveTo(x, y) => pb.move_to(*x, *y),
+            OutlineCommand::LineTo(x, y) => pb.line_to(*x, *y),
+            OutlineCommand::CubicTo(x1, y1, x2, y2, x, y) => pb.cubic_to(*x1, *y1, *x2, *y2, *x, *y),
+            OutlineCommand::Close => pb.close(),
+        }
+    }
+    pb.finish()
 }
 
 /// Snap the per-glyph origin to the nearest device pixel.
@@ -398,6 +457,7 @@ pub fn render_cid_text_glyphs_skia(
     fill_rgba: (u8, u8, u8, u8),
     renderer: &mut SkiaRenderer,
     state: &mut GraphicsStateStack,
+    glyph_cache: Option<(lopdf::ObjectId, &mut GlyphPathCache)>,
 ) {
     let parsed = match &font_entry.parsed {
         Some(p) => p,
@@ -405,6 +465,10 @@ pub fn render_cid_text_glyphs_skia(
     };
 
     let upm = parsed.units_per_em as f32;
+    let (font_id_opt, mut cache_opt) = match glyph_cache {
+        Some((id, cache)) => (Some(id), Some(cache)),
+        None => (None, None),
+    };
 
     let mut i = 0;
     while i + 1 < text_bytes.len() {
@@ -430,23 +494,29 @@ pub fn render_cid_text_glyphs_skia(
                 let gy = rise * tm[3] + tm[5];
                 let (sgx, sgy) = snap_glyph_origin(gx, gy, &state.current.ctm);
 
-                state.save();
-                state.current.fill_color = fill_rgba;
-                state.concat_matrix(sh * tm[0], sh * tm[1], s * tm[2], s * tm[3], sgx, sgy);
+                let path_opt = if let (Some(font_id), Some(cache)) = (font_id_opt, cache_opt.as_deref_mut()) {
+                    Some(cache.entry((font_id, glyph_id as u32))
+                        .or_insert_with(|| build_glyph_path(&outline.commands))
+                        .clone())
+                } else {
+                    build_glyph_path_opt(&outline.commands)
+                };
 
-                renderer.begin_path();
-                for cmd in &outline.commands {
-                    match cmd {
-                        OutlineCommand::MoveTo(x, y) => renderer.move_to(*x, *y),
-                        OutlineCommand::LineTo(x, y) => renderer.line_to(*x, *y),
-                        OutlineCommand::CubicTo(x1, y1, x2, y2, x, y) => {
-                            renderer.cubic_to(*x1, *y1, *x2, *y2, *x, *y)
-                        }
-                        OutlineCommand::Close => renderer.close_path(),
-                    }
+                if let Some(path) = path_opt {
+                    // See comment in render_text_glyphs_skia: avoid full
+                    // state.save()/restore() to skip cloning the clip mask.
+                    let saved_ctm = state.current.ctm;
+                    let saved_fill = state.current.fill_color;
+                    state.current.fill_color = fill_rgba;
+                    state.current.ctm = state.current.ctm.pre_concat(
+                        tiny_skia::Transform::from_row(
+                            sh * tm[0], sh * tm[1], s * tm[2], s * tm[3], sgx, sgy,
+                        ),
+                    );
+                    renderer.fill_cached_path(&path, &state.current, false);
+                    state.current.ctm = saved_ctm;
+                    state.current.fill_color = saved_fill;
                 }
-                renderer.fill(&state.current, false);
-                state.restore();
             }
 
             // Width source: PDF /W array first (keyed by CID), embedded

@@ -142,6 +142,20 @@ impl SkiaRenderer {
         self.pixmap.fill_path(&path, &paint, rule, gs.ctm, gs.clip_path.as_ref());
     }
 
+    /// Fill a pre-built path. Used by the per-render glyph path cache
+    /// (`text_renderer::render_*_glyphs_skia`) to avoid re-tessellating
+    /// the same glyph outline for every instance on a page. Behaviour
+    /// matches `fill` except the path is supplied directly rather than
+    /// taken from the in-progress `path_builder`.
+    pub fn fill_cached_path(&mut self, path: &Path, gs: &GraphicsState, even_odd: bool) {
+        let mut paint = Paint::default();
+        let (r, g, b, a) = gs.fill_color;
+        paint.set_color_rgba8(r, g, b, Self::blend_alpha(a, gs.effective_fill_alpha()));
+        paint.anti_alias = true;
+        let rule = if even_odd { FillRule::EvenOdd } else { FillRule::Winding };
+        self.pixmap.fill_path(path, &paint, rule, gs.ctm, gs.clip_path.as_ref());
+    }
+
     /// Resolve the user-space stroke width applied to tiny_skia.
     ///
     /// PDF spec section 8.4.3.2: `w 0` (line width 0) means "thinnest line

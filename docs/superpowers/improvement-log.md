@@ -861,3 +861,69 @@ Identical numbers reproduced for `rapport-constructie p8` (also 9.59% / 6.34%) �
 **Continue**: NO — call architectural complete on the rasterizer-quality cluster. 9 consecutive NO_PROGRESS iterations on this cluster (15, 16, 17, 18, 19, 20, 21, 22) confirm the diff floor for tiny-skia + MuPDF comparison is around 5-7% on text-rich pages with thin rules and tight color bands. The path forward is one of: (a) accept the ~58/106 baseline once the in-flight scale fix lands, (b) lower the per-page pass threshold from 2.0% to 5.0% for text-rich pages, (c) switch the comparison metric to perceptual (SSIM/MS-SSIM) which weights sub-pixel halos lower, or (d) the multi-iteration FreeType-or-MuPDF text rasterizer integration described in iter-20.
 
 **Commit**: adds `render_page_literal.rs` example + this log entry. No production source change.
+
+## Speed Iter 23 (2026-05-08) — DONE
+
+**First iteration of NEW speed-optimization loop.** Goal: reduce per-page render time by ≥30% without quality regression (must hold 58/106 PASS baseline).
+
+**Profile baseline** (top slowest pages, single render at scale=2000/w_pt):
+| PDF + page | Before | Notes |
+|------------|--------|-------|
+| Zware vector PDF p5 | 2867 ms | 171 unique 970×993 JPEG tiles + heavy text |
+| Zware vector PDF p3 | 2672 ms | 171 unique 972×993 JPEG tiles |
+| Zware vector PDF p4 | 1203 ms | 151 image XObjects |
+| 2885 Demo project p4 | 548 ms | text-heavy, 1 Form XObject |
+| 2885 Demo project p2 | 418 ms | text-heavy |
+| Barn Relocation p3 | 377 ms | image-heavy |
+| Barn Relocation p2 | 297 ms | image-heavy |
+
+**Bisection-driven hypothesis**: env-gated skip-flags for `Do`/`S`/`f`/text in interpreter showed:
+- Skip text only (Zware p5): 2868→885 ms → **text rendering is ~70% of cost on Zware p5**
+- Skip images only: 2868→1985 ms → images are ~30% of cost
+- Skip stroke/fill alone: <1% effect (the AutoCAD-style dense vector strokes were NOT the bottleneck despite intuition)
+
+**Drilldown profile of the text path** (see `examples/profile_zware_drilldown.rs`):
+- Per-glyph `state.save()` clones the entire `GraphicsState` including the `clip_path: Option<Mask>` bitmap. For 2000×1415 renders, a `Mask` is ~3 MB. With ~12 000 glyph fills per Zware p5, that's tens of GB of memory traffic per page.
+- `tiny_skia::Path` is rebuilt from `OutlineCommand`s on every glyph instance — same letter rebuilt thousands of times.
+
+**Fix**:
+1. `text_renderer.rs`: replaced `state.save() / state.concat_matrix() / state.restore()` per-glyph with explicit save/restore of just the CTM + fill_color (two scalars). Skips the clip-mask clone entirely.
+2. Added a per-render glyph path cache `HashMap<(font_id, glyph_id), tiny_skia::Path>` so each unique glyph builds its tiny-skia Path at most once per page.
+3. New `SkiaRenderer::fill_cached_path(path, gs, even_odd)` that takes a pre-built Path instead of consuming the `path_builder`.
+4. Tightened `Interpreter::premultiply_with_smask` hot loop: branch-hoisted dimming/cutout paths, `chunks_exact_mut(4)` over the rgba buffer, no per-pixel bounds checks. Smaller win than the text fix (~5% of total), but free.
+5. Added `FontRegistry::get_font_with_id` so the interpreter can hand the cache key down to `text_renderer` without an extra dict resolve.
+
+**Speed results** (full release builds, identical bench setup as baseline):
+| PDF + page | Before | After | Δ |
+|------------|--------|-------|---|
+| **Zware p5** | 2867 ms | **896 ms** | **−69%** (3.2× faster) |
+| **Zware p3** | 2672 ms | **870 ms** | **−67%** |
+| **Zware p2** | 1604 ms | **761 ms** | **−53%** |
+| Zware vector PDF total (8 pages) | 10 921 ms | **4 061 ms** | **−63%** |
+| **2885 Demo p4** | 548 ms | **63 ms** | **−89%** (8.7× faster) |
+| 2885 Demo total (8 pages) | 2 116 ms | **721 ms** | **−66%** |
+| Barn Relocation total (7 pages) | 1 744 ms | 1 644 ms | −6% (already fast — image-bound, not text) |
+
+**Quality gate**: all 8 PDFs render without crashes, panics, or visible artefacts. Regression test (PyMuPDF reference + 1.0σ Gaussian, 30 pixel-tol, 2.0% fail-pct, 106 pages):
+- **Before**: 58/106 PASS (architectural ceiling per iter 15-22)
+- **After**: **58/106 PASS — IDENTICAL** (no regression)
+
+**Memory peak**: glyph-cache holds at most O(unique_glyphs × avg_path_size) = ~few MB per render — well within the 2× baseline allowance. The cache is dropped at end of page render.
+
+**Files touched**:
+- `open-pdf-render/src/renderer.rs` — added `fill_cached_path()`.
+- `open-pdf-render/src/text_renderer.rs` — added `GlyphPathCache`, `build_glyph_path[_opt]`, removed per-glyph `state.save()` round-trip.
+- `open-pdf-render/src/interpreter.rs` — added per-render glyph cache, threaded it through `execute_show_string`/`execute_show_array`, rewrote `premultiply_with_smask` inner loop.
+- `open-pdf-render/src/fonts.rs` — added `get_font_with_id()` (additive — old `get_font` kept as passthrough).
+- `open-pdf-render/examples/profile_render.rs`, `profile_render_detail.rs`, `profile_phases.rs`, `profile_zware_drilldown.rs`, `count_image_xrefs.rs` — diagnostic harnesses.
+- `scripts/render_test_iter23.py` — standalone regression-test runner that uses the literal-renderer binary directly (no MCP-server spin-up needed). 58/106 baseline confirmed.
+- `docs/superpowers/improvement-log.md` — this entry.
+
+**Files explicitly NOT touched** (in-flight per hygiene rule): `saver.js`, `manager.js`, `hand-tool.js`, `vector-renderer.js`, `left-panel.js`, `font_parser.rs`, `mcp_server.rs`, `Cargo.lock` (both), `Cargo.toml`. The user's release exe (PID 13424) was left running; verification used the standalone python runner against the literal-renderer binary instead of spinning up a competing MCP server.
+
+**Continue**: YES — clear paths forward for further speed work:
+- Image-heavy pages (Zware p3-p6, Barn p2-p6): SMask premultiply-with-resample loop still allocates a full RGBA buffer per image. Could be moved off the main thread via rayon (decode in parallel, draw_pixmap sequentially).
+- Image XObject re-decoding: Zware tiles all unique, so no obvious cache; but the Flate+SMask DCT decode (~770 ms total per page) could be parallelised across the 171 distinct images.
+- Vector-only pages (Barn): minimal headroom remaining — page already rendering at <50 ms on simpler pages; no clear hot loop.
+
+**Status**: **DONE** — ≥30% speedup achieved on the slowest pages (Zware p5: −69%, 2885 p4: −89%), 58/106 regression baseline preserved, no panics or crashes.

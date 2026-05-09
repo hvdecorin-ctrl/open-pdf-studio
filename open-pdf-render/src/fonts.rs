@@ -67,12 +67,24 @@ impl FontRegistry {
         doc: &Document,
         resources: &Dictionary,
     ) -> Option<Arc<FontEntry>> {
+        self.get_font_with_id(name, doc, resources).map(|(_id, e)| e)
+    }
+
+    /// Same as `get_font` but also returns the font's global `ObjectId`
+    /// when available. Used by the per-render glyph path cache so it can
+    /// safely key on a stable identifier across pages.
+    pub fn get_font_with_id(
+        &mut self,
+        name: &str,
+        doc: &Document,
+        resources: &Dictionary,
+    ) -> Option<(Option<ObjectId>, Arc<FontEntry>)> {
         let (font_id_opt, font_dict) = Self::resolve_font_dict_with_id(name, doc, resources)?;
 
         // Cache hit (only possible for indirectly-referenced fonts)
         if let Some(font_id) = font_id_opt {
             if let Some(entry) = self.fonts.get(&font_id) {
-                return Some(entry.clone());
+                return Some((Some(font_id), entry.clone()));
             }
         }
 
@@ -84,7 +96,7 @@ impl FontRegistry {
             self.fonts.insert(font_id, entry.clone());
         }
 
-        Some(entry)
+        Some((font_id_opt, entry))
     }
 
     /// Build a FontEntry from a font dictionary. This is the expensive
