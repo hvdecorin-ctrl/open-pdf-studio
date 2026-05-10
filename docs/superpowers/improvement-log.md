@@ -1839,3 +1839,61 @@ dy=+1: 10.55 / 9.40 / 10.47
 
 **Continue**: **NO — definitive architectural stop**. Five consecutive forensic studies (31, 34, 35, 36, 37) on the worst remaining failures across three distinct content classes (vector strokes, text glyphs, image rasters) all conclude rasterizer-implementation noise, not feature gaps. Closing the residual would require swapping tiny-skia with a rasterizer that emulates MuPDF's pixel-coverage algorithm. The kernel improvement loop should be ended and the architectural-stop recorded in the controlling document. Recommend the next phase of work be either (a) a rasterizer-replacement spike, or (b) acceptance of the current 60/106 baseline as the ceiling for the current rasterizer.
 
+---
+
+## Quality iter 38 — 2026-05-08 — `force_hq_pipeline` empirical test, REVERTED, TRULY_CEILING_REACHED
+
+**Mandate**: User invoked /loop again post-iter-37 looking for a "single-iter creative angle" not yet tried. Brainstorm 3-5 candidates, pick the most promising, try it, document.
+
+**Brainstorm — 5 candidates** (all single-iter low-risk):
+
+1. **`force_hq_pipeline=true` on solid-color paint sites** — tiny-skia has a `u16` fast pipeline (default) and an `f32` HQ pipeline. Per `tiny-skia-0.11.4/src/painter.rs:55-70`, the u16 pipeline "is usually way faster, but less precise. Which can lead to slight differences." Iters 31/34/35/36/37 all classified the residue as exactly that — sub-pixel coverage roundoff. NEVER TRIED. Cost: 6 boolean flips + comments.
+2. **`anti_alias=true` on image-fill path** (currently `false`) — would re-AA image edges. Risky: conflicts with iter-32 outward-rounding strategy that explicitly relies on non-AA pixel-center semantics.
+3. **PyMuPDF reference config tweaks** (dpi vs Matrix, csGRAY vs csRGB) — comparison-side, not kernel.
+4. **Fractional `target_width` (1999/2001)** — comparison-side gimmick.
+5. **Background fill change** — already done at `renderer.rs:15` (`pixmap.fill(Color::WHITE)`).
+
+**Pick: candidate 1** — directly addresses the precise failure mode the last 5 forensics identified, single-line per paint site, zero algorithmic risk.
+
+**Implementation**: Set `paint.force_hq_pipeline = true` on all 6 solid-color paint sites in `open-pdf-render/src/renderer.rs`:
+- `fill` (path-builder fill)
+- `fill_cached_path` (per-glyph fill from glyph cache)
+- `stroke_cached_path_with_width` (text-mode stroke)
+- `stroke` (path-builder stroke)
+- `fill_and_stroke` × 2 (the combined operator)
+
+The image-pattern path already routes through tiny-skia's HQ shader internally per `painter.rs:497`, so `force_hq_pipeline` was correctly left `false` there.
+
+**Verification — like-for-like A/B**:
+- **Baseline** (revert renderer.rs, rebuild): `60/106 PASS`.
+- **With `force_hq_pipeline=true`** (re-apply, rebuild): `60/106 PASS`.
+- 26 pages had per-pixel diff% changes (most by 0.01-0.07%):
+  - **Improvements** (ΔAA noise reduced): Text pdf gec p6 / rapport p6: 2.50% → 2.49%; Tech tek p1: 1.22% → 1.21%; Tech tek p2: 0.76% → 0.75%; Barn p1: 0.82% → 0.81%.
+  - **Regressions**: Tekst p1: 1.26% → 1.28%; Tech tek p0: 0.78% → 0.79%; Barn p6: 1.38% → 1.39%; **all 18 Zware vector PDF pages WORSE by 0.01-0.22%**, with **p18 +0.22%** (3.03% → 3.25%) the largest single regression in the entire corpus.
+- The HQ pipeline shifts AA coverage roundoff in a different direction than MuPDF's reference math — for text glyphs the shift is mostly neutral (text-heavy Tekst p2/p3 didn't even appear in the diff list, identical numbers between u16 and HQ runs); for engineering-drawing vector strokes (Zware vector PDF) the shift is uniformly *away from* the reference.
+
+**Decision**: **REVERT**. Per loop's decision matrix: "Pass count drops → REVERT" — pass count tied at 60, but the systemic regression on all 18 Zware vector pages without offsetting borderline-flip wins makes this a net negative. Reverted via `git checkout open-pdf-render/src/renderer.rs`.
+
+**Architectural verdict — TRULY_CEILING_REACHED**:
+
+This iter empirically validates the iter-37 architectural stop with a *new measurement type* (not another forensic study, but an actual code-change A/B). The most surgical possible kernel-side intervention against the precise failure mode that 5 prior forensics pinpointed produces **zero PASS-count change** and **slight vector regression**. The conclusion that the residue is intrinsic u16-vs-f32 coverage-algorithm-implementation noise is now confirmed bidirectionally:
+
+- *Forensic evidence* (iters 31/34/35/36/37): the residual diffs are sub-pixel coverage roundoff at every AA edge, no positional/encoding/feature gap.
+- *Mechanistic evidence* (iter 38): switching tiny-skia from its u16 pipeline to its f32 HQ pipeline does not narrow the gap to MuPDF — it merely shifts the noise pattern. tiny-skia's f32 coverage math is itself not isomorphic to MuPDF's f32 coverage math. The gap is not "u16 precision" — it is "coverage-algorithm shape."
+
+Closing this gap requires either:
+- (a) Replacing tiny-skia with a rasterizer that explicitly emulates MuPDF's coverage algorithm (e.g. skia-safe with the matching anti-aliasing config, or a custom fork). This is the multi-iter migration the controlling document already mentions.
+- (b) Accepting the 60/106 baseline as the empirical ceiling at tiny-skia, and reframing future work on either feature surface (annotations, forms, transparency edge cases) or test-suite expansion (more PDFs to cover under-tested code paths).
+
+**Files touched**: `docs/superpowers/improvement-log.md` (this entry only). `renderer.rs` was experimentally modified, A/B tested, then reverted to its pre-iter-38 state.
+
+**Status**: **TRULY_CEILING_REACHED**. The kernel improvement loop has now been confirmed at ceiling six independent ways:
+1. Iter 31 (vector dashed-line forensic — no bug).
+2. Iter 34 (ForceBold flag plumbing — no font in corpus has the flag).
+3. Iter 35 (Type1 stem darkening — moved diff *away from* PyMuPDF, reverted).
+4. Iter 36 (Tekst p3 forensic — 99.7% AA edge thinning, 0.016% truly-missing).
+5. Iter 37 (2885 p8 forensic — uniform +1 brightness shift on watercolor raster).
+6. Iter 38 (force_hq_pipeline empirical test — slight vector regression, zero PASS gain).
+
+**Recommendation to loop driver**: STOP. Spawn either (a) a rasterizer-replacement spike if pixel-perfect parity is critical, or (b) reframe future iters around feature surface and test-suite expansion. Continuing with single-iter kernel tweaks at this ceiling is wasted effort.
+
