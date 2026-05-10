@@ -1760,3 +1760,82 @@ The two rasterizers will sample fractional glyph coverage slightly differently �
 
 **Continue**: **NO** — STOP. Iter 31, 34, 35, 36 (4 of last 6 iters) all returned NO_FEATURE_GAP_FOUND. The stop rule from line 5 — "3 consecutive iterations with no progress" — was reached at iter-36. Concrete wins from iter 28-30, 32-33 are preserved. Remaining < 2.5 %–6 % failures on text-heavy pages (Tekst p2/p3, Text pdf gec p6, etc.) are anti-aliasing roundoff between hayro/tiny-skia and MuPDF and require a rasterizer swap, not a feature fix. Recommend ending the iteration loop and recording the architectural-stop in the loop's controlling document.
 
+---
+
+## Quality iter 37 — 2026-05-09 — 2885 Demo project p8 forensic study — NO_FEATURE_GAP_FOUND
+
+**Mandate**: One last fresh forensic target — `2885 Demo project.pdf` p8 — was the only ~6% failure that had not been pixel-microscoped. If a concrete spec/feature gap is found, fix it; otherwise definitive architectural stop.
+
+**Pass count**: **60/106** (held — no change from iter-36's 58 baseline; gain from intervening fixes preserved). 2885 p8 sits at **6.06 %**.
+
+**Page anatomy** (pikepdf):
+- Page 8 has zero fonts, zero annotations, one Form XObject `/X11` (transparency group, bbox 0..4960 × 0..3510).
+- `/X11` contains: outer Form `/X7` (full-page, transparency group) + `/X8` (small clipped circle for "DEMO WIJK" badge) + a small Helvetica text strip.
+- `/X7` is the watercolor site plan: a single **ICCBased 1810×1450 8-bit image with an 8-bit SMask** (1810×1450), drawn under an `/ExtGState /G3` (BM=Normal, ca=1).
+- `/X8` is a flat teal circle (`.3451 .6863 .6275 rg`).
+
+There are no fonts, no shadings, no patterns, no exotic blend modes — just one ICCBased+SMask raster drawn into a transparency group.
+
+**Spatial concentration** (10×10 grid, % diff per cell):
+```
+cy=0  0.4  0.2  0.3  0.0  0.0  0.0  0.0  0.0  0.0  0.0
+cy=1  0.0  0.0  8.1 12.1 13.5  5.9  6.9  6.4  0.0  0.0
+cy=2  0.2  0.0  7.9  5.8 11.3  4.5  7.3  9.0 15.0  0.9
+cy=3  0.0  0.0  0.0  1.7  7.1 13.3 10.4 20.0  3.7  2.3
+cy=4  0.0  0.0  4.2 14.2 19.2 16.0  9.2 27.7  9.8  7.3
+cy=5  2.1  5.0 16.7 18.5 13.9 10.4 12.8 19.6 19.3 21.8
+cy=6  5.7 19.5 20.8 12.2  4.3  1.1  9.1 14.9 28.2 15.8
+cy=7  6.6 20.2 27.3 15.8  3.7  0.8 10.6 21.9 23.4  3.3
+cy=8 15.9 15.8 14.6 12.3  7.5  7.4  9.2 10.6  5.8  5.9
+cy=9  5.9 14.4  4.7  9.3  6.4  1.6  5.2  5.0  2.0  4.6
+```
+
+Diff is concentrated **across the entire watercolor body** (rows 1-9, cols 1-9). Not a local hotspot — it is the high-frequency edge content of the embedded raster.
+
+**Worst cell (8,6)** — `iter37_2885_p8_worst_cell.png`: hand-drawn watercolor trees, paths, building outlines. REF and APP are visually indistinguishable to the naked eye; the differ pixels are ~2-level brightness deltas on the edges of trees and roof lines.
+
+**Color & brightness analysis**:
+- 240928 diff pixels (delta > 30).
+- REF mean color in diff: `(136.6, 142.9, 127.3)` — generic green-grey watercolor.
+- APP mean color in diff: `(138.7, 144.9, 129.3)` — same hue, **+2.1 / +2.0 / +2.0 brighter on all channels equally** (uniform-channel shift = brightness, NOT a color/ICC-handling bug).
+- Non-white image-region pixels (759k samples, REF vs APP): mean shift `(+1.12, +1.10, +1.10)` — **flat ~1-pixel uniform brightness offset**, no per-channel deviation.
+
+**Other regions**:
+- DEMO WIJK teal circle (200×300 region): mean delta **0.18**, only 93 diff pixels (the small Helvetica text). Vector circle is rendered correctly.
+- White margin (rows 0..100): mean delta **0.07**. Whitespace exact.
+
+**Alignment (sub-pixel positioning) test** — shift APP by dy,dx ∈ [-2..2] and compute % diff:
+```
+dy=-1: 9.94 / 7.97 / 9.43
+dy= 0: 6.56 / 2.77 / 6.98
+dy=+1: 10.55 / 9.40 / 10.47
+```
+(0,0) is the **strict global minimum** in a smooth basin → rasterized image is **pixel-perfect aligned** to MuPDF. There is no positional bug to fix.
+
+**Delta distribution** (2,832,000 total pixels):
+- delta 0: 1,152,565 (40.7 %)
+- delta 1-15: 1,332,875 (47.1 %) — sub-threshold AA
+- delta 16-30: 105,632 (3.7 %) — threshold AA
+- delta 31-60: 108,035 (3.8 %) — borderline diff
+- delta 61-100: 71,278 (2.5 %)
+- delta 101-200: 57,689 (2.0 %)
+- delta 201+: 3,926 (0.14 %) — only ~4k truly different pixels
+
+**Failure-mode classification**: **Soft-masked ICCBased raster image resampling noise.** The watercolor JPEG/PNG source has high-frequency multi-coloured texture; downsampling 1810×1450 → ~1700×1400 with a soft-mask multiply produces 1-2 brightness deltas at every textural edge. Both rasterizers (hayro/tiny-skia and MuPDF) sample correctly; their bilinear/AA roundoff differs by sub-pixel amounts at every textured edge, multiplied across thousands of edges.
+
+**Why this is not a fixable feature**:
+- No color shift (channel deltas are equal).
+- No positional offset (alignment basin minimum at 0,0).
+- No clipping/SMask mask error (whitespace, vector circle, ICC handling all exact).
+- No transparency-group composition error (teal flat circle blends correctly).
+- The +1 brightness uniform shift across an entire image with thousands of edges produces visually indistinguishable output but a quantifiable diff%.
+
+**Files touched**: none (no code change — pure forensics).
+- `docs/superpowers/improvement-log.md` — this entry only.
+
+**Verification**: Test run completed at start of iter (`60/106`). No code modified, no new build needed.
+
+**Status**: **NO_FEATURE_GAP_FOUND** — fifth NO_FEATURE_GAP iter (31, 34, 35, 36, 37). The architectural stop reached at iter-36 is now confirmed against the only remaining un-microscoped failure target. The 2885 p8 6 % gap is **not** a feature gap — it is image-resampling noise on a soft-masked watercolor raster. The remaining failure budget across all 46 failing pages is now categorised as: text AA roundoff (Tekst p2/p3, Text pdf gec, Barn pages), image-resampling noise (2885 p8/p13, Zware vector p18), and miscellaneous border AA (Original Bouwkundig, Voorbeeld, etc.).
+
+**Continue**: **NO — definitive architectural stop**. Five consecutive forensic studies (31, 34, 35, 36, 37) on the worst remaining failures across three distinct content classes (vector strokes, text glyphs, image rasters) all conclude rasterizer-implementation noise, not feature gaps. Closing the residual would require swapping tiny-skia with a rasterizer that emulates MuPDF's pixel-coverage algorithm. The kernel improvement loop should be ended and the architectural-stop recorded in the controlling document. Recommend the next phase of work be either (a) a rasterizer-replacement spike, or (b) acceptance of the current 60/106 baseline as the ceiling for the current rasterizer.
+
