@@ -68,6 +68,18 @@ function setupCanvasHiDPI(canvas, width, height) {
 // Track current render task to cancel if needed
 let currentRenderTask = null;
 
+// Returns true if `doc` is no longer the active document. Use this after every
+// `await` in render code to abort late completions whose results would corrupt
+// the SHARED #pdf-canvas / pdf-viewport singleton with a different document's
+// content. Without this, a slow IPC chain (analyze_page_type +
+// extract_draw_commands + prepareImages) for tab A can finish AFTER the user
+// switched to tab B, then write A's filePath into the viewport singleton,
+// making the RAF render loop draw A's pages on B's tab — the ghost/bleed-through
+// the user reports when switching tabs rapidly across multiple PDFs.
+function _isStaleDoc(doc) {
+  return doc !== state.documents[state.activeDocumentIndex];
+}
+
 
 // ─── Main-thread jank detector ───────────────────────────────────────────
 // Fires every 500ms. If a tick takes >1s to arrive, the main thread was blocked.
@@ -115,6 +127,7 @@ export async function renderPage(pageNum) {
   }
 
   const page = await pdfDoc.getPage(pageNum);
+  if (_isStaleDoc(doc)) return; // user switched tabs while we awaited PDF.js page
   const extraRotation = getPageRotation(pageNum);
   const viewportOpts = { scale };
   if (extraRotation) {
@@ -155,10 +168,12 @@ export async function renderPage(pageNum) {
       pauseThumbnails();
       console.log(`[PERF] renderPage(${pageNum}) trying vector path: ${(performance.now() - _rp0).toFixed(0)}ms`);
       const vr = await import('./vector-renderer.js');
+      if (_isStaleDoc(doc)) { resumeThumbnails(); return; }
       const userRotation = getPageRotation(pageNum);
       if (!vr.hasCachedCommands(doc.filePath, pageNum, userRotation)) {
         console.log(`[PERF] renderPage(${pageNum}) analyze_page_type START: ${(performance.now() - _rp0).toFixed(0)}ms`);
         const pageType = await invoke('analyze_page_type', { path: doc.filePath, pageIndex: pageNum - 1 });
+        if (_isStaleDoc(doc)) { resumeThumbnails(); return; }
         console.log(`[PERF] renderPage(${pageNum}) analyze_page_type=${pageType}: ${(performance.now() - _rp0).toFixed(0)}ms`);
         if (pageType === 'vector') {
           console.log(`[PERF] renderPage(${pageNum}) extract_draw_commands START: ${(performance.now() - _rp0).toFixed(0)}ms`);
@@ -167,12 +182,14 @@ export async function renderPage(pageNum) {
             pageIndex: pageNum - 1,
             rotation: userRotation,
           });
+          if (_isStaleDoc(doc)) { resumeThumbnails(); return; }
           const cmdBytes = cmdData instanceof Uint8Array ? cmdData : new Uint8Array(cmdData);
           console.log(`[PERF] renderPage(${pageNum}) extract_draw_commands DONE (${cmdBytes.length} bytes): ${(performance.now() - _rp0).toFixed(0)}ms`);
           vr.cacheCommands(doc.filePath, pageNum, cmdBytes, userRotation);
           // Pre-decode any images in the command buffer (async, must complete before render)
           console.log(`[PERF] renderPage(${pageNum}) prepareImages START: ${(performance.now() - _rp0).toFixed(0)}ms`);
           await vr.prepareImages(doc.filePath, pageNum, userRotation);
+          if (_isStaleDoc(doc)) { resumeThumbnails(); return; }
           console.log(`[PERF] renderPage(${pageNum}) prepareImages DONE: ${(performance.now() - _rp0).toFixed(0)}ms`);
         }
       }
@@ -181,6 +198,11 @@ export async function renderPage(pageNum) {
         const dims = vr.getCachedPageDimensions(doc.filePath, pageNum, userRotation);
         if (dims) {
           const { initViewport, setPage, wireEvents, viewport: pdfVP } = await import('./pdf-viewport.js');
+          // CRITICAL: don't write a stale doc's filePath into the viewport
+          // singleton. If we do, the RAF render loop will then draw the OLD
+          // doc's content on the SHARED #pdf-canvas — that's the ghost the
+          // user reports when switching tabs rapidly across multiple PDFs.
+          if (_isStaleDoc(doc)) { resumeThumbnails(); return; }
 
           // Initialize viewport (idempotent — safe to call multiple times).
           // Call redrawAnnotations SYNCHRONOUSLY inside the viewport's RAF tick
@@ -207,10 +229,13 @@ export async function renderPage(pageNum) {
             const rustTextOk = await createTextLayerFromRust(
               canvasContainer || container, pageNum, dims.w, dims.h
             );
+            if (_isStaleDoc(doc)) { resumeThumbnails(); return; }
             if (!rustTextOk) {
               const page = await pdfDoc.getPage(pageNum);
+              if (_isStaleDoc(doc)) { resumeThumbnails(); return; }
               const textViewport = page.getViewport({ scale: 1.0 });
               await createSinglePageTextLayer(page, textViewport);
+              if (_isStaleDoc(doc)) { resumeThumbnails(); return; }
             }
             if (window.__pdfViewport) window.__pdfViewport.dirty = true;
           } catch (e) {
@@ -232,6 +257,13 @@ export async function renderPage(pageNum) {
   }
 
   if (!_skipBitmapRender && _canUseTauri && _hasFilePath) {
+    // Deactivate the vector viewport singleton — otherwise its RAF render loop
+    // will keep clearing & redrawing the previous (vector) document's content
+    // on top of the bitmap pixels we're about to write to the SHARED canvas.
+    // This is the cross-format ghost: open vector PDF A, then raster PDF B —
+    // any resize/dirty event redraws A over B. Reactivated by setPage() in
+    // the vector path on the next vector-doc renderPage().
+    if (window.__pdfViewport) window.__pdfViewport.active = false;
     console.log(`[render] Rust render: page=${pageNum}, scale=${scale}, dpr=${dpr}, path=${doc.filePath}`);
     try {
       // Rust returns RGBA bytes directly as Uint8Array with 8-byte header (width u32 LE + height u32 LE)
@@ -240,6 +272,7 @@ export async function renderPage(pageNum) {
         pageIndex: pageNum - 1,
         scale: scale,
       });
+      if (_isStaleDoc(doc)) return; // tab switched while Rust was rendering
       const _t1 = performance.now();
 
       // Rust returns "tempPath|width|height" string
@@ -250,8 +283,10 @@ export async function renderPage(pageNum) {
 
       // Read RGBA from temp file via Tauri FS (fast binary)
       await invoke('allow_fs_scope', { path: tempPath });
+      if (_isStaleDoc(doc)) return;
       const { readBinaryFile } = await import('../core/platform.js');
       const fileBytes = await readBinaryFile(tempPath);
+      if (_isStaleDoc(doc)) return;
       const _t2 = performance.now();
 
       if (fileBytes && fileBytes.length > 8) {
@@ -260,6 +295,7 @@ export async function renderPage(pageNum) {
         if (rustW * rustH * 4 !== rgba.length) {
           console.warn(`[render] Size mismatch: ${rustW}x${rustH}x4=${rustW*rustH*4} != ${rgba.length}. Fallback.`);
           await _renderPageWithPdfJs(page, viewport, pdfCanvas, bufferW, bufferH, dpr);
+          if (_isStaleDoc(doc)) return;
         } else {
           pdfCanvas.width = rustW;
           pdfCanvas.height = rustH;
@@ -275,15 +311,21 @@ export async function renderPage(pageNum) {
       } else {
         console.warn(`[render] Empty response. Fallback.`);
         await _renderPageWithPdfJs(page, viewport, pdfCanvas, bufferW, bufferH, dpr);
+        if (_isStaleDoc(doc)) return;
       }
     } catch (e) {
       console.warn(`[render] Rust render FAILED: ${e}. Falling back to PDF.js`);
       await _renderPageWithPdfJs(page, viewport, pdfCanvas, bufferW, bufferH, dpr);
+      if (_isStaleDoc(doc)) return;
       console.log(`[render] PDF.js fallback: ${Math.round(performance.now() - _t0)}ms`);
     }
   } else if (!_skipBitmapRender) {
+    // See comment above — deactivate vector viewport so its RAF loop can't
+    // overwrite our PDF.js raster output on the shared canvas.
+    if (window.__pdfViewport) window.__pdfViewport.active = false;
     console.log(`[render] PDF.js render: page=${pageNum}, tauri=${_canUseTauri}, filePath=${_hasFilePath}`);
     await _renderPageWithPdfJs(page, viewport, pdfCanvas, bufferW, bufferH, dpr);
+    if (_isStaleDoc(doc)) return;
     const _pjsMs = Math.round(performance.now() - _t0);
     state.renderEngine = 'PDF.js';
     state.renderTiming = `${_pjsMs}ms`;
@@ -305,18 +347,21 @@ export async function renderPage(pageNum) {
   if (!_skipBitmapRender || !document.querySelector('.textLayer')) {
     try {
       await createSinglePageTextLayer(page, viewport);
+      if (_isStaleDoc(doc)) return;
     } catch (e) {
       console.warn('Failed to create text layer:', e);
     }
 
     try {
       await createSinglePageLinkLayer(page, viewport);
+      if (_isStaleDoc(doc)) return;
     } catch (e) {
       console.warn('Failed to create link layer:', e);
     }
 
     try {
       await createSinglePageFormLayer(page, viewport);
+      if (_isStaleDoc(doc)) return;
     } catch (e) {
       console.warn('Failed to create form layer:', e);
     }
@@ -338,11 +383,17 @@ export async function renderPage(pageNum) {
   if (!_skipBitmapRender || !document.querySelector('.textLayer')) {
     console.log(`[PERF] renderPage(${pageNum}) ensureAnnotations START: ${(performance.now() - _rp0).toFixed(0)}ms`);
     await ensureAnnotationsForPage(pageNum);
+    if (_isStaleDoc(doc)) return;
     console.log(`[PERF] renderPage(${pageNum}) ensureAnnotations DONE: ${(performance.now() - _rp0).toFixed(0)}ms`);
     if (state.preferences.snapToPdfContent) {
       prefetchPdfVectorGeometry(pageNum);
     }
   }
+
+  // Final stale-doc check before mutating shared canvas — without this, an
+  // earlier renderPage() that finished after a tab switch would resize and
+  // overwrite the annotation canvas of the now-active document.
+  if (_isStaleDoc(doc)) return;
 
   // Resize annotation canvas and redraw in one synchronous block — no blink
   setupCanvasHiDPI(annotationCanvas, viewport.width, viewport.height);
@@ -380,6 +431,7 @@ export async function renderPageOffscreen(pageNum) {
   }
 
   const page = await pdfDoc.getPage(pageNum);
+  if (_isStaleDoc(doc)) return;
   const extraRotation = getPageRotation(pageNum);
   const viewportOpts = { scale };
   if (extraRotation) viewportOpts.rotation = (page.rotate + extraRotation) % 360;
@@ -393,6 +445,9 @@ export async function renderPageOffscreen(pageNum) {
   // Try Rust open-pdf-render first, fall back to PDF.js offscreen rendering
   let rustRendered = false;
 
+  // Deactivate the vector viewport singleton — same reason as renderPage().
+  if (window.__pdfViewport) window.__pdfViewport.active = false;
+
   if (isTauri() && doc.filePath) {
     try {
       const rgbaData = await invoke('render_pdf_page', {
@@ -400,6 +455,7 @@ export async function renderPageOffscreen(pageNum) {
         pageIndex: pageNum - 1,
         scale: scale,
       });
+      if (_isStaleDoc(doc)) return;
       const _offBytes = rgbaData instanceof Uint8Array ? rgbaData : new Uint8Array(rgbaData);
       if (_offBytes && _offBytes.length > 8) {
         const headerView = new DataView(_offBytes.buffer, _offBytes.byteOffset, 8);
@@ -445,6 +501,7 @@ export async function renderPageOffscreen(pageNum) {
       throw e;
     }
     currentRenderTask = null;
+    if (_isStaleDoc(doc)) return;
 
     // Resize visible canvases to match new viewport
     setupCanvasHiDPI(pdfCanvas, viewport.width, viewport.height);
@@ -464,8 +521,11 @@ export async function renderPageOffscreen(pageNum) {
 
   // Create text, link, form layers
   try { await createSinglePageTextLayer(page, viewport); } catch {}
+  if (_isStaleDoc(doc)) return;
   try { await createSinglePageLinkLayer(page, viewport); } catch {}
+  if (_isStaleDoc(doc)) return;
   try { await createSinglePageFormLayer(page, viewport); } catch {}
+  if (_isStaleDoc(doc)) return;
 
   // Re-apply overlay state
   if (state.currentTool === 'select' || state.currentTool === 'editText') {
@@ -479,6 +539,7 @@ export async function renderPageOffscreen(pageNum) {
   }
 
   await ensureAnnotationsForPage(pageNum);
+  if (_isStaleDoc(doc)) return;
   if (state.preferences.snapToPdfContent) prefetchPdfVectorGeometry(pageNum);
   redrawAnnotations();
   onPageRendered();
@@ -553,6 +614,7 @@ async function renderContinuousPage(pageNum) {
   const doc = state.documents[state.activeDocumentIndex];
   if (!doc || !doc.pdfDoc) return;
   const page = await doc.pdfDoc.getPage(pageNum);
+  if (_isStaleDoc(doc)) return; // tab switched while we awaited PDF.js page
   const extraRotation = getPageRotation(pageNum);
   const vpOpts = { scale: doc.scale };
   if (extraRotation) {
@@ -618,6 +680,7 @@ async function renderContinuousPage(pageNum) {
         pageIndex: pageNum - 1,
         scale: doc.scale * contDpr,
       });
+      if (_isStaleDoc(doc)) return; // tab switched while Rust rendered this page
       const _contBytes = rgbaData instanceof Uint8Array ? rgbaData : new Uint8Array(rgbaData);
       if (_contBytes && _contBytes.length > 8) {
         const headerView = new DataView(_contBytes.buffer, _contBytes.byteOffset, 8);
@@ -660,6 +723,7 @@ async function renderContinuousPage(pageNum) {
     } finally {
       _continuousRenderTasks.delete(pageNum);
     }
+    if (_isStaleDoc(doc)) return;
   }
 
   // Create text layer
@@ -668,6 +732,7 @@ async function renderContinuousPage(pageNum) {
   } catch (e) {
     console.warn(`Failed to create text layer for page ${pageNum}:`, e);
   }
+  if (_isStaleDoc(doc)) return;
 
   // Create link layer
   try {
@@ -675,6 +740,7 @@ async function renderContinuousPage(pageNum) {
   } catch (e) {
     console.warn(`Failed to create link layer for page ${pageNum}:`, e);
   }
+  if (_isStaleDoc(doc)) return;
 
   // Create form layer
   try {
@@ -682,6 +748,7 @@ async function renderContinuousPage(pageNum) {
   } catch (e) {
     console.warn(`Failed to create form layer for page ${pageNum}:`, e);
   }
+  if (_isStaleDoc(doc)) return;
 
   // Re-apply overlay state for newly created form/link layers
   if (state.currentTool === 'select' || state.currentTool === 'editText') {
@@ -753,6 +820,12 @@ export async function renderContinuous(forceRebuild) {
   if (!doc || !doc.pdfDoc) return;
   const pdfDoc = doc.pdfDoc;
   const scale = doc.scale;
+
+  // Continuous mode uses its own per-page canvases inside #continuous-container,
+  // not the shared #pdf-canvas. Disable the vector viewport singleton so its
+  // RAF loop can't redraw a previously-active single-page document on top of
+  // continuous-mode content if the user toggled view modes / switched tabs.
+  if (window.__pdfViewport) window.__pdfViewport.active = false;
 
   const continuousContainer = document.getElementById('continuous-container');
   // Cleanup previous observer
@@ -1249,6 +1322,10 @@ export function clearPdfView() {
   const pdfCanvas = getPdfCanvas();
   const annotationCanvas = getAnnotationCanvas();
   if (!pdfCanvas || !annotationCanvas) return;
+
+  // Deactivate vector viewport so its RAF loop stops redrawing the last
+  // viewed document on the now-empty canvas.
+  if (window.__pdfViewport) window.__pdfViewport.active = false;
 
   // Clear single page mode canvases
   const pdfCtx = pdfCanvas.getContext('2d');

@@ -88,6 +88,36 @@ export function switchToTab(index) {
   hideFormFieldsBar();
   hidePdfABar();
 
+  // CRITICAL: deactivate the vector viewport singleton BEFORE the new doc's
+  // renderPage() runs. Multiple PDFs share #pdf-canvas; the viewport's RAF
+  // loop holds the LAST rendered doc's filePath/pageNum and would keep drawing
+  // that page on every dirty tick (resize, panel toggle) until the new doc's
+  // setPage() call lands. That's the cross-document ghost the user reports
+  // when switching tabs rapidly. The vector path will reactivate it via
+  // setPage() once the new doc's commands are ready; raster docs leave it off.
+  if (window.__pdfViewport) window.__pdfViewport.active = false;
+
+  // Clear the shared single-page canvases immediately so the previous doc's
+  // pixels are not visible during the (potentially multi-hundred-ms) async
+  // chain that loads the new doc's page. Without this, switching from a
+  // large vector PDF to another shows the previous PDF until the new one
+  // finishes its IPC + decode pipeline.
+  const _spc = document.getElementById('pdf-canvas');
+  if (_spc) {
+    const _spx = _spc.getContext('2d');
+    if (_spx) _spx.clearRect(0, 0, _spc.width, _spc.height);
+  }
+  const _ann = document.getElementById('annotation-canvas');
+  if (_ann) {
+    const _anx = _ann.getContext('2d');
+    if (_anx) _anx.clearRect(0, 0, _ann.width, _ann.height);
+  }
+  // Also clear stale text-layer DOM (text-layer is per-page, contains spans
+  // from the previous doc that would be visible until the new page's text
+  // layer overwrites them).
+  const _tl = document.querySelector('.textLayer');
+  if (_tl) _tl.remove();
+
   // Render the new active document
   const newDoc = getActiveDocument();
   const placeholder = document.getElementById('placeholder');
