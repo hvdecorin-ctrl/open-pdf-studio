@@ -127,7 +127,17 @@ function _resizeCanvas() {
       hl.height = h;
     }
 
-    if (worldCenterX !== null) {
+    // When the user hasn't manually zoomed/panned (_anchorActive=false) the
+    // viewport is still in "fit" mode — re-fit so a page that was first laid
+    // out before the container reached its real size doesn't end up rendered
+    // at the smaller fit-zoom inside a now-larger canvas (visible as a grey
+    // "frame" of empty backdrop around the page that survives later zoom-in/
+    // out, because zoomStepAtPoint anchors at the centered point and never
+    // refits). Once the user has anchored (zoom-to-cursor or pan), preserve
+    // their zoom and just re-anchor the world center.
+    if (!_anchorActive && viewport.pageW > 0) {
+      fitToViewport();
+    } else if (worldCenterX !== null) {
       viewport.offsetX = w / 2 - worldCenterX * viewport.zoom;
       viewport.offsetY = h / 2 - worldCenterY * viewport.zoom;
     }
