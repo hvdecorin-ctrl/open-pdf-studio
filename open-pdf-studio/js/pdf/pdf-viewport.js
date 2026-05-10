@@ -176,11 +176,20 @@ export function clampAndCenter() {
   // When the user has explicitly anchored the view (zoom-to-cursor, pan),
   // do NOT auto-center even if the page now fits the axis — otherwise the
   // anchor point drifts back to the viewport center on the very next frame.
-  // Only clamp to keep the page fully on-screen.
+  // For wheel zoom (cursor anchor) we also skip the on-screen clamp via
+  // _strictAnchor: an [0, vpW - pageScreenW] clamp would drag a page the
+  // cursor pulled off-center back toward 0, destroying the cursor anchor
+  // (user complaint: "zoom moet ook altijd naar positie muiscursor").
+  // For other anchored sources (setZoomAtPoint with center, pan) the on-
+  // screen clamp is still desirable and keeps the page fully visible on a
+  // fit-axis.
   const anchored = _anchorActive;
+  const strict = _strictAnchor;
 
   if (pageScreenW <= vpW) {
-    if (anchored) {
+    if (strict) {
+      // Wheel zoom-to-cursor: leave offsetX exactly where _anchorAt placed it
+    } else if (anchored) {
       const minX = 0;                  // page left can't go past viewport left
       const maxX = vpW - pageScreenW;  // page right can't go past viewport right
       if (viewport.offsetX < minX) viewport.offsetX = minX;
@@ -198,7 +207,9 @@ export function clampAndCenter() {
   }
 
   if (pageScreenH <= vpH) {
-    if (anchored) {
+    if (strict) {
+      // Wheel zoom-to-cursor: leave offsetY exactly where _anchorAt placed it
+    } else if (anchored) {
       const minY = 0;
       const maxY = vpH - pageScreenH;
       if (viewport.offsetY < minY) viewport.offsetY = minY;
@@ -219,7 +230,14 @@ export function clampAndCenter() {
 // on a fit-axis. Reset by fitToViewport(), page nav, and resize, which are
 // the legitimate "re-center" entry points.
 let _anchorActive = false;
-export function clearAnchor() { _anchorActive = false; }
+// Stricter variant of _anchorActive: when true, clampAndCenter() also skips
+// the [0, vpW - pageScreenW] on-screen clamp on a fit-axis. Used ONLY by
+// wheel zoom-to-cursor / continuous zoom-at-point, where the contract is
+// "world point under the cursor stays exactly under the cursor". Other
+// anchor sources (pan, fit operations dispatched via setZoomAtPoint) leave
+// this false so the page stays fully visible.
+let _strictAnchor = false;
+export function clearAnchor() { _anchorActive = false; _strictAnchor = false; }
 export function markAnchored() { _anchorActive = true; }
 
 function _render() {
@@ -369,7 +387,9 @@ export function setPage(filePath, pageNum, pageW, pageH, originX, originY, rotat
     // suppressNextFit() is used by wheel-driven page nav, which then calls
     // alignPageToTop/Bottom to set its own offset → keep anchor active so
     // clampAndCenter doesn't auto-center over that explicit positioning.
+    // Page-nav alignment isn't a cursor-anchor scenario → leave strict off.
     _anchorActive = true;
+    _strictAnchor = false;
     viewport.dirty = true;
   } else if (isNewDocument) {
     // First time we're seeing this file → fit to viewport
@@ -380,6 +400,7 @@ export function setPage(filePath, pageNum, pageW, pageH, originX, originY, rotat
     // fits, or clamp the old offsets if it doesn't. Clear the anchor so
     // a fitting page actually does re-center on this transition.
     _anchorActive = false;
+    _strictAnchor = false;
     viewport.dirty = true;
   }
 }
@@ -423,6 +444,7 @@ export function fitToViewport() {
   // Re-centering reset: discard any prior zoom-to-cursor anchor so
   // clampAndCenter() resumes auto-centering on fit-axis as before.
   _anchorActive = false;
+  _strictAnchor = false;
   viewport.dirty = true;
 }
 
@@ -459,7 +481,14 @@ function nextZoomStep(current, direction) {
 
 // Re-anchor pan offsets so the world point under (screenX, screenY) stays
 // pinned while zoom changes from oldZoom → newZoom.
-function _anchorAt(screenX, screenY, oldZoom, newZoom) {
+//
+// `strict`: when true, _strictAnchor is set so clampAndCenter() will not
+// drag the offset toward the centered position on a fit-axis. Use for
+// wheel zoom-to-cursor where the cursor must stay fixed on its world
+// point even if part of the page falls off-screen. Leave false (default)
+// for fit / center-anchored zooms where keeping the page fully visible is
+// preferable.
+function _anchorAt(screenX, screenY, oldZoom, newZoom, strict = false) {
   const wx = (screenX - viewport.offsetX) / oldZoom;
   const wy = (screenY - viewport.offsetY) / oldZoom;
   viewport.offsetX = screenX - wx * newZoom;
@@ -469,43 +498,56 @@ function _anchorAt(screenX, screenY, oldZoom, newZoom) {
   // Tell clampAndCenter() not to override it with auto-centering even if
   // the page fits an axis at the new zoom level.
   _anchorActive = true;
+  _strictAnchor = strict;
   viewport.dirty = true;
 }
 
 // Snap to the next/previous discrete zoom level, anchored at a cursor point.
 // direction: +1 = zoom in, -1 = zoom out
+// Wheel zoom → strict cursor anchor (skip on-screen clamp on fit-axis).
 export function zoomStepAtPoint(screenX, screenY, direction) {
   const oldZoom = viewport.zoom;
   const newZoom = nextZoomStep(oldZoom, direction);
   if (newZoom === oldZoom) return;
-  _anchorAt(screenX, screenY, oldZoom, newZoom);
+  _anchorAt(screenX, screenY, oldZoom, newZoom, true);
 }
 
 // Continuous (multiplicative) zoom. Kept for callers that want non-snapped
 // zoom — e.g. animated keyboard zoom. Wheel zoom uses zoomStepAtPoint.
+// Strict anchor: callers (trackpad pinch, animated keyboard zoom) all
+// expect the cursor world point to stay fixed.
 export function zoomAtPoint(screenX, screenY, factor) {
   const oldZoom = viewport.zoom;
   const newZoom = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, oldZoom * factor));
   if (newZoom === oldZoom) return;
-  _anchorAt(screenX, screenY, oldZoom, newZoom);
+  _anchorAt(screenX, screenY, oldZoom, newZoom, true);
 }
 
 // Set the zoom level absolutely, anchored at a specific screen point.
 // Use this for the status-bar zoom input ("type 200% + Enter") and any
 // other UI that wants to set an exact zoom value.
+// Non-strict: callers typically pass the canvas center as the anchor and
+// expect the page to stay fully visible (clampAndCenter clamps).
 export function setZoomAtPoint(screenX, screenY, newZoom) {
   const oldZoom = viewport.zoom;
   const clamped = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, newZoom));
   if (clamped === oldZoom) return;
-  _anchorAt(screenX, screenY, oldZoom, clamped);
+  _anchorAt(screenX, screenY, oldZoom, clamped, false);
 }
 
 // Convenience: zoom in/out by one preset step, anchored at the canvas
 // center. Used by the status-bar +/- buttons and the toolbar zoom buttons.
+// Center-anchored, so clamp is desirable — call zoomStep variant that
+// does NOT set strict.
 export function zoomStepAtCenter(direction) {
   if (!_canvas) return;
   const dpr = _getDpr();
-  zoomStepAtPoint((_canvas.width / dpr) / 2, (_canvas.height / dpr) / 2, direction);
+  const sx = (_canvas.width / dpr) / 2;
+  const sy = (_canvas.height / dpr) / 2;
+  const oldZoom = viewport.zoom;
+  const newZoom = nextZoomStep(oldZoom, direction);
+  if (newZoom === oldZoom) return;
+  _anchorAt(sx, sy, oldZoom, newZoom, false);
 }
 
 // ─── Pan ────────────────────────────────────────────────────────────────────
@@ -523,8 +565,11 @@ export function updatePan(screenX, screenY) {
   viewport.offsetX = screenX - _panStartX;
   viewport.offsetY = screenY - _panStartY;
   // User has explicitly positioned the view → don't let clampAndCenter
-  // snap a fit-axis back to center on the next frame.
+  // snap a fit-axis back to center on the next frame. Pan does NOT need
+  // strict anchoring (the page should stay on-screen even if the user
+  // drags fast), so clear strict in case a previous wheel-zoom set it.
   _anchorActive = true;
+  _strictAnchor = false;
   viewport.dirty = true;
 }
 
