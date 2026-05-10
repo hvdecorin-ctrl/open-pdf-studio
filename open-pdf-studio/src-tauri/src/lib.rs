@@ -1,4 +1,5 @@
 mod auth;
+pub mod mcp_app_bridge;
 pub mod mcp_server;
 pub mod render_to_png;
 
@@ -1292,20 +1293,12 @@ pub fn run(opts: StartupOpts) {
         opts.mcp_server, opts.mcp_port
     );
 
-    // Spawn the in-process MCP server when requested. Refuses to start in
-    // release builds unless OPS_ENABLE_MCP=1 (handled inside `mcp_server::start`).
-    if opts.mcp_server {
-        let port = opts.mcp_port;
-        let test_pdfs_dir = std::env::current_dir()
-            .unwrap_or_else(|_| std::path::PathBuf::from("."))
-            .join("test pdf-bestanden")
-            .join("Originele bestanden");
-        tauri::async_runtime::spawn(async move {
-            if let Err(e) = mcp_server::start(port, test_pdfs_dir).await {
-                eprintln!("[mcp] server failed: {e}");
-            }
-        });
-    }
+    // Capture the MCP options for `setup()` — we now spawn the MCP server
+    // *after* Tauri has produced an `AppHandle` so the new `app_*` tools
+    // can emit events into the live WebView. Previously the server was
+    // started here (before the builder ran) and never had a handle.
+    let mcp_enabled = opts.mcp_server;
+    let mcp_port = opts.mcp_port;
 
     let args: Vec<String> = std::env::args().collect();
 
@@ -1347,6 +1340,7 @@ pub fn run(opts: StartupOpts) {
         .manage(PdfBytesCache(Mutex::new(HashMap::new())))
         .manage(DocHandleCache(Mutex::new(HashMap::new())))
         .manage(ThumbnailCache(Mutex::new(HashMap::new())))
+        .manage(mcp_app_bridge::McpAppBridge::new())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
@@ -1379,7 +1373,7 @@ pub fn run(opts: StartupOpts) {
     }
 
     builder
-        .setup(|app| {
+        .setup(move |app| {
             // Grant FS plugin scope for command-line files (file association)
             for path in app.state::<OpenedFiles>().0.lock().unwrap().iter() {
                 let _ = app.fs_scope().allow_file(path);
@@ -1392,6 +1386,24 @@ pub fn run(opts: StartupOpts) {
                 if let Ok(icon) = tauri::image::Image::from_bytes(icon_bytes) {
                     let _ = window.set_icon(icon);
                 }
+            }
+
+            // Spawn the in-process MCP server (deferred until here so the
+            // `app_*` tools can dispatch events into the live WebView via
+            // the AppHandle stored in the server's AppState). Refuses to
+            // start in release builds unless OPS_ENABLE_MCP=1 (handled
+            // inside `mcp_server::start`).
+            if mcp_enabled {
+                let app_handle = app.handle().clone();
+                let test_pdfs_dir = std::env::current_dir()
+                    .unwrap_or_else(|_| std::path::PathBuf::from("."))
+                    .join("test pdf-bestanden")
+                    .join("Originele bestanden");
+                tauri::async_runtime::spawn(async move {
+                    if let Err(e) = mcp_server::start(mcp_port, test_pdfs_dir, Some(app_handle)).await {
+                        eprintln!("[mcp] server failed: {e}");
+                    }
+                });
             }
 
             Ok(())
@@ -1442,6 +1454,8 @@ pub fn run(opts: StartupOpts) {
             render_thumbnail,
             render_to_png::render_page_to_png,
             allow_fs_scope,
+            mcp_app_bridge::app_response,
+            mcp_app_bridge::mcp_bridge_ready,
             auth::auth_is_configured,
             auth::auth_login,
             auth::auth_logout,

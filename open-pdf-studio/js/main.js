@@ -50,6 +50,11 @@ import { initFontDropdowns } from './utils/fonts.js';
 // Auto-update
 import { checkForUpdates } from './ui/chrome/updater.js';
 
+// MCP bridge — wires up `mcp:*` event listeners so the in-process MCP
+// server (started with `--mcp-server`) can drive the LIVE WebView from
+// outside. Inert when Tauri isn't present.
+import { initMcpBridge } from './mcp-bridge.js';
+
 // i18n
 import './i18n/config.js';
 
@@ -222,6 +227,9 @@ async function init() {
 
   // Setup all event listeners
   setupEventListeners();
+
+  // Wire MCP <-> WebView bridge (no-op outside Tauri).
+  initMcpBridge().catch(e => console.warn('initMcpBridge failed:', e));
 
   // Setup session save on window close (desktop only — Android lifecycle handles this)
   if (!mobile) {

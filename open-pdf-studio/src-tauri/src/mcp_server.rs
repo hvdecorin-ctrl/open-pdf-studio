@@ -31,6 +31,7 @@
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::Duration;
 
 use axum::{
     extract::State,
@@ -40,11 +41,21 @@ use axum::{
     Json, Router,
 };
 use serde_json::{json, Value};
+use tauri::{AppHandle, Manager};
+
+use crate::mcp_app_bridge::{self, McpAppBridge};
 
 /// Per-server state. Cloned (cheaply, via Arc) into every request handler.
+///
+/// `app_handle` is `Some` whenever the MCP server is launched from inside
+/// `tauri::Builder::setup()` (the normal `--mcp-server` path). It is `None`
+/// for unit tests that drive the handlers directly without a running Tauri
+/// instance — in that case the `app_*` tools return an "app not available"
+/// error instead of panicking.
 #[derive(Clone)]
 pub struct AppState {
     pub test_pdfs_dir: Arc<PathBuf>,
+    pub app_handle: Option<AppHandle>,
 }
 
 /// Standard JSON-RPC error codes used by this server. Codes not yet
@@ -147,6 +158,59 @@ fn handle_tools_list() -> Value {
                     "required": ["path"],
                     "additionalProperties": false
                 }
+            },
+            {
+                "name": "app_open_pdf",
+                "description": "Tell the LIVE running app to open a PDF in a new tab. Returns once the document is loaded and the tab is active. Requires the Tauri WebView to be alive (--mcp-server mode).",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "path": { "type": "string" }
+                    },
+                    "required": ["path"],
+                    "additionalProperties": false
+                }
+            },
+            {
+                "name": "app_set_zoom",
+                "description": "Set the page-view zoom in the LIVE app. scale=1.0 means 100%, 2.0 means 200%, etc.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "scale": { "type": "number", "minimum": 0.05, "maximum": 32.0 }
+                    },
+                    "required": ["scale"],
+                    "additionalProperties": false
+                }
+            },
+            {
+                "name": "app_zoom_in",
+                "description": "Trigger one zoom-in step in the LIVE app (same as the toolbar +).",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {},
+                    "additionalProperties": false
+                }
+            },
+            {
+                "name": "app_zoom_out",
+                "description": "Trigger one zoom-out step in the LIVE app (same as the toolbar -).",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {},
+                    "additionalProperties": false
+                }
+            },
+            {
+                "name": "app_screenshot_view",
+                "description": "Capture the LIVE app's current page view as a base64 PNG. Composites the PDF canvas with the annotation/highlight overlays (NOT the surrounding chrome — for that use OS-level screenshotting).",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "width": { "type": "integer", "minimum": 1, "default": 2000 }
+                    },
+                    "additionalProperties": false
+                }
             }
         ]
     })
@@ -167,11 +231,49 @@ async fn handle_tools_call(state: &AppState, params: &Value) -> Result<Value, (i
         "screenshot_page" => tool_screenshot_page(state, &arguments).await,
         "get_pdf_metadata" => tool_get_pdf_metadata(state, &arguments).await,
         "screenshot_all" => tool_screenshot_all(state, &arguments).await,
+        "app_open_pdf" => tool_app_request(state, "mcp:open-pdf", &arguments, Duration::from_secs(60)).await,
+        "app_set_zoom" => tool_app_request(state, "mcp:set-zoom", &arguments, Duration::from_secs(15)).await,
+        "app_zoom_in" => tool_app_request(state, "mcp:zoom-in", &arguments, Duration::from_secs(15)).await,
+        "app_zoom_out" => tool_app_request(state, "mcp:zoom-out", &arguments, Duration::from_secs(15)).await,
+        "app_screenshot_view" => tool_app_request(state, "mcp:screenshot-view", &arguments, Duration::from_secs(30)).await,
         other => Err((
             jsonrpc_error::METHOD_NOT_FOUND,
             format!("method not found: {other}"),
         )),
     }
+}
+
+/// Generic dispatch for the `app_*` tools that drive the LIVE WebView via
+/// the [`mcp_app_bridge`]. Emits `event_name` with `arguments` as the
+/// payload's `params`, awaits the WebView's response, and wraps it in the
+/// MCP-shaped result envelope. The JS side responds with arbitrary JSON
+/// (typically `{ "ok": true, ... }` or `{ "error": "..." }`); we forward
+/// whatever it sends so per-tool conventions stay flexible.
+async fn tool_app_request(
+    state: &AppState,
+    event_name: &str,
+    arguments: &Value,
+    timeout: Duration,
+) -> Result<Value, (i32, String)> {
+    let app = state
+        .app_handle
+        .as_ref()
+        .ok_or_else(|| (
+            jsonrpc_error::INTERNAL_ERROR,
+            "AppHandle unavailable — MCP server not started from inside Tauri::setup()".to_string(),
+        ))?;
+    let bridge = app.state::<McpAppBridge>();
+    let response = mcp_app_bridge::request(app, &bridge, event_name, arguments.clone(), timeout)
+        .await
+        .map_err(|e| (jsonrpc_error::INTERNAL_ERROR, e))?;
+
+    Ok(json!({
+        "content": [{
+            "type": "text",
+            "text": response.to_string(),
+        }],
+        "isError": false,
+    }))
 }
 
 /// `list_test_pdfs` tool — enumerates every `*.pdf` under
@@ -238,9 +340,15 @@ async fn tool_list_test_pdfs(state: &AppState) -> Result<Value, (i32, String)> {
 /// base64. The MCP harness uses this to compare current renders against
 /// committed reference PNGs.
 ///
-/// Scaling matches the convention used by `render_thumbnail` in `lib.rs`:
-/// `scale = width / max(page_w_pt, page_h_pt)`, so portrait and landscape
-/// pages both fit within `width` pixels on their longest side.
+/// Scaling: `scale = width / page_w_pt` — `width` is the literal output
+/// pixel width, matching the PyMuPDF reference renderer the regression
+/// harness uses (`zoom = width / page.rect.width`). For a portrait A4 page
+/// at width=2000 this produces a 2000×2828 image, not 1415×2000 as a
+/// `max(w,h)`-based scale would. Aligning the convention is required so
+/// app-vs-reference diffs aren't dominated by an asymmetric resolution
+/// scale (portrait pages would otherwise render at ~71 % of the reference
+/// resolution and lose anti-aliased text sharpness in the side-by-side
+/// comparison).
 async fn tool_screenshot_page(
     _state: &AppState,
     arguments: &Value,
@@ -273,10 +381,11 @@ async fn tool_screenshot_page(
     let rendered = tokio::task::spawn_blocking(move || -> Result<open_pdf_render::RenderedPage, String> {
         let doc = open_pdf_render::DocumentHandle::load(&pdf_bytes)
             .map_err(|e| format!("load PDF: {e}"))?;
-        let (w_pt, h_pt) = doc
+        let (w_pt, _h_pt) = doc
             .page_dimensions(page_index)
             .map_err(|e| format!("page_dimensions: {e}"))?;
-        let scale = width as f32 / w_pt.max(h_pt);
+        // Literal-width convention to match PyMuPDF reference renderer.
+        let scale = width as f32 / w_pt;
         doc.render_page(page_index, scale, 0)
             .map_err(|e| format!("render: {e}"))
     })
@@ -417,7 +526,7 @@ async fn tool_get_pdf_metadata(
 /// Page count is read once via `lopdf` so we know how many render passes to
 /// schedule, then `open_pdf_render` produces the raster for each page using
 /// the same scaling convention as `screenshot_page`:
-/// `scale = width / max(page_w_pt, page_h_pt)`.
+/// `scale = width / page_w_pt` (literal output width).
 async fn tool_screenshot_all(
     _state: &AppState,
     arguments: &Value,
@@ -463,10 +572,11 @@ async fn tool_screenshot_all(
         let rendered = tokio::task::spawn_blocking(move || -> Result<open_pdf_render::RenderedPage, String> {
             let doc = open_pdf_render::DocumentHandle::load(&bytes_clone)
                 .map_err(|e| format!("load PDF: {e}"))?;
-            let (w_pt, h_pt) = doc
+            let (w_pt, _h_pt) = doc
                 .page_dimensions(idx)
                 .map_err(|e| format!("page_dimensions[{idx}]: {e}"))?;
-            let scale = width as f32 / w_pt.max(h_pt);
+            // Literal-width convention to match PyMuPDF reference renderer.
+            let scale = width as f32 / w_pt;
             doc.render_page(idx, scale, 0)
                 .map_err(|e| format!("render page {idx}: {e}"))
         })
@@ -553,7 +663,11 @@ async fn mcp_handler(
 ///
 /// In release builds, the server refuses to start unless `OPS_ENABLE_MCP=1`
 /// is set in the environment.
-pub async fn start(port: u16, test_pdfs_dir: PathBuf) -> Result<(), String> {
+pub async fn start(
+    port: u16,
+    test_pdfs_dir: PathBuf,
+    app_handle: Option<AppHandle>,
+) -> Result<(), String> {
     if !cfg!(debug_assertions) && std::env::var("OPS_ENABLE_MCP").as_deref() != Ok("1") {
         return Err(
             "MCP server refused to start: release build without OPS_ENABLE_MCP=1".into(),
@@ -562,6 +676,7 @@ pub async fn start(port: u16, test_pdfs_dir: PathBuf) -> Result<(), String> {
 
     let state = AppState {
         test_pdfs_dir: Arc::new(test_pdfs_dir),
+        app_handle,
     };
 
     let app = Router::new()
@@ -635,6 +750,7 @@ mod tests {
 
         let state = AppState {
             test_pdfs_dir: Arc::new(corpus),
+            app_handle: None,
         };
         let rt = tokio::runtime::Builder::new_current_thread()
             .enable_all()
@@ -709,7 +825,7 @@ mod tests {
         pdfs.sort_by_key(|p| std::fs::metadata(p).map(|m| m.len()).unwrap_or(u64::MAX));
         let smallest = pdfs.first().expect("no pdfs in corpus").clone();
 
-        let state = AppState { test_pdfs_dir: std::sync::Arc::new(corpus) };
+        let state = AppState { test_pdfs_dir: std::sync::Arc::new(corpus), app_handle: None };
         let args = serde_json::json!({
             "path": smallest.to_string_lossy(),
             "page_index": 0,
@@ -759,6 +875,7 @@ mod tests {
 
         let state = AppState {
             test_pdfs_dir: std::sync::Arc::new(corpus),
+            app_handle: None,
         };
         let args = serde_json::json!({ "path": pdf.to_string_lossy() });
         let result = tool_get_pdf_metadata(&state, &args).await.expect("metadata ok");
@@ -811,7 +928,7 @@ mod tests {
             .expect("no pdfs in corpus")
             .clone();
 
-        let state = AppState { test_pdfs_dir: std::sync::Arc::new(corpus) };
+        let state = AppState { test_pdfs_dir: std::sync::Arc::new(corpus), app_handle: None };
         let args = serde_json::json!({
             "path": smallest.to_string_lossy(),
             "width": 200
