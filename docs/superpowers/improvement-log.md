@@ -1612,3 +1612,39 @@ The detection helper `inflate_axis_aligned_rect_clip` accepts both `M L L L Clos
 1. **Bold synthesis from FontDescriptor flags** (carried from iter 31/32) — would close the "Totaal incl. BTW" weight gap on Tekst.pdf p2/p3 (still 2.56% FAIL).
 2. **Sub-pixel text glyph rendering** at very small sizes (Barn p3 grid bubbles).
 3. **Investigate the Text pdf gecombineerd p6 cluster** — sitting at 2.50%, would benefit from another text-AA pass.
+
+## Quality iter 34 — ForceBold flag plumbing (2026-05-08)
+
+**Target**: Close the residual ~0.5% diff on Tekst.pdf p3 (2.56% FAIL) by implementing synthetic bold rendering when the FontDescriptor `/Flags` integer has bit 19 (ForceBold, 0x40000) set per ISO 32000-1 §9.8.1 Table 122. Iter-31/32/33 all flagged this as the next-most-promising target.
+
+**Empirical finding** (corpus survey before coding):
+A scan of every font in every page of all 8 test PDFs found **zero** fonts with the ForceBold flag set. Distinct `/Flags` values appearing in the corpus: `4` (Symbolic, 14 occurrences), `6` (Symbolic+Serif, 5), `32` (Nonsymbolic, 152). None has bit 19. In particular the UniviaProRegular Type1 font on Tekst.pdf p3 — the spec'd "bold synthesis" target — has `/Flags=4` (Symbolic only) and `/StemV=80` (the standard regular weight value).
+
+So the visible "bolder" rendering of UniviaProRegular in PyMuPDF's reference is **not** driven by ForceBold — both renderers see flags=4. The actual gap is more likely FreeType-style hinting on the embedded Type1 outlines (which our hayro-font path doesn't apply), producing slightly heavier strokes at the same nominal weight. Closing that gap is a separate, harder target (proper auto-hinting or a stem-darkening pass) and out of scope for this iter.
+
+**Fix delivered**:
+Implemented the ForceBold detection + synthetic-bold rendering per spec, even though the test corpus doesn't trigger it — this is the correct PDF-spec implementation and provides infrastructure for any future PDF that does set the flag.
+1. `FontEntry` extended with `force_bold: bool`.
+2. New `FontRegistry::extract_force_bold` helper reads `/Flags` from both the parent `FontDescriptor` (simple fonts) and the descendant CIDFont's descriptor (Type0), tests bit 19.
+3. Both `render_text_glyphs_skia_with_mode` and `render_cid_text_glyphs_skia_with_mode` now overlay a fill-coloured stroke at `font_size * 0.03` device-space width on top of each filled glyph when `force_bold` is true. Guarded against double-stroking when the content-stream `Tr` operator already requested mode 2 (fill+stroke).
+4. The state-save block grew from `{ctm, fill}` to `{ctm, fill, stroke, line_width, dash}` because the synthetic-bold path mutates stroke color + dash array.
+
+**Result**:
+- Pass count: **60 → 60 / 106** (unchanged — no font in corpus triggers the new path).
+- Tekst.pdf p3: **2.56% → 2.56%** (unchanged for the same reason).
+- All 8 PDFs render without panic; no visible quality changes anywhere (verified by re-running render_test_iter23.py).
+- 0 PASS→FAIL transitions.
+- Iter 23-33 wins preserved.
+
+**Files touched**:
+- `open-pdf-render/src/fonts.rs` — `FontEntry::force_bold` field + `FontRegistry::extract_force_bold` helper.
+- `open-pdf-render/src/text_renderer.rs` — synthetic-bold overlay in both `render_text_glyphs_skia_with_mode` (simple-text) and `render_cid_text_glyphs_skia_with_mode` (Type0/CID).
+- `docs/superpowers/improvement-log.md` — this entry.
+
+**Status**: **DONE_WITH_CONCERNS** — the iter-34 hypothesis was that PyMuPDF was applying ForceBold-driven synthetic bold to UniviaProRegular on Tekst.pdf, and that mirroring it would close the 2.56% gap. Empirical inspection disproved the hypothesis: no font in the corpus has the flag set. The correct ForceBold implementation has been delivered (and is dormant in the current corpus), but the actual root cause of the residual UniviaPro-rendering gap is FreeType hinting / stem darkening, not flag-driven bold synthesis.
+
+**Continue**: YES — revised candidates for iter 35:
+1. **Type1 stem darkening** — small per-side outline expansion (~0.5 device px) on Type1-parsed glyphs to approximate FreeType auto-hinter behavior. Would close the UniviaProRegular gap on Tekst.pdf p2/p3 (the 2.56% FAIL is dominantly UniviaPro stroke thinning).
+2. **Sub-pixel text glyph rendering** at very small sizes (Barn p3 grid bubbles).
+3. **Investigate the Text pdf gecombineerd p6 cluster** — sitting at 2.50%, would benefit from another text-AA pass.
+

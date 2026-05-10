@@ -28,6 +28,17 @@ pub struct FontEntry {
     /// in `widths`. Read from `/MissingWidth` (simple fonts, default 0) or
     /// `/DW` (Type0 fonts, default 1000).
     pub default_width: f32,
+    /// Whether the FontDescriptor `/Flags` integer has bit 19 (ForceBold,
+    /// value 0x40000 = 262144) set. Per ISO 32000-1 §9.8.1 Table 122 this
+    /// indicates that the glyphs should be rendered as if synthetically
+    /// emboldened — the renderer typically fills the path AND strokes it
+    /// with a small line width on top so the outline appears bolder than
+    /// the embedded glyph would normally render.
+    ///
+    /// Note: in many real-world PDFs bold variants are handled by embedding
+    /// a separate bold font (e.g. "Arial-BoldMT") rather than setting this
+    /// flag, so this case is uncommon in practice but mandated by the spec.
+    pub force_bold: bool,
 }
 
 /// Registry that caches parsed fonts by their global PDF ObjectId.
@@ -224,6 +235,10 @@ impl FontRegistry {
             (w_u32, dw)
         };
 
+        // Read FontDescriptor /Flags bit 19 (ForceBold).
+        // For CID fonts the descriptor lives on the descendant; check both.
+        let force_bold = Self::extract_force_bold(font_dict, doc);
+
         FontEntry {
             parsed,
             encoding_name,
@@ -235,7 +250,78 @@ impl FontRegistry {
             cid_to_unicode,
             widths,
             default_width,
+            force_bold,
         }
+    }
+
+    /// Read FontDescriptor `/Flags` and test bit 19 (ForceBold, 0x40000).
+    /// Per PDF spec §9.8.1 Table 122. Returns `true` only when the flag is
+    /// present and set; otherwise `false` (including all parse failures).
+    /// For Type0 fonts the descriptor is on the descendant CIDFont, so we
+    /// also probe `DescendantFonts[0]/FontDescriptor`.
+    fn extract_force_bold(font_dict: &Dictionary, doc: &Document) -> bool {
+        const FORCE_BOLD: i64 = 1 << 18; // bit 19, value 262144
+
+        let read_flags = |desc: &Dictionary| -> i64 {
+            desc.get(b"Flags")
+                .ok()
+                .and_then(|o| Self::resolve_obj(o, doc))
+                .and_then(|o| match o {
+                    Object::Integer(n) => Some(n),
+                    Object::Real(n) => Some(n as i64),
+                    _ => None,
+                })
+                .unwrap_or(0)
+        };
+
+        // Try parent dictionary's FontDescriptor first (simple fonts).
+        if let Some(desc) = font_dict
+            .get(b"FontDescriptor")
+            .ok()
+            .and_then(|o| Self::resolve_obj(o, doc))
+            .and_then(|o| match o {
+                Object::Dictionary(d) => Some(d),
+                _ => None,
+            })
+        {
+            if read_flags(&desc) & FORCE_BOLD != 0 {
+                return true;
+            }
+        }
+
+        // For Type0 fonts also probe the DescendantFonts entry.
+        if let Some(arr) = font_dict
+            .get(b"DescendantFonts")
+            .ok()
+            .and_then(|o| Self::resolve_obj(o, doc))
+            .and_then(|o| match o {
+                Object::Array(a) => Some(a),
+                _ => None,
+            })
+        {
+            if let Some(cid_dict) = arr.first().and_then(|o| Self::resolve_obj(o, doc))
+                .and_then(|o| match o {
+                    Object::Dictionary(d) => Some(d),
+                    _ => None,
+                })
+            {
+                if let Some(desc) = cid_dict
+                    .get(b"FontDescriptor")
+                    .ok()
+                    .and_then(|o| Self::resolve_obj(o, doc))
+                    .and_then(|o| match o {
+                        Object::Dictionary(d) => Some(d),
+                        _ => None,
+                    })
+                {
+                    if read_flags(&desc) & FORCE_BOLD != 0 {
+                        return true;
+                    }
+                }
+            }
+        }
+
+        false
     }
 
     /// Resolve a character code to a glyph ID using the font entry.

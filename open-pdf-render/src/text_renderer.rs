@@ -358,10 +358,13 @@ pub fn render_text_glyphs_skia_with_mode(
                     // including the clip-mask bitmap (≈ width × height bytes,
                     // multiple MB on 2000-pixel renders). For thousands of
                     // glyphs per page this dominated the render cost.
-                    // Instead, save just the CTM + fill_color, mutate, fill,
-                    // and restore the two scalars by hand.
+                    // Instead, save just the CTM + fill_color + stroke_color +
+                    // line_width, mutate, paint, and restore by hand.
                     let saved_ctm = state.current.ctm;
                     let saved_fill = state.current.fill_color;
+                    let saved_stroke = state.current.stroke_color;
+                    let saved_line_width = state.current.line_width;
+                    let saved_dash = state.current.dash_array.clone();
                     state.current.fill_color = fill_rgba;
                     state.current.ctm = state.current.ctm.pre_concat(
                         tiny_skia::Transform::from_row(
@@ -384,8 +387,35 @@ pub fn render_text_glyphs_skia_with_mode(
                             &path, &state.current, local_width,
                         );
                     }
+                    // Synthetic bold for fonts whose FontDescriptor /Flags
+                    // has bit 19 (ForceBold) set per ISO 32000-1 §9.8.1
+                    // Table 122. We only synthesize when the user-requested
+                    // render mode actually paints a fill (modes 0/2/4/6) and
+                    // we're not already overlaying a stroke from mode 2 — in
+                    // that case the explicit content-stream stroke is
+                    // authoritative and the synthetic stroke would double up.
+                    //
+                    // The stroke uses the FILL color (so it appears as a
+                    // bolder fill, not a separate outline) at ~3% of font
+                    // size. After the per-glyph scale `s` the local-space
+                    // width must be `font_size * 0.03 / s` to land at the
+                    // correct device-space thickness.
+                    if font_entry.force_bold && do_fill && !do_stroke {
+                        let bold_local_width = (font_size * 0.03) / s;
+                        // Temporarily mirror fill into stroke + clear dash so
+                        // stroke_cached_path_with_width paints in the fill
+                        // color with a solid line.
+                        state.current.stroke_color = fill_rgba;
+                        state.current.dash_array = Vec::new();
+                        renderer.stroke_cached_path_with_width(
+                            &path, &state.current, bold_local_width,
+                        );
+                    }
                     state.current.ctm = saved_ctm;
                     state.current.fill_color = saved_fill;
+                    state.current.stroke_color = saved_stroke;
+                    state.current.line_width = saved_line_width;
+                    state.current.dash_array = saved_dash;
                 }
             }
 
@@ -587,6 +617,9 @@ pub fn render_cid_text_glyphs_skia_with_mode(
                     // state.save()/restore() to skip cloning the clip mask.
                     let saved_ctm = state.current.ctm;
                     let saved_fill = state.current.fill_color;
+                    let saved_stroke = state.current.stroke_color;
+                    let saved_line_width = state.current.line_width;
+                    let saved_dash = state.current.dash_array.clone();
                     state.current.fill_color = fill_rgba;
                     state.current.ctm = state.current.ctm.pre_concat(
                         tiny_skia::Transform::from_row(
@@ -602,8 +635,21 @@ pub fn render_cid_text_glyphs_skia_with_mode(
                             &path, &state.current, local_width,
                         );
                     }
+                    // Synthetic bold for ForceBold flag — see the simple-text
+                    // variant above for the rationale and width derivation.
+                    if font_entry.force_bold && do_fill && !do_stroke {
+                        let bold_local_width = (font_size * 0.03) / s;
+                        state.current.stroke_color = fill_rgba;
+                        state.current.dash_array = Vec::new();
+                        renderer.stroke_cached_path_with_width(
+                            &path, &state.current, bold_local_width,
+                        );
+                    }
                     state.current.ctm = saved_ctm;
                     state.current.fill_color = saved_fill;
+                    state.current.stroke_color = saved_stroke;
+                    state.current.line_width = saved_line_width;
+                    state.current.dash_array = saved_dash;
                 }
             }
 
