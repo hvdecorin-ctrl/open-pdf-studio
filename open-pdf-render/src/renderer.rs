@@ -300,12 +300,7 @@ impl SkiaRenderer {
             Some(p) => p,
             None => return,
         };
-        // Image painting is a non-stroking op — apply /ca as constant opacity.
-        let paint = PixmapPaint {
-            opacity: gs.effective_fill_alpha(),
-            blend_mode: BlendMode::SourceOver,
-            quality: FilterQuality::Bilinear,
-        };
+        if width == 0 || height == 0 { return; }
         // PDF Image XObjects live in a 1×1 unit square; the caller's CTM is
         // set up so that unit square maps to the destination region. But
         // `draw_pixmap` consumes a transform that maps the SOURCE PIXMAP
@@ -313,10 +308,58 @@ impl SkiaRenderer {
         // need to pre-scale by 1/width and 1/height to convert pixel
         // coordinates into the unit square before the caller's CTM
         // applies its unit-square → destination mapping.
-        if width == 0 || height == 0 { return; }
         let pixel_to_unit = Transform::from_scale(1.0 / width as f32, 1.0 / height as f32);
         let final_xform = gs.ctm.pre_concat(pixel_to_unit);
-        self.pixmap.draw_pixmap(0, 0, img, &paint, final_xform, gs.clip_path.as_ref());
+        // Iter 32: tiny_skia's `draw_pixmap` fills the destination rect with
+        // pixel-center-inside semantics (non-AA), so a destination edge that
+        // falls at e.g. pixel y=2822.43 LEAVES pixel row 2822 (centered at
+        // 2822.5) UNFILLED — giving Tekst.pdf p2 a single missing footer
+        // row vs. PyMuPDF reference. PyMuPDF (and MuPDF underneath) instead
+        // rasterises the image rect with OUTWARD rounding so any pixel even
+        // partially touched is covered by a bilinear sample; with
+        // SpreadMode::Pad on the pattern, edge pixels just replicate the
+        // closest source row. Replicate that behaviour here by manually
+        // constructing the Pattern shader and filling a path that we expand
+        // by a small amount in source space — enough to push the destination
+        // rect just past the next pixel boundary on each side.
+        let pad = 0.5_f32; // source-pixel padding; rounds dest rect outward
+        let expanded_src = Rect::from_ltrb(
+            -pad,
+            -pad,
+            width as f32 + pad,
+            height as f32 + pad,
+        );
+        if let Some(rect) = expanded_src {
+            let path = PathBuilder::from_rect(rect);
+            let pattern = Pattern::new(
+                img,
+                SpreadMode::Pad,
+                FilterQuality::Bilinear,
+                gs.effective_fill_alpha(),
+                Transform::identity(),
+            );
+            let paint = Paint {
+                shader: pattern,
+                blend_mode: BlendMode::SourceOver,
+                anti_alias: false,
+                force_hq_pipeline: false,
+            };
+            self.pixmap.fill_path(
+                &path,
+                &paint,
+                FillRule::Winding,
+                final_xform,
+                gs.clip_path.as_ref(),
+            );
+        } else {
+            // Fallback to the original code path if rect construction fails.
+            let paint = PixmapPaint {
+                opacity: gs.effective_fill_alpha(),
+                blend_mode: BlendMode::SourceOver,
+                quality: FilterQuality::Bilinear,
+            };
+            self.pixmap.draw_pixmap(0, 0, img, &paint, final_xform, gs.clip_path.as_ref());
+        }
     }
 
     pub fn into_rgba(self) -> Vec<u8> {

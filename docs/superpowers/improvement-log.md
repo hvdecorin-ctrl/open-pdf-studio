@@ -1541,3 +1541,42 @@ For whitespace chars the byte_cmap target GID has no outline (advance-only). The
 1. **Footer-row clipping** in Tekst.pdf p2 (single row missing at bottom) — investigate the page-bottom clip path / pixmap row indexing. Quick if the bug is a `<` vs `<=` off-by-one.
 2. **Fine-tuning `resolve_stroke_width`** for `w 0` lines (currently `0.2 / scale`): the row-419 forensics show APP renders solid 1px where REF spreads to 2-3px. Increasing the constant slightly (e.g. 0.3 or 0.35) would broaden the anti-aliased halo and could shift Barn p2/3/5 across the 2.0% threshold — but high regression risk for engineering drawings already calibrated against this constant.
 3. **Bold synthesis from font flags**: if `FontDescriptor /Flags` bit 19 (FORCE_BOLD) is set or `/FontWeight ≥ 700`, render glyphs with mode-2 fill+stroke and a small synthetic stroke width. Would close the "Totaal incl. BTW" gap on Tekst.pdf p2/3.
+
+---
+
+## Quality iter 32 — image-rect outward rounding to match MuPDF (2026-05-08)
+
+**Target** (from iter-31 hint): Tekst.pdf p2 — single missing footer row at y=2822, ~2000 pixels of diff dominating the 2.49% page diff.
+
+**Diagnostic findings**:
+1. **Symptom confirmed**: REF[2822] = (164, 194, 184) green band across cols 4-1999; APP[2822] = (255, 255, 255) full white. APP rows 2820 / 2821 also lighter than REF — bottom of the embedded image is faded toward white.
+2. **Content stream** (Tekst.pdf p2 via pikepdf): page draws a single image `/Im4 Do` (1240×1754 DCTDecode) under a clip rect `1.199 1.789 594.1 840.1 re W* n`. Image source row 1753 is the green band (164, 194, 184). At scale=3.3596 the image bottom maps to pixel y=2822.43 — exactly aligned with the clip-rect bottom.
+3. **Pipeline trace** (added DBG_IMG eprintln in `draw_image`): final transform maps source `(W, H) → dst (1999.99, 2822.43)`. Image bottom edge at fractional pixel y=2822.43.
+4. **tiny_skia behaviour**: `pixmap.draw_pixmap` builds a non-AA paint (`anti_alias: false`), then `fill_rect` falls through to `fill_path` because the transform is non-identity. Non-AA path filling uses pixel-center-inside semantics — pixel row 2822 (center y=2822.5) is OUTSIDE the destination rect (whose bottom is at y=2822.43). Pixel row 2821 (center y=2821.5) IS inside. So row 2822 is left untouched by the image.
+5. **PyMuPDF / MuPDF behaviour**: the destination image rect is rasterized so any pixel even partially touched by the rect gets a bilinear-pattern sample. With `SpreadMode::Pad` the sampler clamps to the source-edge row, so pixel row 2822 receives the full source-edge color (164, 194, 184). This is "outward rounding" of the image-rect bounds.
+
+**Root cause**: Mismatch between tiny_skia's pixel-center-inside rule for non-AA rect fills and MuPDF's "any-pixel-touched" rule for image rasterisation. A fractional-pixel image edge loses one row whenever the dst-edge falls in the LOWER half of a pixel cell.
+
+**Fix** (`open-pdf-render/src/renderer.rs` `draw_image`):
+Replace `pixmap.draw_pixmap` with manual `fill_path` of an EXPANDED source rect. Specifically: build a rect from `(-0.5, -0.5)` to `(W+0.5, H+0.5)` in source-pixel coordinates and fill it via `Pattern::new(img, SpreadMode::Pad, FilterQuality::Bilinear, opacity, identity)` then `pixmap.fill_path(path, paint, Winding, final_xform, clip)`. The 0.5-source-pixel padding pushes the destination rect outward by ~0.5*dst_pixel/src_pixel pixels, enough to cross the next pixel-center boundary. `SpreadMode::Pad` ensures that pixels sampled in the padding region replicate the closest source-edge row — matching MuPDF's clamp-to-edge behaviour. Effectively this is the smallest-possible MuPDF-emulating rectangular dilation.
+
+The clip mask still attenuates row 2822 by ~57% (because `apply_clip` builds an AA mask with the unmodified clip-rect bounds at pixel y=2822.43), so the post-fix rendered colour is `(209, 224, 219)` — partial blend rather than full source colour. Even partial coverage is enough to cross the 2.0% pass threshold on Tekst.pdf p2 (2.49% → 1.94%).
+
+**Result**:
+- Pass count: **58 → 60 / 106** (+2).
+  - Tekst.pdf p2: 2.49% → **1.94% PASS**.
+  - Technische tekening.pdf p1: 2.89% → **1.22% PASS** (incidental bonus — the same outward-rounding fix improves any image with a near-pixel-aligned bound).
+- All 8 PDFs render without panic — confirmed.
+- No new panics — confirmed.
+- Iter 23-31 wins preserved — confirmed (no regressions; 0 PASS→FAIL).
+
+**Files touched**:
+- `open-pdf-render/src/renderer.rs` — `draw_image` rewritten to use `fill_path` with a 0.5-source-pixel-expanded rect and a manually-constructed `Pattern` shader.
+- `docs/superpowers/improvement-log.md` — this entry.
+
+**Status**: **DONE** — concrete rendering-pipeline gap closed. Edge attenuation via the AA clip mask still leaves room for one more iter on near-edge clip rounding (would close the gap from 1.94% to ~1.5% on Tekst p2 by recovering the missing 57% intensity at row 2822).
+
+**Continue**: YES — open candidates for iter 33:
+1. **AA clip-mask outward rounding** for clip paths whose bottom/right edge falls within the lower half of a pixel cell. Mirror the iter-32 approach to `apply_clip`. Would close the residual edge attenuation on Tekst.pdf p2/p3.
+2. **Bold synthesis from FontDescriptor flags** (carried from iter 31) — would close the "Totaal incl. BTW" weight gap on Tekst.pdf p2/p3.
+3. **Sub-pixel text glyph rendering** at very small sizes (Barn p3 grid bubbles).
