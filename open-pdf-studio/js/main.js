@@ -188,6 +188,14 @@ async function init() {
   // Load installed plugins (extension palettes, custom annotation types, etc.)
   initPlugins();
 
+  // Wire MCP <-> WebView bridge BEFORE show()/setFocus(). The bridge is just
+  // event-listener registration on window.__TAURI__.event — it does not need
+  // the window to be visible or DOM-ready. Wiring it here means the in-process
+  // MCP server's `app_*` tools work even if `appWindow.show()` later stalls
+  // (observed: window remains created but `Visible: False`, blocking the
+  // entire downstream init chain). Inert outside Tauri.
+  initMcpBridge().catch(e => console.warn('initMcpBridge failed:', e));
+
   // Show the window after frontend init. The previous double-rAF paint-wait
   // gate permanently hides the window on WebKitGTK builds where accelerated
   // compositing stalls before the first paint (observed on Linux Mint 22.3 +
@@ -227,9 +235,6 @@ async function init() {
 
   // Setup all event listeners
   setupEventListeners();
-
-  // Wire MCP <-> WebView bridge (no-op outside Tauri).
-  initMcpBridge().catch(e => console.warn('initMcpBridge failed:', e));
 
   // Setup session save on window close (desktop only — Android lifecycle handles this)
   if (!mobile) {
