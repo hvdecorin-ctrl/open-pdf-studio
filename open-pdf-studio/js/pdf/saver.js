@@ -667,12 +667,16 @@ export async function savePDF(saveAsPath = null) {
               Contents: PDFString.of(ann.text || ''),
               DA: PDFString.of(da),
               DS: PDFString.of(dsStr),
-              C: ftFillColorArr || [1, 1, 1],
               CA: opacity,
               T: PDFString.of(ann.author || 'User'),
               M: PDFString.of(new Date().toISOString()),
               F: computeAnnotFlags(ann)
             };
+
+            // Fill/background color in C (omit when transparent so loader reads no /C → fillColor=null)
+            if (ftFillColorArr) {
+              annDictObj.C = ftFillColorArr;
+            }
 
             // Border style
             const ftBorderWidth = ann.lineWidth !== undefined ? ann.lineWidth : 1;
