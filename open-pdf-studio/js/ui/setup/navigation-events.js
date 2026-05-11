@@ -52,14 +52,52 @@ export function setupWheelZoom() {
     // Ctrl+wheel = zoom (snaps to discrete preset levels at the cursor).
     if (e.ctrlKey || e.metaKey) {
       e.preventDefault();
-      // Blank docs (no filePath) bypass the vector viewport entirely; their
-      // zoom path is doc.scale + renderPage. Route ctrl+wheel through the
-      // legacy zoomIn/zoomOut helpers for those.
+      // Legacy path (vector viewport inactive). Used for blank docs (no
+      // filePath) and any PDF whose vector viewport didn't activate. The
+      // zoom flow is doc.scale → renderPage → canvas resized. We anchor the
+      // cursor by capturing the pre-zoom position of the cursor inside the
+      // canvas (in PDF point units, i.e. canvas-CSS-pixels / scale), then
+      // after the re-render adjust the scroll container so the same PDF
+      // point sits under the cursor again.
       if (!viewport.active) {
         const dy = e.deltaY || 0;
         const direction = dy < 0 ? 1 : -1;
         const m = await import('../../pdf/renderer.js');
+        const activeDocForZoom = getActiveDocument();
+        const oldScale = activeDocForZoom?.scale || 1;
+        const pdfCanvas = document.getElementById('pdf-canvas');
+        const container = document.getElementById('pdf-container');
+        // Cursor in canvas-local CSS pixels (pre-zoom)
+        let worldX = null, worldY = null;
+        const clientX = e.clientX, clientY = e.clientY;
+        if (pdfCanvas && container) {
+          const canvasRect = pdfCanvas.getBoundingClientRect();
+          const cursorCanvasX = clientX - canvasRect.left;
+          const cursorCanvasY = clientY - canvasRect.top;
+          // Normalize to scale-1 (PDF page user-space). This stays constant
+          // across the zoom and is the anchor point we want under the cursor.
+          worldX = cursorCanvasX / oldScale;
+          worldY = cursorCanvasY / oldScale;
+        }
         if (direction > 0) await m.zoomIn(); else await m.zoomOut();
+        // Post-zoom: if we had a valid anchor, shift scroll so worldX/Y is
+        // still under the cursor. With flex `safe center`, the canvas is
+        // auto-centered when it fits the container — in that case scrolling
+        // has no effect (scrollLeft/Top clamp to 0) and the canvas stays
+        // centered, which is the correct fallback.
+        if (worldX !== null && pdfCanvas && container) {
+          const newScale = (getActiveDocument()?.scale) || oldScale;
+          const newCanvasRect = pdfCanvas.getBoundingClientRect();
+          // Where worldX/Y sits in viewport coords right now (post-render)
+          const targetClientX = newCanvasRect.left + worldX * newScale;
+          const targetClientY = newCanvasRect.top + worldY * newScale;
+          // We want targetClient → clientX/Y. Container scrolling shifts the
+          // canvas in the opposite direction: scrollLeft += (target - cursor).
+          const dxScroll = targetClientX - clientX;
+          const dyScroll = targetClientY - clientY;
+          if (dxScroll !== 0) container.scrollLeft += dxScroll;
+          if (dyScroll !== 0) container.scrollTop += dyScroll;
+        }
         return;
       }
       // Always anchor to pdf-canvas rect. The cursor may be over a non-canvas
