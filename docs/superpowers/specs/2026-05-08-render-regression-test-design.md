@@ -307,3 +307,64 @@ Notes from the first run:
 - Release builds gate the MCP server behind `OPS_ENABLE_MCP=1`. The fallback launch must therefore be `OPS_ENABLE_MCP=1 target/release/open-pdf-studio.exe --mcp-server`.
 - `Tekst.pdf` baselines at 96.17 % across all 5 pages — that PDF triggers a known font-resolution mismatch with PyMuPDF and the entire page renders as solid colour blocks. It is included as a regression *floor*, not a quality target.
 
+## 14. Performance tracking
+
+Pixel-diff alone catches *correctness* regressions. To also catch *speed* regressions (e.g. "canvas got slower after iter X") the harness measures wall-clock time for every page render and aggregates per PDF + suite total.
+
+**What is measured** — three independent timers around each page's loop body in `scripts/render_test/main.py`:
+
+1. `ref_render_ms` — `render_with_pymupdf(...)` (PyMuPDF reference render).
+2. `app_render_ms` — `client.screenshot_page(...)` MCP call (our renderer end-to-end, including the round-trip from Python → MCP server → Rust kernel → PNG encode → base64 → return).
+3. `diff_ms` — `compare(...)` (Pillow blur + numpy diff).
+
+Each value is stored on the `PageResult` dataclass and propagated into the report writers.
+
+**`summary.json` extension** (additive; the original keys remain):
+
+```jsonc
+{
+  "totals": {
+    "pages": 106, "passed": 60, "failed": 46,
+    "app_render_ms_total": 15234.50,
+    "app_render_ms_avg":   143.72,
+    "app_render_ms_max":   892.30,
+    "ref_render_ms_total":  4823.10,
+    "ref_render_ms_avg":      45.50,
+    "ref_render_ms_max":      75.00,
+    "diff_ms_total":         891.20
+  },
+  "pdfs": [
+    { "path": "...", "version": "1.4",
+      "app_render_ms_total": 2603.40,
+      "app_render_ms_avg":    130.17,
+      "app_render_ms_max":    380.50,
+      "ref_render_ms_total":   910.00,
+      "ref_render_ms_avg":      45.50,
+      "pages": [
+        { "index": 0, "diff_pct": 0.42, "passed": true,
+          "app_render_ms": 145.10, "ref_render_ms": 38.20 }
+      ] }
+  ]
+}
+```
+
+**HTML report extension**:
+
+- Four summary boxes at the top: Results · App render (total/avg/max) · PyMuPDF reference (total/avg) · Compare overhead.
+- Each per-PDF heading carries a sub-line with `app avg ... · max ... · ref avg ...`.
+- The per-page table gains three new columns: `App ms`, `Ref ms`, and `App vs Ref` (a small bar showing the app/ref ratio with a numeric `Nx` next to it). Rows where the app is more than 3× slower than the reference are tinted red so slow pages jump out.
+
+**Console output**:
+
+```
+  Tekst.pdf p0    0.42%  PASS  app=145ms ref=38ms
+  ...
+[render-regression] 106 pages, 60 passed, 46 failed.
+[render-regression] total app render: 15.2s (avg 144ms/page, max 892ms)
+[render-regression] PyMuPDF reference: 4.8s (avg 46ms/page)
+```
+
+**Backward compatibility**: the `PageResult` timing fields default to `0.0`; the new `summary.json` keys are additive (no existing key changed type or was removed). Tools that read only the legacy `passed`/`failed`/`pages` keys keep working.
+
+**Detecting regressions**: there is no stored historical baseline (mirrors §8's "no stored reference" policy). The engineer compares two consecutive runs by eye — a 2× jump in `totals.app_render_ms_avg` between commits is the expected smoke signal. A follow-up Spec B item can record this number into a small append-only file (`render-perf-history.jsonl`) and emit a diff between the last two runs.
+

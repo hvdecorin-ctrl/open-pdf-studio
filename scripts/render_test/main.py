@@ -3,6 +3,7 @@ import argparse
 import shutil
 import subprocess
 import sys
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Iterable
@@ -86,11 +87,19 @@ def main() -> int:
         for idx in pages_to_test:
             print(f"  {Path(pdf['path']).name} p{idx}", end="", flush=True)
             try:
+                t_ref = time.perf_counter()
                 ref = render_with_pymupdf(Path(pdf["path"]), idx, args.width)
+                ref_ms = (time.perf_counter() - t_ref) * 1000.0
+
+                t_app = time.perf_counter()
                 app = client.screenshot_page(pdf["path"], idx, args.width)
+                app_ms = (time.perf_counter() - t_app) * 1000.0
+
+                t_diff = time.perf_counter()
                 pct, overlay = compare(
                     ref, app, args.blur_sigma, args.pixel_tol
                 )
+                diff_ms = (time.perf_counter() - t_diff) * 1000.0
 
                 ref_name  = f"{stem}_p{idx}_ref.png"
                 app_name  = f"{stem}_p{idx}_app.png"
@@ -107,9 +116,12 @@ def main() -> int:
                     ref_filename=ref_name,
                     app_filename=app_name,
                     diff_filename=diff_name,
+                    app_render_ms=app_ms,
+                    ref_render_ms=ref_ms,
+                    diff_ms=diff_ms,
                 ))
                 status = "PASS" if pct <= args.fail_pct else "FAIL"
-                print(f"  {pct:6.2f}%  {status}")
+                print(f"  {pct:6.2f}%  {status}  app={app_ms:.0f}ms ref={ref_ms:.0f}ms")
             except Exception as e:
                 print(f"  ERROR: {e}")
                 # Synthesize a failed result so the report shows the error
@@ -143,7 +155,26 @@ def main() -> int:
         shutil.copy2(run_dir / "summary.json", out_root / "latest_summary.json")
 
     failed = sum(1 for r in results if r.diff_pct > args.fail_pct)
-    print(f"[render-regression] {len(results)} pages, {failed} failed.")
+    passed = len(results) - failed
+    print(f"[render-regression] {len(results)} pages, {passed} passed, {failed} failed.")
+
+    # Timing summary (only meaningful if any pages were successfully timed)
+    timed = [r for r in results if r.app_render_ms > 0.0]
+    if timed:
+        app_total = sum(r.app_render_ms for r in timed)
+        ref_total = sum(r.ref_render_ms for r in timed)
+        app_avg = app_total / len(timed)
+        app_max = max(r.app_render_ms for r in timed)
+        ref_avg = ref_total / len(timed)
+        print(
+            f"[render-regression] total app render: {app_total/1000.0:.1f}s "
+            f"(avg {app_avg:.0f}ms/page, max {app_max:.0f}ms)"
+        )
+        print(
+            f"[render-regression] PyMuPDF reference: {ref_total/1000.0:.1f}s "
+            f"(avg {ref_avg:.0f}ms/page)"
+        )
+
     print(f"[render-regression] open {run_dir / 'report.html'}")
     client.close()
     return failed

@@ -7,37 +7,87 @@ body { font: 13px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif
 h1 { margin: 0 0 8px; font-size: 20px; }
 h2 { margin: 24px 0 8px; font-size: 16px; border-bottom: 1px solid #333; padding-bottom: 4px; }
 .config { color: #888; font-size: 12px; margin-bottom: 16px; }
-.totals { padding: 8px 12px; background: #2a2a2a; border-radius: 4px; display: inline-block; }
+.boxes { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
+.box { padding: 8px 12px; background: #2a2a2a; border-radius: 4px; min-width: 180px; }
+.box .label { color: #888; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; }
+.box .value { font-size: 18px; margin-top: 2px; }
+.box .sub { color: #888; font-size: 11px; margin-top: 2px; }
 .totals .pass { color: #2ecc71; }
 .totals .fail { color: #e74c3c; }
+.pdf-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.pdf-head .timing { font-size: 11px; color: #888; font-weight: normal; }
+.bar-wrap { display: inline-block; width: 80px; height: 8px; background: #333; vertical-align: middle; margin-left: 4px; position: relative; border-radius: 1px; }
+.bar { position: absolute; top: 0; left: 0; height: 100%; background: #f3a847; border-radius: 1px; }
+.bar.fast { background: #2ecc71; }
+.bar.slow { background: #e74c3c; }
 table { width: 100%; border-collapse: collapse; }
 th, td { padding: 6px 8px; vertical-align: top; border-bottom: 1px solid #2a2a2a; text-align: left; }
+th.num, td.num { text-align: right; font-variant-numeric: tabular-nums; }
 .row.fail { background: rgba(231, 76, 60, 0.07); }
 .diff-pct.fail { color: #e74c3c; font-weight: bold; }
 .diff-pct.pass { color: #888; }
+.ms { color: #ccc; font-variant-numeric: tabular-nums; }
+.ms.slow { color: #e74c3c; font-weight: bold; }
 img.thumb { width: 220px; height: auto; border: 1px solid #333; cursor: zoom-in; }
 img.thumb:hover { outline: 2px solid #f3a847; }
 </style></head><body>
 <h1>Render Regression — {{ git_sha }}</h1>
 <div class="config">Config: width={{ config.width }}, fail_pct={{ config.fail_pct }}, blur_sigma={{ config.blur_sigma }}, pixel_tol={{ config.pixel_tol }}</div>
-<div class="totals">
-  <span class="pass">{{ totals.passed }} passed</span> /
-  <span class="fail">{{ totals.failed }} failed</span> /
-  total {{ totals.pages }}
+
+<div class="boxes totals">
+  <div class="box">
+    <div class="label">Results</div>
+    <div class="value">
+      <span class="pass">{{ totals.passed }}</span> /
+      <span class="fail">{{ totals.failed }}</span> /
+      {{ totals.pages }}
+    </div>
+    <div class="sub">passed / failed / total</div>
+  </div>
+  <div class="box">
+    <div class="label">App render</div>
+    <div class="value">{{ "%.1f"|format(totals.app_render_ms_total / 1000.0) }} s</div>
+    <div class="sub">avg {{ "%.0f"|format(totals.app_render_ms_avg) }}ms · max {{ "%.0f"|format(totals.app_render_ms_max) }}ms</div>
+  </div>
+  <div class="box">
+    <div class="label">PyMuPDF reference</div>
+    <div class="value">{{ "%.1f"|format(totals.ref_render_ms_total / 1000.0) }} s</div>
+    <div class="sub">avg {{ "%.0f"|format(totals.ref_render_ms_avg) }}ms/page</div>
+  </div>
+  <div class="box">
+    <div class="label">Compare overhead</div>
+    <div class="value">{{ "%.1f"|format(totals.diff_ms_total / 1000.0) }} s</div>
+    <div class="sub">pixel-diff total</div>
+  </div>
 </div>
 
 {% for pdf in pdfs %}
-<h2>{{ pdf.path }} <small style="color:#888">v{{ pdf.version }}</small></h2>
+<div class="pdf-head">
+  <h2 style="border:0; margin:24px 0 4px">{{ pdf.path }} <small style="color:#888">v{{ pdf.version }}</small></h2>
+  <span class="timing">app avg {{ "%.0f"|format(pdf.app_render_ms_avg) }}ms · max {{ "%.0f"|format(pdf.app_render_ms_max) }}ms · ref avg {{ "%.0f"|format(pdf.ref_render_ms_avg) }}ms</span>
+</div>
 <table>
   <thead><tr>
-    <th>Page</th><th>Diff %</th>
+    <th>Page</th><th class="num">Diff %</th>
+    <th class="num">App ms</th><th class="num">Ref ms</th>
+    <th>App vs Ref</th>
     <th>Reference</th><th>App</th><th>Diff overlay</th>
   </tr></thead>
   <tbody>
   {% for p in pdf.pages %}
+    {% set ratio = (p.app_render_ms / p.ref_render_ms) if p.ref_render_ms > 0 else 0 %}
+    {% set bar_pct = (p.app_render_ms / (p.app_render_ms + p.ref_render_ms) * 100) if (p.app_render_ms + p.ref_render_ms) > 0 else 0 %}
     <tr class="row {% if not p.passed %}fail{% endif %}">
       <td>{{ p.index }}</td>
-      <td class="diff-pct {% if p.passed %}pass{% else %}fail{% endif %}">{{ "%.2f"|format(p.diff_pct) }} %</td>
+      <td class="num diff-pct {% if p.passed %}pass{% else %}fail{% endif %}">{{ "%.2f"|format(p.diff_pct) }} %</td>
+      <td class="num ms {% if ratio > 3 %}slow{% endif %}">{{ "%.0f"|format(p.app_render_ms) }}</td>
+      <td class="num ms">{{ "%.0f"|format(p.ref_render_ms) }}</td>
+      <td>
+        <span class="bar-wrap" title="app {{ '%.0f'|format(p.app_render_ms) }}ms vs ref {{ '%.0f'|format(p.ref_render_ms) }}ms">
+          <span class="bar {% if ratio > 3 %}slow{% elif ratio < 1.5 %}fast{% endif %}" style="width: {{ '%.0f'|format(bar_pct) }}%"></span>
+        </span>
+        {% if p.ref_render_ms > 0 %}<small style="color:#888">{{ "%.1f"|format(ratio) }}×</small>{% endif %}
+      </td>
       <td><a href="{{ p.ref_filename }}" target="_blank"><img class="thumb" src="{{ p.ref_filename }}"></a></td>
       <td><a href="{{ p.app_filename }}" target="_blank"><img class="thumb" src="{{ p.app_filename }}"></a></td>
       <td><a href="{{ p.diff_filename }}" target="_blank"><img class="thumb" src="{{ p.diff_filename }}"></a></td>
