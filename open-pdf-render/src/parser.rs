@@ -1,7 +1,8 @@
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex, RwLock};
 use lopdf::ObjectId;
 use crate::{RenderError, RenderedPage};
 use crate::fonts::FontRegistry;
+use crate::interpreter::ImageCache;
 
 pub struct DocumentHandle {
     doc: lopdf::Document,
@@ -10,6 +11,26 @@ pub struct DocumentHandle {
     /// only extracted once. Uses Mutex for Send+Sync (Tauri commands run on
     /// a thread pool); contention is rare in practice.
     font_registry: Mutex<FontRegistry>,
+    /// PoC 02 — document-scoped decoded-image cache.
+    ///
+    /// Without this, each `render_page` allocates a fresh per-page
+    /// `ImageCache` (interpreter.rs L240) and `predecode_images_parallel`
+    /// re-decodes the same JPEG / FlateDecode + PNG-predictor streams every
+    /// time the page is visited (re-scroll, zoom, repaint). For
+    /// raster-heavy PDFs like Barn Relocation (73 unique large image
+    /// XObjects shared across 7 pages) this is the dominant cost on the
+    /// "warm scroll" path: the bench harness measured BARN
+    /// `scroll_back_revisit` at 7301 ms vs `cold_open_p1` at 797 ms — the
+    /// warm pass is 9× slower because the only thing it caches is the
+    /// final RGBA pixmap of the WHOLE page, not the constituent images.
+    ///
+    /// The cache stores `Arc`-wrapped pixel buffers (`CachedDecodedImage`
+    /// already wraps `Vec<u8>` in `Arc`) so handing entries to the
+    /// per-render local cache is a cheap atomic-increment, not a copy.
+    /// Insert-if-absent semantics on merge-back prevent thundering-herd
+    /// re-decode when multiple renders race for the same image — first
+    /// writer wins, subsequent writers' buffers are dropped immediately.
+    doc_image_cache: Arc<RwLock<ImageCache>>,
 }
 
 impl DocumentHandle {
@@ -19,11 +40,24 @@ impl DocumentHandle {
         Ok(DocumentHandle {
             doc,
             font_registry: Mutex::new(FontRegistry::new()),
+            doc_image_cache: Arc::new(RwLock::new(ImageCache::new())),
         })
     }
 
     pub fn page_count(&self) -> usize {
         self.doc.get_pages().len()
+    }
+
+    /// PoC 02 diagnostic: report the current doc-image-cache memory footprint.
+    /// Returns (entry_count, total_rgba_bytes).
+    pub fn doc_image_cache_stats(&self) -> (usize, usize) {
+        if let Ok(guard) = self.doc_image_cache.read() {
+            let n = guard.len();
+            let bytes = guard.values().map(|v| v.rgba_len()).sum();
+            (n, bytes)
+        } else {
+            (0, 0)
+        }
     }
 
     /// Returns the displayed dimensions of a page, accounting for the
@@ -100,9 +134,9 @@ impl DocumentHandle {
         let page_ctm = state.current.ctm;
 
         if max_image_pixels > 0 {
-            crate::interpreter::Interpreter::execute_with_image_limit(&content_bytes, &mut renderer, &mut state, &self.doc, &resources, &mut *font_registry, max_image_pixels)?;
+            crate::interpreter::Interpreter::execute_with_image_limit(&content_bytes, &mut renderer, &mut state, &self.doc, &resources, &mut *font_registry, max_image_pixels, Some(&self.doc_image_cache))?;
         } else {
-            crate::interpreter::Interpreter::execute(&content_bytes, &mut renderer, &mut state, &self.doc, &resources, &mut *font_registry)?;
+            crate::interpreter::Interpreter::execute(&content_bytes, &mut renderer, &mut state, &self.doc, &resources, &mut *font_registry, Some(&self.doc_image_cache))?;
         }
 
         // Iter 29: render page annotations with appearance streams
@@ -123,7 +157,7 @@ impl DocumentHandle {
         state.current.group_stroke_alpha = 1.0;
         state.current.text_render_mode = 0;
         state.current.clip_path = None;
-        self.render_page_annotations(page_id, &mut renderer, &mut state, &mut *font_registry);
+        self.render_page_annotations(page_id, &mut renderer, &mut state, &mut *font_registry, Some(&self.doc_image_cache));
 
         drop(font_registry);
 
@@ -139,6 +173,7 @@ impl DocumentHandle {
         renderer: &mut crate::renderer::SkiaRenderer,
         state: &mut crate::graphics_state::GraphicsStateStack,
         font_registry: &mut FontRegistry,
+        doc_image_cache: Option<&Arc<RwLock<ImageCache>>>,
     ) {
         let page_dict = match self.doc.get_object(page_id).and_then(|o| o.as_dict().map(|d| d.clone())) {
             Ok(d) => d,
@@ -225,7 +260,7 @@ impl DocumentHandle {
             };
 
             crate::interpreter::Interpreter::render_annotation_appearance(
-                &stream, rect, renderer, state, &self.doc, font_registry,
+                &stream, rect, renderer, state, &self.doc, font_registry, doc_image_cache,
             );
         }
     }

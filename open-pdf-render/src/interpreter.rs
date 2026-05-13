@@ -180,10 +180,18 @@ impl TextState {
 /// resolution (after JPEG scale-DCT or box downsample). Wrapped in Arc so
 /// the per-page cache can hand back the same pixels for repeated /Do refs
 /// without copying.
+#[derive(Clone)]
 pub(crate) struct CachedDecodedImage {
     w: u32,
     h: u32,
     rgba: std::sync::Arc<Vec<u8>>,
+}
+
+impl CachedDecodedImage {
+    /// PoC 02 diagnostic — total RGBA byte count (size, not Arc refcount).
+    pub(crate) fn rgba_len(&self) -> usize {
+        self.rgba.len()
+    }
 }
 
 /// Per-page cache for decoded image XObjects, keyed by lopdf::ObjectId.
@@ -206,8 +214,9 @@ impl Interpreter {
         doc: &Document,
         resources: &Dictionary,
         font_registry: &mut FontRegistry,
+        doc_image_cache: Option<&std::sync::Arc<std::sync::RwLock<ImageCache>>>,
     ) -> Result<(), RenderError> {
-        Self::execute_internal(content_bytes, renderer, state, doc, resources, font_registry, 0)
+        Self::execute_internal(content_bytes, renderer, state, doc, resources, font_registry, 0, doc_image_cache)
     }
 
     /// Execute content stream with a pixel budget for images. Images larger
@@ -221,8 +230,9 @@ impl Interpreter {
         resources: &Dictionary,
         font_registry: &mut FontRegistry,
         max_pixels: u32,
+        doc_image_cache: Option<&std::sync::Arc<std::sync::RwLock<ImageCache>>>,
     ) -> Result<(), RenderError> {
-        Self::execute_internal(content_bytes, renderer, state, doc, resources, font_registry, max_pixels)
+        Self::execute_internal(content_bytes, renderer, state, doc, resources, font_registry, max_pixels, doc_image_cache)
     }
 
     fn execute_internal(
@@ -233,11 +243,28 @@ impl Interpreter {
         resources: &Dictionary,
         font_registry: &mut FontRegistry,
         max_image_pixels: u32,
+        doc_image_cache: Option<&std::sync::Arc<std::sync::RwLock<ImageCache>>>,
     ) -> Result<(), RenderError> {
         let prof = profile_enabled();
         if prof { profile_reset(); }
         // Per-page decoded-image cache. See `ImageCache` doc.
+        //
+        // PoC 02: if the caller supplied a document-scoped cache, seed the
+        // per-render cache with its entries (read-lock for a single
+        // collection-iter + Arc-clone of each `CachedDecodedImage`). The
+        // predecode pass below skips any image whose ObjectId is already in
+        // the local cache, so this seed turns repeat visits into a no-op
+        // for the decode path — only the cheap drawing work remains. The
+        // read lock is released before any heavy work runs.
         let mut img_cache: ImageCache = std::collections::HashMap::new();
+        if let Some(doc_cache) = doc_image_cache {
+            if let Ok(guard) = doc_cache.read() {
+                img_cache.reserve(guard.len());
+                for (k, v) in guard.iter() {
+                    img_cache.insert(*k, v.clone());
+                }
+            }
+        }
         let content = Content::decode(content_bytes)
             .map_err(|e| RenderError::ParseError(format!("Content decode: {}", e)))?;
 
@@ -453,7 +480,7 @@ impl Interpreter {
                     }
                 }
                 "Do" => {
-                    Self::handle_do_execute(&op.operands, renderer, state, doc, resources, font_registry, max_image_pixels, &mut img_cache);
+                    Self::handle_do_execute(&op.operands, renderer, state, doc, resources, font_registry, max_image_pixels, &mut img_cache, doc_image_cache);
                 }
                 "gs" => {
                     Self::apply_ext_gstate(&op.operands, state, doc, resources);
@@ -470,6 +497,22 @@ impl Interpreter {
                 }
             }
         }
+        // PoC 02: merge newly-decoded images back into the document cache.
+        // Insert-if-absent — never overwrite an existing entry. If two
+        // renders raced for the same image, both produced byte-equivalent
+        // buffers; we keep whichever landed first and drop the duplicate.
+        // The seed read at function entry put every doc-cache entry into
+        // the local cache, so `len() > 0` doesn't mean we have new entries
+        // — we still need to walk and skip-on-present.
+        if let Some(doc_cache) = doc_image_cache {
+            if !img_cache.is_empty() {
+                if let Ok(mut guard) = doc_cache.write() {
+                    for (k, v) in img_cache.iter() {
+                        guard.entry(*k).or_insert_with(|| v.clone());
+                    }
+                }
+            }
+        }
         Ok(())
     }
 
@@ -482,6 +525,7 @@ impl Interpreter {
         font_registry: &mut FontRegistry,
         max_image_pixels: u32,
         img_cache: &mut ImageCache,
+        doc_image_cache: Option<&std::sync::Arc<std::sync::RwLock<ImageCache>>>,
     ) {
         let name = match operands.first() {
             Some(Object::Name(n)) => n,
@@ -611,6 +655,7 @@ impl Interpreter {
                             res,
                             font_registry,
                             max_image_pixels,
+                            doc_image_cache,
                         );
                     }
                     // Composite the group buffer onto the parent using
@@ -633,7 +678,7 @@ impl Interpreter {
                     if let Ok(content_bytes) = stream.decompressed_content() {
                         let _ = Self::execute_internal(
                             &content_bytes, renderer, state, doc, res,
-                            font_registry, max_image_pixels,
+                            font_registry, max_image_pixels, doc_image_cache,
                         );
                     }
                 }
@@ -642,7 +687,7 @@ impl Interpreter {
             if let Ok(content_bytes) = stream.decompressed_content() {
                 let _ = Self::execute_internal(
                     &content_bytes, renderer, state, doc, res,
-                    font_registry, max_image_pixels,
+                    font_registry, max_image_pixels, doc_image_cache,
                 );
             }
         }
@@ -2976,6 +3021,7 @@ impl Interpreter {
         state: &mut GraphicsStateStack,
         doc: &Document,
         font_registry: &mut FontRegistry,
+        doc_image_cache: Option<&std::sync::Arc<std::sync::RwLock<ImageCache>>>,
     ) {
         // Extract the form's BBox (mandatory per spec).
         let bbox = match Self::extract_form_bbox(&ap_stream.dict) {
@@ -3072,6 +3118,7 @@ impl Interpreter {
                 res,
                 font_registry,
                 0,
+                doc_image_cache,
             );
         }
 
