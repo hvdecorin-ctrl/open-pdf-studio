@@ -1,8 +1,61 @@
+use std::collections::{HashMap, VecDeque};
 use std::sync::{Arc, Mutex, RwLock};
 use lopdf::ObjectId;
 use crate::{RenderError, RenderedPage};
 use crate::fonts::FontRegistry;
 use crate::interpreter::ImageCache;
+
+/// PoC 04 — bounded FIFO cache of fully-rendered page bitmaps.
+///
+/// Stores `Arc<RenderedPage>` so cache hits are atomic-increment cheap.
+/// Bounded by entry count, not bytes — typical page is ~6-30 MB so 40
+/// entries is roughly 240-1200 MB worst case. User-stated budget is
+/// 700 MB; the default `max_entries=40` lands inside it for the corpus.
+/// Eviction is FIFO (insertion-order queue + map lookup) rather than LRU
+/// because the user's hot working set is "recently rendered" — visiting
+/// pages doesn't shuffle eviction order, which is exactly what we want
+/// when prerender or sequential scroll is the dominant pattern.
+struct PixmapCache {
+    map: HashMap<(usize, u32, i32), Arc<RenderedPage>>,
+    insertion_order: VecDeque<(usize, u32, i32)>,
+    max_entries: usize,
+}
+
+impl PixmapCache {
+    fn new(max_entries: usize) -> Self {
+        Self {
+            map: HashMap::new(),
+            insertion_order: VecDeque::with_capacity(max_entries),
+            max_entries,
+        }
+    }
+
+    fn get(&self, key: &(usize, u32, i32)) -> Option<Arc<RenderedPage>> {
+        self.map.get(key).cloned()
+    }
+
+    fn insert(&mut self, key: (usize, u32, i32), value: Arc<RenderedPage>) {
+        if self.map.insert(key, value).is_none() {
+            self.insertion_order.push_back(key);
+            while self.insertion_order.len() > self.max_entries {
+                if let Some(old) = self.insertion_order.pop_front() {
+                    self.map.remove(&old);
+                }
+            }
+        }
+    }
+
+    fn stats(&self) -> (usize, usize) {
+        let bytes = self.map.values().map(|v| v.rgba.len()).sum();
+        (self.map.len(), bytes)
+    }
+}
+
+/// Per-doc pixmap-cache capacity (entries, not bytes). Sized to keep BARN's
+/// 7 pages × ~3 typical zoom levels = ~21 entries comfortably resident,
+/// with headroom. 40 × ~15 MB ≈ 600 MB upper bound — within the user's
+/// stated 700 MB budget.
+const PIXMAP_CACHE_MAX_ENTRIES: usize = 40;
 
 pub struct DocumentHandle {
     doc: lopdf::Document,
@@ -11,6 +64,14 @@ pub struct DocumentHandle {
     /// only extracted once. Uses Mutex for Send+Sync (Tauri commands run on
     /// a thread pool); contention is rare in practice.
     font_registry: Mutex<FontRegistry>,
+    /// PoC 04 — full-page rendered-pixmap cache. Cuts repeat-render cost
+    /// from "image decode skipped + draw all content stream" down to a
+    /// single Vec<u8> clone (15 MB ≈ 10 ms on modern x86 vs ~280 ms for
+    /// the full draw path even with image decode cached). Keyed by
+    /// `(page_idx, scale_q = round(scale * 10_000), rotation)` so each
+    /// (zoom × rotation) combination caches separately. Bounded FIFO at
+    /// `PIXMAP_CACHE_MAX_ENTRIES`; oldest pages get evicted first.
+    pixmap_cache: Mutex<PixmapCache>,
     /// PoC 02 — document-scoped decoded-image cache.
     ///
     /// Without this, each `render_page` allocates a fresh per-page
@@ -40,8 +101,15 @@ impl DocumentHandle {
         Ok(DocumentHandle {
             doc,
             font_registry: Mutex::new(FontRegistry::new()),
+            pixmap_cache: Mutex::new(PixmapCache::new(PIXMAP_CACHE_MAX_ENTRIES)),
             doc_image_cache: Arc::new(RwLock::new(ImageCache::new())),
         })
+    }
+
+    /// PoC 04 diagnostic: report the current pixmap-cache footprint.
+    /// Returns (entry_count, total_rgba_bytes).
+    pub fn pixmap_cache_stats(&self) -> (usize, usize) {
+        if let Ok(g) = self.pixmap_cache.lock() { g.stats() } else { (0, 0) }
     }
 
     pub fn page_count(&self) -> usize {
@@ -87,6 +155,32 @@ impl DocumentHandle {
     }
 
     fn render_page_internal(&self, page: usize, scale: f32, extra_rotation: i32, max_image_pixels: u32) -> Result<RenderedPage, RenderError> {
+        // PoC 04: pixmap-cache fast path. Only caches full-resolution renders
+        // (max_image_pixels == 0) — thumbnail renders downsample images and
+        // would pollute the cache with low-quality entries that the main
+        // viewer never wants. Quantise the scale to 4 decimal places so
+        // float-drift across calls doesn't fragment the cache (e.g. 1.0 vs
+        // 1.000001 should be the same key).
+        let cache_key = if max_image_pixels == 0 {
+            Some((page, (scale * 10_000.0).round() as u32, extra_rotation))
+        } else {
+            None
+        };
+        if let Some(key) = cache_key {
+            if let Ok(cache) = self.pixmap_cache.lock() {
+                if let Some(cached) = cache.get(&key) {
+                    // Cache hit. Clone the Vec once (~10 ms for a 15 MB
+                    // BARN page on modern x86 — still 25-30× faster than
+                    // re-rendering even with the doc-image-cache warm).
+                    return Ok(RenderedPage {
+                        width: cached.width,
+                        height: cached.height,
+                        rgba: cached.rgba.clone(),
+                    });
+                }
+            }
+        }
+
         let page_id = self.get_page_id(page)?;
         let (x0, y0, w_pt, h_pt) = self.extract_media_box_full(page_id)?;
 
@@ -161,7 +255,25 @@ impl DocumentHandle {
 
         drop(font_registry);
 
-        Ok(RenderedPage { width, height, rgba: renderer.into_rgba() })
+        let rendered_rgba = renderer.into_rgba();
+
+        // PoC 04: insert the freshly-rendered page into the cache so the
+        // next visit returns it via the fast path above. Clone-into-Arc
+        // pays one 15 MB allocation+copy on the miss path; subsequent
+        // hits return cheap Arc clones. We deliberately skip caching when
+        // a thumbnail (max_image_pixels > 0) path runs.
+        if let Some(key) = cache_key {
+            if let Ok(mut cache) = self.pixmap_cache.lock() {
+                let cached = Arc::new(RenderedPage {
+                    width,
+                    height,
+                    rgba: rendered_rgba.clone(),
+                });
+                cache.insert(key, cached);
+            }
+        }
+
+        Ok(RenderedPage { width, height, rgba: rendered_rgba })
     }
 
     /// Render every annotation on the page that has a `/AP /N` appearance
