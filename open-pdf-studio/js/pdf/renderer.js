@@ -72,137 +72,6 @@ export function _clearJSBitmapCache() {
   }
 }
 
-// ─── Background pre-render of adjacent zoom levels ─────────────────────────
-// When a foreground render completes, schedule async Rust renders at the
-// next-lower and next-higher preset zoom levels for the same page. The
-// results land in BOTH the JS ImageBitmap cache (here) and the Rust
-// DocumentHandle's pixmap cache (server-side). Subsequent user zoom in one
-// preset step becomes an instant cache hit instead of a 1.5-3s cold render.
-//
-// Cancellation: each pre-render gets a generation token; if the user moves
-// to a different page OR the foreground render runs again (which invokes
-// this scheduler again), the in-flight pre-render is abandoned (we still
-// finish the IPC since it can't be cancelled, but discard the result).
-const _PRESET_ZOOMS = [
-  0.10, 0.125, 0.25, 0.333, 0.50, 0.667, 0.75, 0.80, 0.90,
-  1.00, 1.10, 1.25, 1.50, 1.75, 2.00, 2.50, 3.00, 4.00, 6.00,
-  8.00, 12.00, 16.00, 24.00, 32.00,
-];
-let _preRenderTimer = null;
-let _preRenderGen = 0;
-
-function _findPresetIndex(scale) {
-  const eps = scale * 1e-4;
-  for (let i = 0; i < _PRESET_ZOOMS.length; i++) {
-    if (Math.abs(_PRESET_ZOOMS[i] - scale) < eps) return i;
-  }
-  // Find closest if not exact match
-  let bestI = 0, bestD = Math.abs(_PRESET_ZOOMS[0] - scale);
-  for (let i = 1; i < _PRESET_ZOOMS.length; i++) {
-    const d = Math.abs(_PRESET_ZOOMS[i] - scale);
-    if (d < bestD) { bestD = d; bestI = i; }
-  }
-  return bestI;
-}
-
-async function _preRenderOne(doc, pageNum, targetScale, myGen) {
-  if (myGen !== _preRenderGen) return false;
-  const userRotation = getPageRotation(pageNum) || 0;
-  const key = `${doc.filePath}|${pageNum}|${Math.round(targetScale * 10000)}|${userRotation}`;
-  if (_bitmapJSCacheGet(key)) return true;  // already cached
-  try {
-    const t0 = performance.now();
-    // PERF FIX #3: direct binary IPC, no tempfile. See lib.rs render_pdf_page.
-    const rgbaData = await invoke('render_pdf_page', {
-      path: doc.filePath,
-      pageIndex: pageNum - 1,
-      scale: targetScale,
-    });
-    if (myGen !== _preRenderGen) return false;
-    const fileBytes = rgbaData instanceof Uint8Array ? rgbaData : new Uint8Array(rgbaData);
-    if (fileBytes && fileBytes.length > 8) {
-      const header = new DataView(fileBytes.buffer, fileBytes.byteOffset, 8);
-      const rustW = header.getUint32(0, true);
-      const rustH = header.getUint32(4, true);
-      const rgba = new Uint8ClampedArray(fileBytes.buffer, fileBytes.byteOffset + 8, fileBytes.length - 8);
-      if (rustW * rustH * 4 === rgba.length) {
-        const imageData = new ImageData(new Uint8ClampedArray(rgba), rustW, rustH);
-        await _bitmapJSCacheSet(key, imageData);
-        console.log(`[pre-render] warmed: p${pageNum} @ ${targetScale} in ${Math.round(performance.now() - t0)}ms`);
-        return true;
-      }
-    }
-  } catch (e) {
-    console.warn(`[pre-render] failed p${pageNum} @ ${targetScale}:`, e);
-  }
-  return false;
-}
-
-function _schedulePreRenderAdjacent(doc, pageNum, currentScale) {
-  if (!doc || !doc.filePath) return;
-  if (_preRenderTimer) clearTimeout(_preRenderTimer);
-  const myGen = ++_preRenderGen;
-  const numPages = doc.pdfDoc?.numPages || 1;
-  const targetIdx = _findPresetIndex(currentScale);
-
-  // Build pre-render task queue. Priority order:
-  //   1. SAME page, ±1 zoom step       (user wheels up/down)
-  //   2. ADJACENT pages, SAME zoom     (user page-nav at this zoom)
-  //   3. SAME page, ±2 zoom steps      (user wheels further)
-  // Each task is { pageNum, scale }. The loop renders them in priority
-  // order; the gen check between each lets user input cancel pending
-  // background work immediately.
-  const tasks = [];
-  // Priority 1: ±1 zoom step on current page
-  if (targetIdx + 1 < _PRESET_ZOOMS.length) tasks.push({ p: pageNum, s: _PRESET_ZOOMS[targetIdx + 1] });
-  if (targetIdx - 1 >= 0) tasks.push({ p: pageNum, s: _PRESET_ZOOMS[targetIdx - 1] });
-  // Priority 2: adjacent pages at current scale
-  if (pageNum + 1 <= numPages) tasks.push({ p: pageNum + 1, s: currentScale });
-  if (pageNum - 1 >= 1) tasks.push({ p: pageNum - 1, s: currentScale });
-  // Priority 3: ±2 zoom steps on current page (extends the "wheel two
-  // ticks ahead" window so even fast spins land in cache)
-  if (targetIdx + 2 < _PRESET_ZOOMS.length) tasks.push({ p: pageNum, s: _PRESET_ZOOMS[targetIdx + 2] });
-  if (targetIdx - 2 >= 0) tasks.push({ p: pageNum, s: _PRESET_ZOOMS[targetIdx - 2] });
-
-  _preRenderTimer = setTimeout(async () => {
-    _preRenderTimer = null;
-    if (myGen !== _preRenderGen) return;
-    if (!doc || !doc.filePath) return;
-
-    for (const { p, s } of tasks) {
-      if (myGen !== _preRenderGen) return;
-      await _preRenderOne(doc, p, s, myGen);
-      // Tiny breather between tasks so user input can interleave + abort
-      await new Promise(r => setTimeout(r, 20));
-    }
-  }, 600);
-}
-
-/// Open-time warmup: when a document is first loaded, schedule renders
-/// at the most-common zoom presets (1.0, 1.25, 1.75) for page 1 in the
-/// background. This means the user's first ctrl+wheel up or down lands
-/// instantly even before they've made any other interaction.
-export function preWarmOnOpen(doc) {
-  if (!doc || !doc.filePath) return;
-  const myGen = ++_preRenderGen;
-  // Wait for the foreground initial render to clearly settle before
-  // starting the warmup queue (we don't want to compete with it).
-  setTimeout(async () => {
-    if (myGen !== _preRenderGen) return;
-    const targets = [
-      { p: 1, s: 1.25 },
-      { p: 1, s: 1.75 },
-      { p: 1, s: 1.00 },
-      { p: 1, s: 2.00 },
-    ];
-    for (const { p, s } of targets) {
-      if (myGen !== _preRenderGen) return;
-      await _preRenderOne(doc, p, s, myGen);
-      await new Promise(r => setTimeout(r, 30));
-    }
-  }, 800);
-}
-
 // NOTE: an earlier prototype embedded MuPDF WASM rendering helpers here
 // (loadMupdf / isMupdfAvailable / getMupdfDocument / renderPageWithMupdf).
 // They were never wired up — the active path is the Rust vector renderer
@@ -224,9 +93,7 @@ function setupCanvasHiDPI(canvas, width, height) {
 // each await. If the captured gen differs from the current gen, a newer
 // renderPage() has been triggered — the older one must NOT write to the
 // shared #pdf-canvas (its scale-N bitmap would clobber the newer scale-M
-// result that already landed). Same pattern as _preRenderGen for the
-// background prerender queue (renderer.js ~L82) but for the foreground
-// hot path that was previously unguarded.
+// result that already landed).
 //
 // User-visible symptom this fixes: rapid mouse-wheel zoom on raster PDFs
 // (BARN) showed the page "springing back and forth" between intermediate
