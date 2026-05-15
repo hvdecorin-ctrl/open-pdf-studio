@@ -34,17 +34,6 @@ function _resetZoomAccumSoon() {
   }, 200);
 }
 
-// Wheel-zoom generation counter — fixes the rapid-zoom scroll-anchor stack-up.
-// Each ctrl+wheel handler captures its own _myWheelGen at entry. Multiple
-// rapid handlers all read the SAME oldScale (sync part), AWAIT zoomIn(), then
-// post-zoom each tries to adjust container.scrollLeft to anchor the cursor to
-// its captured worldX. With N rapid wheels, N near-identical dxScroll values
-// stack up — the page visibly springs left/right past the intended anchor.
-// The gen check after the await ensures only the LATEST wheel handler runs
-// the scroll adjustment; earlier ones bail out so their dxScroll doesn't get
-// applied on top of the latest one's.
-let _wheelZoomGen = 0;
-
 export function setupWheelZoom() {
   document.querySelector('.main-view')?.addEventListener('wheel', async (e) => {
     const activeDoc = getActiveDocument();
@@ -66,82 +55,10 @@ export function setupWheelZoom() {
       // Starting a zoom gesture: kill any in-flight pan momentum so the page
       // doesn't keep gliding mid-zoom (would tear the cursor anchor away).
       stopPanMomentum();
-      // Legacy path (vector viewport inactive). Used for blank docs (no
-      // filePath) and any PDF whose vector viewport didn't activate. The
-      // zoom flow is doc.scale → renderPage → canvas resized. We anchor the
-      // cursor by capturing the pre-zoom position of the cursor inside the
-      // canvas (in PDF point units, i.e. canvas-CSS-pixels / scale), then
-      // after the re-render adjust the scroll container so the same PDF
-      // point sits under the cursor again.
       if (!viewport.active) {
-        // Stamp this wheel-zoom invocation with a fresh generation. Re-checked
-        // after the awaited zoomIn/zoomOut. Older invocations bail out of the
-        // post-zoom scroll-anchor adjustment so their (already-stale) dxScroll
-        // doesn't pile on top of the latest one. See _wheelZoomGen comment.
-        const myWheelGen = ++_wheelZoomGen;
-        const dy = e.deltaY || 0;
-        const direction = dy < 0 ? 1 : -1;
-        const m = await import('../../pdf/renderer.js');
-        const pdfCanvas = document.getElementById('pdf-canvas');
-        const container = document.getElementById('pdf-container');
-
-        // ── Pre-zoom anchor capture ───────────────────────────────────────
-        // Capture the cursor position as a NORMALIZED FRACTION of the canvas
-        // (0.0 = canvas-left, 1.0 = canvas-right). This is scale-independent
-        // and uses ONLY the visible canvas CSS geometry — no `doc.scale`.
-        //
-        // Why scale-independent: zoomIn() updates `doc.scale` synchronously,
-        // but the predictive canvas CSS resize happens inside renderPage()
-        // AFTER `await analyze_page_type` (which takes 50-300ms for BARN-class
-        // PDFs). During that window, doc.scale is at the new value but the
-        // canvas CSS dimensions are still at the OLD value. If a second wheel
-        // event arrives in this window, reading `doc.scale` gives the new
-        // scale but `canvasRect` gives the old size — the worldX formula
-        // `(clientX - rect.left) / oldScale` produces a stale world point,
-        // and the cursor anchor visibly drifts. The user reported this as
-        // "geen fixatie rondom mijn muis".
-        //
-        // Using fractionX (CSS-pixels / CSS-pixels = unitless) avoids the
-        // mismatch entirely. Post-zoom we recover screen-X as
-        // `newRect.left + fractionX * newRect.width`, which is mathematically
-        // equivalent to the old `newRect.left + worldX * newScale` formula
-        // (since `newRect.width = pageWidthPt * newScale`) but cannot race
-        // with an inconsistent doc.scale.
-        let fractionX = null, fractionY = null;
-        const clientX = e.clientX, clientY = e.clientY;
-        if (pdfCanvas && container) {
-          const canvasRect = pdfCanvas.getBoundingClientRect();
-          if (canvasRect.width > 0 && canvasRect.height > 0) {
-            fractionX = (clientX - canvasRect.left) / canvasRect.width;
-            fractionY = (clientY - canvasRect.top) / canvasRect.height;
-          }
-        }
-
-        if (direction > 0) await m.zoomIn(); else await m.zoomOut();
-
-        // Post-zoom: only the LATEST wheel-zoom invocation runs the scroll
-        // adjustment. Earlier rapid wheels bail out — otherwise N rapid wheel
-        // notches stack N near-identical dxScroll values and the page springs
-        // visibly past the cursor anchor.
-        if (myWheelGen !== _wheelZoomGen) {
-          console.log(`[wheel-zoom] STALE gen ${myWheelGen} (current ${_wheelZoomGen}) — skipping scroll adjustment`);
-          return;
-        }
-
-        // Shift scroll so the cursor's world point (captured as a 0..1 fraction
-        // of the canvas) is still under the cursor at the new zoom. With flex
-        // `safe center`, the canvas is auto-centered when it fits the
-        // container — scrolling clamps to 0 in that case and the canvas stays
-        // centered (correct fallback).
-        if (fractionX !== null && pdfCanvas && container) {
-          const newCanvasRect = pdfCanvas.getBoundingClientRect();
-          const targetClientX = newCanvasRect.left + fractionX * newCanvasRect.width;
-          const targetClientY = newCanvasRect.top + fractionY * newCanvasRect.height;
-          const dxScroll = targetClientX - clientX;
-          const dyScroll = targetClientY - clientY;
-          if (dxScroll !== 0) container.scrollLeft += dxScroll;
-          if (dyScroll !== 0) container.scrollTop += dyScroll;
-        }
+        // No PDF loaded (or pre-init). Plain ctrl+wheel events on the empty
+        // placeholder pass through to default browser behavior. preventDefault
+        // already ran above; just bail.
         return;
       }
       // Always anchor to pdf-canvas rect. The cursor may be over a non-canvas
