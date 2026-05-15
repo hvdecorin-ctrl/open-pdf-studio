@@ -736,7 +736,6 @@ impl DocumentHandle {
         Ok(crate::DrawCommandBuffer::from_vec(result))
     }
 
-    /// Extract text spans from a page WITHOUT producing draw commands.
     /// Extract text span positions from a page.
     /// Returns a JSON array string of text spans with x, y, width, height, fontSize, and text.
     /// Coordinates are in PDF user space (origin bottom-left, Y up).
