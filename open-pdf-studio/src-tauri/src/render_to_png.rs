@@ -71,22 +71,29 @@ pub async fn render_page_to_png(
         .await
         .map_err(|e| format!("failed to read PDF '{path}': {e}"))?;
 
-    // open_pdf_render parsing + render is sync and CPU-bound; offload to a
-    // blocking task so we don't stall the Tauri async runtime.
-    let rendered = tokio::task::spawn_blocking(move || -> Result<open_pdf_render::RenderedPage, String> {
-        let doc = open_pdf_render::DocumentHandle::load(&pdf_bytes)
-            .map_err(|e| format!("load PDF: {e}"))?;
-        let (w_pt, h_pt) = doc
-            .page_dimensions(page_index)
-            .map_err(|e| format!("page_dimensions: {e}"))?;
-        // Scale so the longest page side fits target_width pixels — same
-        // convention as render_thumbnail in lib.rs.
-        let scale = target_width as f32 / w_pt.max(h_pt);
-        doc.render_page(page_index, scale, 0)
-            .map_err(|e| format!("render: {e}"))
+    // PDFium rendering is sync and CPU-bound; offload to a blocking task so
+    // we don't stall the Tauri async runtime.
+    let (width, height, rgba) = tokio::task::spawn_blocking(move || -> Result<(u32, u32, Vec<u8>), String> {
+        let arc_bytes = std::sync::Arc::new(pdf_bytes);
+        let cache = crate::pdfium_renderer::PdfiumDocCache::default();
+        let cache_key = format!("render_to_png:{:p}", arc_bytes.as_ptr());
+        let handle = crate::pdfium_renderer::get_or_load_pdfium_doc_with_bytes(
+            &cache_key, arc_bytes, &cache,
+        )?;
+        let doc = handle.document();
+        let scale = {
+            let pages = doc.pages();
+            let page = pages
+                .get(page_index as i32)
+                .map_err(|e| format!("page_dimensions: {e}"))?;
+            // Scale so the longest page side fits target_width pixels — same
+            // convention as render_thumbnail in lib.rs.
+            target_width as f32 / page.width().value.max(page.height().value)
+        };
+        crate::pdfium_renderer::render_page_to_rgba(doc, page_index as u32, scale, 0)
     })
     .await
     .map_err(|e| format!("render task panicked: {e}"))??;
 
-    encode_rgba_to_png_base64(rendered.width, rendered.height, &rendered.rgba)
+    encode_rgba_to_png_base64(width, height, &rgba)
 }
