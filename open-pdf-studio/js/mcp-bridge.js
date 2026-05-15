@@ -39,7 +39,7 @@ const CONSOLE_RING_MAX = 500;
 // Patterns the render pipeline uses: [render], [tile], [wheel-zoom],
 // [PERF], [pre-render], STALE markers. Adjust if more subsystems need
 // capture later.
-const CONSOLE_CAPTURE_RE = /\[render\]|\[tile\]|\[wheel-zoom\]|\[PERF\]|\[pre-render\]|STALE|JANK/;
+const CONSOLE_CAPTURE_RE = /\[render\]|\[tile\]|\[wheel-zoom\]|\[PERF\]|\[pre-render\]|\[thumb\]|\[bitmap-orch\]|\[tile-orch\]|STALE|JANK/;
 
 function _captureConsole(level, args) {
   try {

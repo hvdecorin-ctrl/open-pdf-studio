@@ -514,8 +514,13 @@ async function renderThumbnailToDataURL(pdfDoc, pageNum) {
       const rotation = (typeof getPageRotation === 'function' ? getPageRotation(pageNum) : 0) || 0;
       if (vr.hasCachedCommands(doc.filePath, pageNum, rotation)) {
         const dims = vr.getCachedPageDimensions(doc.filePath, pageNum, rotation);
+        console.log(`[thumb] p${pageNum} JS-replay: dims=`, dims, `rotation=${rotation}`);
         if (dims && dims.w > 0 && dims.h > 0) {
           // Target 200 px wide thumbnail (matches Rust path).
+          // For LANDSCAPE pages (w > h), 200 px wide stays under common UI
+          // limits. For PORTRAIT pages (h > w), 200 px wide may produce a
+          // thumbnail taller than the panel — but downstream layout handles
+          // that. The original sizing is preserved here for compatibility.
           const targetW = 200;
           const scale = targetW / dims.w;
           const w = Math.max(1, Math.round(dims.w * scale));
@@ -528,7 +533,10 @@ async function renderThumbnailToDataURL(pdfDoc, pageNum) {
           ctx.fillStyle = '#ffffff';
           ctx.fillRect(0, 0, w, h);
           // Replay the cached vector commands at the thumbnail scale.
+          // renderVectorPage applies its own Y-flip + MediaBox-origin shift
+          // — caller transform is just (scale, scale) with zero translation.
           vr.renderVectorPage(ctx, doc.filePath, pageNum, { a: scale, b: 0, c: 0, d: scale, e: 0, f: 0 }, rotation);
+          console.log(`[thumb] p${pageNum} JS-replay rendered: canvas=${w}x${h} scale=${scale.toFixed(4)}`);
           const dataURL = canvas.toDataURL('image/jpeg', 0.7);
           // Overlay annotations on top (same as Rust path).
           try {
