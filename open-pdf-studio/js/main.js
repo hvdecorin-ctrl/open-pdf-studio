@@ -33,7 +33,7 @@ import { initCursor } from './ui/cursor.js';
 
 // PDF operations (for handling file drops from command line args)
 import { loadPDF } from './pdf/loader.js';
-import { fitPage, wireTileScrollListener } from './pdf/renderer.js';
+import { fitPage } from './pdf/renderer.js';
 
 // Text selection
 import { initTextSelection } from './text/text-selection.js';
@@ -208,9 +208,6 @@ async function init() {
 
   // Now that Solid has rendered, grab canvas and container refs
   initDomElements();
-
-  // Wire tile overlay scroll re-render (idempotent — safe to call again on mobile deep-link reinit)
-  wireTileScrollListener();
 
   // Wire the reactive cursor — runs once, then updates the .main-view cursor
   // automatically whenever any cursor-relevant state changes.
