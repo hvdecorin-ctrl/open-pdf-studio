@@ -485,32 +485,39 @@ async fn tool_screenshot_page(
         )
     })?;
 
-    let rendered = tokio::task::spawn_blocking(move || -> Result<open_pdf_render::RenderedPage, String> {
-        let doc = open_pdf_render::DocumentHandle::load(&pdf_bytes)
-            .map_err(|e| format!("load PDF: {e}"))?;
-        let (w_pt, _h_pt) = doc
-            .page_dimensions(page_index)
-            .map_err(|e| format!("page_dimensions: {e}"))?;
-        // Literal-width convention to match PyMuPDF reference renderer.
-        let scale = width as f32 / w_pt;
-        doc.render_page(page_index, scale, 0)
-            .map_err(|e| format!("render: {e}"))
+    let (render_width, render_height, render_rgba) = tokio::task::spawn_blocking(move || -> Result<(u32, u32, Vec<u8>), String> {
+        let arc_bytes = std::sync::Arc::new(pdf_bytes.to_vec());
+        let cache = crate::pdfium_renderer::PdfiumDocCache::default();
+        let cache_key = format!("mcp:{:p}", arc_bytes.as_ptr());
+        let handle = crate::pdfium_renderer::get_or_load_pdfium_doc_with_bytes(
+            &cache_key, arc_bytes, &cache,
+        )?;
+        let doc = handle.document();
+        let scale = {
+            let pages = doc.pages();
+            let page = pages
+                .get(page_index as i32)
+                .map_err(|e| format!("page_dimensions: {e}"))?;
+            // Literal-width convention to match PyMuPDF reference renderer.
+            width as f32 / page.width().value
+        };
+        crate::pdfium_renderer::render_page_to_rgba(doc, page_index as u32, scale, 0)
     })
     .await
     .map_err(|e| (jsonrpc_error::INTERNAL_ERROR, format!("render task panic: {e}")))?
     .map_err(|e| (jsonrpc_error::INTERNAL_ERROR, e))?;
 
     let png_b64 = crate::render_to_png::encode_rgba_to_png_base64(
-        rendered.width,
-        rendered.height,
-        &rendered.rgba,
+        render_width,
+        render_height,
+        &render_rgba,
     )
     .map_err(|e| (jsonrpc_error::INTERNAL_ERROR, format!("encode png: {e}")))?;
 
     let payload = json!({
         "png_base64": png_b64,
-        "width":  rendered.width,
-        "height": rendered.height,
+        "width":  render_width,
+        "height": render_height,
     });
 
     Ok(json!({
@@ -676,33 +683,40 @@ async fn tool_screenshot_all(
 
     for idx in 0..total {
         let bytes_clone = bytes_arc.clone();
-        let rendered = tokio::task::spawn_blocking(move || -> Result<open_pdf_render::RenderedPage, String> {
-            let doc = open_pdf_render::DocumentHandle::load(&bytes_clone)
-                .map_err(|e| format!("load PDF: {e}"))?;
-            let (w_pt, _h_pt) = doc
-                .page_dimensions(idx)
-                .map_err(|e| format!("page_dimensions[{idx}]: {e}"))?;
-            // Literal-width convention to match PyMuPDF reference renderer.
-            let scale = width as f32 / w_pt;
-            doc.render_page(idx, scale, 0)
-                .map_err(|e| format!("render page {idx}: {e}"))
+        let (rw, rh, rgba) = tokio::task::spawn_blocking(move || -> Result<(u32, u32, Vec<u8>), String> {
+            let arc_bytes = bytes_clone;
+            let cache = crate::pdfium_renderer::PdfiumDocCache::default();
+            let cache_key = format!("mcp:{:p}", arc_bytes.as_ptr());
+            let handle = crate::pdfium_renderer::get_or_load_pdfium_doc_with_bytes(
+                &cache_key, arc_bytes, &cache,
+            )?;
+            let doc = handle.document();
+            let scale = {
+                let pages = doc.pages();
+                let page = pages
+                    .get(idx as i32)
+                    .map_err(|e| format!("page_dimensions[{idx}]: {e}"))?;
+                // Literal-width convention to match PyMuPDF reference renderer.
+                width as f32 / page.width().value
+            };
+            crate::pdfium_renderer::render_page_to_rgba(doc, idx as u32, scale, 0)
         })
         .await
         .map_err(|e| (jsonrpc_error::INTERNAL_ERROR, format!("render task panic on page {idx}: {e}")))?
         .map_err(|e| (jsonrpc_error::INTERNAL_ERROR, e))?;
 
         let png_b64 = crate::render_to_png::encode_rgba_to_png_base64(
-            rendered.width,
-            rendered.height,
-            &rendered.rgba,
+            rw,
+            rh,
+            &rgba,
         )
         .map_err(|e| (jsonrpc_error::INTERNAL_ERROR, format!("encode png[{idx}]: {e}")))?;
 
         pages_json.push(json!({
             "index":      idx,
             "png_base64": png_b64,
-            "width":      rendered.width,
-            "height":     rendered.height
+            "width":      rw,
+            "height":     rh
         }));
     }
 
