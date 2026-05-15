@@ -188,19 +188,15 @@ pub fn render_page_to_rgba(
         .rotate(rot, true)
         .render_form_data(true)
         // FPDF_LCD_TEXT: subpixel antialiased text. Matches what Chromium /
-        // Edge use by default. Slightly more expensive per text glyph (RGB
-        // subpixel weights instead of grayscale AA) but at typical zoom
-        // levels the cost is dwarfed by the rest of the render. The visual
-        // win on small text and tables is significant.
+        // Edge use by default.
         .use_lcd_text_rendering(true)
         .set_format(PdfBitmapFormat::BGRA);
-    // KNOWN LIMITATION: PDFs with OCG (Optional Content Group) layers that
-    // are hidden by default in viewer preferences (e.g. PDF-XChange
-    // markup-overlay layers in `*_opm_aw.pdf` files) render those layers
-    // VISIBLE because pdfium-render 0.9.1 does not expose
-    // FPDFOCG_IsContentVisible. Filed as v1.51 follow-up: add custom FFI
-    // calls to query and apply OCG visibility before rendering. Edge and
-    // PDF-XChange Editor both respect these layers correctly.
+    // KNOWN LIMITATION (v1.51 follow-up): PDFs with OCG (Optional Content
+    // Group) layers that are hidden by default in viewer preferences
+    // (e.g. PDF-XChange editor markup overlays in `*_opm_aw.pdf` files)
+    // render those layers VISIBLE because pdfium-render 0.9.1 does not
+    // expose FPDFOCG_IsContentVisible. Edge and PDF-XChange Editor both
+    // filter these layers correctly. Needs custom FFI calls.
 
     let bitmap = page
         .render_with_config(&config)
