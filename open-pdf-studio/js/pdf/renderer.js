@@ -482,19 +482,31 @@ export async function renderPage(pageNum) {
     const _jsCacheKey = `${doc.filePath}|${pageNum}|${Math.round(scale * 10000)}|${getPageRotation(pageNum) || 0}`;
     const _jsCached = _bitmapJSCacheGet(_jsCacheKey);
     if (_jsCached) {
-      pdfCanvas.width = _jsCached.w;
-      pdfCanvas.height = _jsCached.h;
-      pdfCanvas.style.width = Math.floor(viewport.width) + 'px';
-      pdfCanvas.style.height = Math.floor(viewport.height) + 'px';
-      pdfCanvas.getContext('2d').drawImage(_jsCached.bitmap, 0, 0);
-      const _hitMs = Math.round(performance.now() - _t0);
-      state.renderEngine = 'Rust (JS cache)';
-      state.renderTiming = `${_hitMs}ms (cached)`;
-      console.log(`[render] ✅ JS-cache HIT: ${_jsCached.w}x${_jsCached.h}, total=${_hitMs}ms`);
-      // Skip the rest of bitmap-path setup (text/link layer creation
-      // already done on first render). Just continue past the bitmap block.
-      _skipBitmapRender = true;
-      // Fall through to text-layer reuse / annotation overlay sync below.
+      // Stale-render guard for the CACHE HIT path. Without this, rapid zoom
+      // produces N in-flight renderPage() calls that each await
+      // analyze_page_type (serialized ~1s on the PDFium mutex), then ALL
+      // land their respective cache-hit canvas writes in rapid succession.
+      // The user sees the page hop through N intermediate resolutions before
+      // landing on the final sharp bitmap — exactly the "springing" UX bug.
+      // Only the LATEST renderPage's cache-hit should paint to canvas.
+      if (_isStaleGen()) {
+        console.log(`[render] STALE cache-hit gen ${_renderGen} (current ${_foregroundRenderGen}) @ scale=${scale} — skipping canvas write`);
+        _skipBitmapRender = true; // still skip the bitmap Rust path
+      } else {
+        pdfCanvas.width = _jsCached.w;
+        pdfCanvas.height = _jsCached.h;
+        pdfCanvas.style.width = Math.floor(viewport.width) + 'px';
+        pdfCanvas.style.height = Math.floor(viewport.height) + 'px';
+        pdfCanvas.getContext('2d').drawImage(_jsCached.bitmap, 0, 0);
+        const _hitMs = Math.round(performance.now() - _t0);
+        state.renderEngine = 'Rust (JS cache)';
+        state.renderTiming = `${_hitMs}ms (cached)`;
+        console.log(`[render] ✅ JS-cache HIT: ${_jsCached.w}x${_jsCached.h}, total=${_hitMs}ms`);
+        // Skip the rest of bitmap-path setup (text/link layer creation
+        // already done on first render). Just continue past the bitmap block.
+        _skipBitmapRender = true;
+        // Fall through to text-layer reuse / annotation overlay sync below.
+      }
     }
     if (!_skipBitmapRender) {
       console.log(`[render] Rust render: page=${pageNum}, scale=${scale}, dpr=${dpr}, path=${doc.filePath}`);
