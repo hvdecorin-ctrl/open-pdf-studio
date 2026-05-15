@@ -515,11 +515,14 @@ async function handleGetViewportState() {
   // zoom/scroll/pan sequence.
   const vp = window.__pdfViewport;
   const pdfCanvas = document.getElementById('pdf-canvas');
-  const tileCanvas = document.getElementById('pdf-canvas-tile');
   const container = document.getElementById('pdf-container') || pdfCanvas?.parentElement;
   const cRect = container?.getBoundingClientRect();
   const pRect = pdfCanvas?.getBoundingClientRect();
-  const tRect = tileCanvas?.getBoundingClientRect();
+  // Tile is no longer a DOM canvas — it is a transient ImageBitmap living on
+  // the viewport singleton, drawn each frame as a second drawImage() pass on
+  // top of the main pdf-canvas (see pdf-viewport.js _render()).
+  const tileBitmap = vp?.currentTile || null;
+  const tileMeta = vp?.currentTileMeta || null;
 
   // Pull state.renderEngine + state.renderTiming from the central app state
   // (set by renderer.js after each render). Critical for verifying that
@@ -575,18 +578,14 @@ async function handleGetViewportState() {
       cssLeft: pRect?.left ?? null,
       cssTop: pRect?.top ?? null,
     } : null,
-    // High-zoom tile overlay (pdf-canvas-tile). When `display !== 'none'`
-    // the tile is showing a crisp render of the visible viewport region
-    // on top of the cap-stretched main canvas.
-    tile: tileCanvas ? {
-      display: tileCanvas.style?.display || 'block',
-      visible: (tileCanvas.style?.display || 'block') !== 'none',
-      width: tileCanvas.width,
-      height: tileCanvas.height,
-      cssWidth: tRect?.width ?? null,
-      cssHeight: tRect?.height ?? null,
-      cssLeft: tileCanvas.style?.left || null,
-      cssTop: tileCanvas.style?.top || null,
+    // High-zoom tile augment. When present, the viewport singleton draws
+    // this crisp visible-region bitmap as a second pass on top of the
+    // cap-stretched main canvas. meta carries the PDF-point region rect
+    // and source zoom so callers can map it back to page coordinates.
+    tile: tileBitmap ? {
+      width: tileBitmap.width,
+      height: tileBitmap.height,
+      meta: tileMeta,
     } : null,
     // The container (visible scrollable area)
     container: cRect ? {
@@ -661,8 +660,12 @@ async function _captureCanvasState(x, y) {
   const pdfCanvas = document.getElementById('pdf-canvas');
   const container = document.getElementById('pdf-container');
   const canvasContainer = document.getElementById('canvas-container');
-  const tile = document.getElementById('pdf-canvas-tile');
   if (!pdfCanvas) return null;
+  // Tile is no longer a DOM canvas — read the transient ImageBitmap +
+  // region metadata from the viewport singleton (set by bitmap-orchestrator).
+  const _vpSingleton = window.__pdfViewport || null;
+  const tileBitmap = _vpSingleton?.currentTile || null;
+  const tileMeta = _vpSingleton?.currentTileMeta || null;
   const r = pdfCanvas.getBoundingClientRect();
   const cr = container?.getBoundingClientRect();
   const ccr = canvasContainer?.getBoundingClientRect();
@@ -700,10 +703,10 @@ async function _captureCanvasState(x, y) {
       scrollLeft: container.scrollLeft, scrollTop: container.scrollTop,
       clientW: container.clientWidth, clientH: container.clientHeight } : null,
     canvasContainer: ccr ? { left: ccr.left, top: ccr.top, width: ccr.width, height: ccr.height } : null,
-    tile: tile ? {
-      display: tile.style.display, w: tile.width, h: tile.height,
-      cssLeft: tile.style.left, cssTop: tile.style.top,
-      cssWidth: tile.style.width, cssHeight: tile.style.height,
+    tile: tileBitmap ? {
+      width: tileBitmap.width,
+      height: tileBitmap.height,
+      meta: tileMeta,
     } : null,
     scale,
     viewportActive,

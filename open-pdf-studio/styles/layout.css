@@ -474,20 +474,6 @@
   will-change: transform;
 }
 
-/* High-zoom tile overlay: crisp visible-viewport bitmap at full requested
-   scale, rendered via render_pdf_page_region Tauri command. Positioned
-   absolutely within #canvas-container, sized and positioned to the visible
-   viewport by JS. Sits above the CSS-stretched main bitmap and the highlight
-   canvas, below the annotation canvas. display:none when cap is not active. */
-#pdf-canvas-tile {
-  position: absolute;
-  top: 0;
-  left: 0;
-  z-index: 2;
-  pointer-events: none;
-  display: none;
-}
-
 /* Text highlights live on a dedicated canvas with multiply blend so they
    tint the page yellow but leave the underlying text fully readable.
    Must sit between #pdf-canvas and #annotation-canvas in the DOM.

@@ -104,10 +104,13 @@ async function runOneSession() {
         const stateMod = await import('/js/core/state.ts').catch(() => null);
         const doc = stateMod?.state?.documents?.[stateMod.state.activeDocumentIndex];
         const pdfCanvas = document.getElementById('pdf-canvas');
-        const tileCanvas = document.getElementById('pdf-canvas-tile');
         const container = document.getElementById('pdf-container');
         const r = pdfCanvas?.getBoundingClientRect();
-        const tr = tileCanvas?.getBoundingClientRect();
+        // Tile is no longer a DOM canvas — read transient bitmap + region
+        // metadata from the viewport singleton (set by bitmap-orchestrator).
+        const vp = window.__pdfViewport || null;
+        const tileBitmap = vp?.currentTile || null;
+        const tileMeta = vp?.currentTileMeta || null;
         return {
           scale: doc?.scale,
           engine: stateMod?.state?.renderEngine,
@@ -122,13 +125,10 @@ async function runOneSession() {
           rectH: r ? Math.round(r.height) : null,
           scrollL: container?.scrollLeft,
           scrollT: container?.scrollTop,
-          tileDisplay: tileCanvas?.style?.display,
-          tileBw: tileCanvas?.width,
-          tileBh: tileCanvas?.height,
-          tileCssW: tileCanvas?.style?.width,
-          tileCssH: tileCanvas?.style?.height,
-          tileLeft: tileCanvas?.style?.left,
-          tileTop: tileCanvas?.style?.top,
+          tileActive: !!tileBitmap,
+          tileBw: tileBitmap?.width ?? null,
+          tileBh: tileBitmap?.height ?? null,
+          tileMeta,
         };
       })()`);
       // Only log if something changed
@@ -141,8 +141,9 @@ async function runOneSession() {
         parts.push(`css=${s.cssW}x${s.cssH}`);
         parts.push(`rect=(${s.rectL},${s.rectT}) ${s.rectW}x${s.rectH}`);
         parts.push(`scroll=(${s.scrollL},${s.scrollT})`);
-        if (s.tileDisplay && s.tileDisplay !== 'none') {
-          parts.push(`TILE=${s.tileBw}x${s.tileBh} @(${s.tileLeft},${s.tileTop}) css=${s.tileCssW}x${s.tileCssH}`);
+        if (s.tileActive) {
+          const m = s.tileMeta || {};
+          parts.push(`TILE=${s.tileBw}x${s.tileBh} pt=(${m.regionXpt},${m.regionYpt}) ${m.regionWpt}x${m.regionHpt}pt z=${m.zoom}`);
         } else {
           parts.push(`tile=off`);
         }
