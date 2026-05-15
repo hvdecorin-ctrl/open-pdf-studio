@@ -198,6 +198,34 @@ export default function StatusBar() {
             {state.statusMessage}
           </Show>
         </div>
+        <Show when={!!state.documents[state.activeDocumentIndex]?.pdfDoc}>
+          <div class="status-separator"></div>
+          <div
+            class="status-item"
+            title={`Canvas: ${
+              (typeof document !== 'undefined' && document.getElementById('pdf-canvas'))
+                ? `${document.getElementById('pdf-canvas').width}×${document.getElementById('pdf-canvas').height}px`
+                : '?'
+            }  |  DPR: ${typeof window !== 'undefined' ? window.devicePixelRatio : '?'}`}
+          >
+            <span style={{
+              "font-size": "11px",
+              "padding": "1px 8px",
+              "border-radius": "2px",
+              "background": (() => {
+                const s = state.documents[state.activeDocumentIndex]?.scale || 1;
+                if (s >= 4) return '#a23';      // very high zoom — likely slow
+                if (s >= 2) return '#a72';      // high zoom
+                return '#333';
+              })(),
+              "color": "#fff",
+              "font-weight": "bold",
+              "letter-spacing": "0.3px",
+            }}>
+              Zoom {localizeNumber(Math.round((state.documents[state.activeDocumentIndex]?.scale || 1) * 100))}%
+            </span>
+          </div>
+        </Show>
         <Show when={state.renderEngine}>
           <div class="status-separator"></div>
           <div class="status-item" title={state.renderTiming || ''}>
