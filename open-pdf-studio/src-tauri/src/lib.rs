@@ -1381,10 +1381,12 @@ fn clear_pdf_cache(
     bytes_cache: tauri::State<PdfBytesCache>,
     handle_cache: tauri::State<DocHandleCache>,
     thumb_cache: tauri::State<ThumbnailCache>,
+    pdfium_cache: tauri::State<pdfium_renderer::PdfiumDocCache>,
 ) -> Result<bool, String> {
     bytes_cache.0.lock().map_err(|e| format!("Bytes cache lock: {}", e))?.clear();
     handle_cache.0.lock().map_err(|e| format!("Handle cache lock: {}", e))?.clear();
     if let Ok(mut tc) = thumb_cache.0.lock() { tc.clear(); }
+    if let Ok(mut pc) = pdfium_cache.0.lock() { pc.clear(); }
     Ok(true)
 }
 
@@ -1457,6 +1459,7 @@ pub fn run(opts: StartupOpts) {
         .manage(PdfBytesCache(Mutex::new(HashMap::new())))
         .manage(DocHandleCache(Mutex::new(HashMap::new())))
         .manage(ThumbnailCache(Mutex::new(HashMap::new())))
+        .manage(pdfium_renderer::PdfiumDocCache::default())
         .manage(mcp_app_bridge::McpAppBridge::new())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
