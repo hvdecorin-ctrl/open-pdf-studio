@@ -200,6 +200,82 @@ pub fn render_page_to_rgba(
     Ok((actual_w, actual_h, rgba))
 }
 
+// ─── Tauri-layer pixmap cache ─────────────────────────────────────────────────
+
+use std::collections::VecDeque;
+
+/// A fully-rendered RGBA pixmap. Stored Arc-wrapped so cache hits clone
+/// cheaply (atomic refcount) — the wire copy still happens at IPC time,
+/// but the buffer lives once in memory regardless of how many concurrent
+/// renders hold a handle.
+pub struct CachedPixmap {
+    pub width: u32,
+    pub height: u32,
+    pub rgba: Arc<Vec<u8>>,
+}
+
+/// Bounded-FIFO cache of fully-rendered pixmaps. Key: (path, page_idx,
+/// scale_q = round(scale*10000), rotation). Sized to keep BARN's 7 pages
+/// at 2-3 zoom levels comfortably resident (~20 entries), with headroom
+/// for multi-doc workflows. 40 entries × ~15 MB ≈ 600 MB upper bound.
+const PIXMAP_CACHE_MAX_ENTRIES: usize = 40;
+
+pub struct PixmapCache {
+    map: HashMap<(String, u32, u32, i32), Arc<CachedPixmap>>,
+    order: VecDeque<(String, u32, u32, i32)>,
+    max_entries: usize,
+}
+
+impl PixmapCache {
+    fn new(max_entries: usize) -> Self {
+        Self {
+            map: HashMap::new(),
+            order: VecDeque::with_capacity(max_entries),
+            max_entries,
+        }
+    }
+
+    pub fn get(&self, key: &(String, u32, u32, i32)) -> Option<Arc<CachedPixmap>> {
+        self.map.get(key).cloned()
+    }
+
+    pub fn insert(&mut self, key: (String, u32, u32, i32), value: Arc<CachedPixmap>) {
+        if self.map.insert(key.clone(), value).is_none() {
+            self.order.push_back(key);
+            while self.order.len() > self.max_entries {
+                if let Some(old) = self.order.pop_front() {
+                    self.map.remove(&old);
+                }
+            }
+        }
+    }
+
+    pub fn clear(&mut self) {
+        self.map.clear();
+        self.order.clear();
+    }
+
+    pub fn stats(&self) -> (usize, usize) {
+        let bytes: usize = self.map.values().map(|v| v.rgba.len()).sum();
+        (self.map.len(), bytes)
+    }
+}
+
+/// Tauri state wrapper.
+#[derive(Default)]
+pub struct PixmapCacheState(pub Mutex<Option<PixmapCache>>);
+
+impl PixmapCacheState {
+    pub fn ensure(&self) {
+        let mut guard = self.0.lock().unwrap();
+        if guard.is_none() {
+            *guard = Some(PixmapCache::new(PIXMAP_CACHE_MAX_ENTRIES));
+        }
+    }
+}
+
+// ─── Thumbnail rendering ───────────────────────────────────────────────────────
+
 /// Render a low-resolution thumbnail of a single page, encoded as a
 /// JSON string `{"dataURL":"data:image/jpeg;base64,...","width":N,"height":N}`.
 ///

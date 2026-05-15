@@ -1182,10 +1182,27 @@ fn render_pdf_page(
     rotation: Option<i32>,
     bytes_cache: tauri::State<PdfBytesCache>,
     pdfium_cache: tauri::State<pdfium_renderer::PdfiumDocCache>,
+    pixmap_cache: tauri::State<pdfium_renderer::PixmapCacheState>,
 ) -> Result<tauri::ipc::Response, String> {
     let extra_rot = rotation.unwrap_or(0);
+    let scale_q = (scale * 10_000.0).round() as u32;
+    let cache_key = (path.clone(), page_index, scale_q, extra_rot);
 
-    // Get bytes from the existing cache (or read from disk if absent).
+    // Cache fast path
+    pixmap_cache.ensure();
+    if let Ok(guard) = pixmap_cache.0.lock() {
+        if let Some(cache) = guard.as_ref() {
+            if let Some(cached) = cache.get(&cache_key) {
+                let mut data = Vec::with_capacity(8 + cached.rgba.len());
+                data.extend_from_slice(&cached.width.to_le_bytes());
+                data.extend_from_slice(&cached.height.to_le_bytes());
+                data.extend_from_slice(&cached.rgba);
+                return Ok(tauri::ipc::Response::new(data));
+            }
+        }
+    }
+
+    // Miss — render via PDFium and insert into cache.
     let bytes = {
         let mut bm = bytes_cache.0.lock().map_err(|e| format!("Bytes cache lock: {}", e))?;
         if let Some(cached) = bm.get(&path) {
@@ -1210,11 +1227,24 @@ fn render_pdf_page(
         extra_rot,
     )?;
 
+    let rgba_arc = std::sync::Arc::new(rgba);
+
+    // Insert into cache
+    if let Ok(mut guard) = pixmap_cache.0.lock() {
+        if let Some(cache) = guard.as_mut() {
+            cache.insert(cache_key, std::sync::Arc::new(pdfium_renderer::CachedPixmap {
+                width,
+                height,
+                rgba: rgba_arc.clone(),
+            }));
+        }
+    }
+
     // Wire format unchanged: [width: u32 LE][height: u32 LE][rgba bytes...]
-    let mut data = Vec::with_capacity(8 + rgba.len());
+    let mut data = Vec::with_capacity(8 + rgba_arc.len());
     data.extend_from_slice(&width.to_le_bytes());
     data.extend_from_slice(&height.to_le_bytes());
-    data.extend_from_slice(&rgba);
+    data.extend_from_slice(&rgba_arc);
     Ok(tauri::ipc::Response::new(data))
 }
 
@@ -1365,11 +1395,17 @@ fn clear_pdf_cache(
     handle_cache: tauri::State<DocHandleCache>,
     thumb_cache: tauri::State<ThumbnailCache>,
     pdfium_cache: tauri::State<pdfium_renderer::PdfiumDocCache>,
+    pixmap_cache: tauri::State<pdfium_renderer::PixmapCacheState>,
 ) -> Result<bool, String> {
     bytes_cache.0.lock().map_err(|e| format!("Bytes cache lock: {}", e))?.clear();
     handle_cache.0.lock().map_err(|e| format!("Handle cache lock: {}", e))?.clear();
     if let Ok(mut tc) = thumb_cache.0.lock() { tc.clear(); }
     if let Ok(mut pc) = pdfium_cache.0.lock() { pc.clear(); }
+    if let Ok(mut guard) = pixmap_cache.0.lock() {
+        if let Some(cache) = guard.as_mut() {
+            cache.clear();
+        }
+    }
     Ok(true)
 }
 
@@ -1443,6 +1479,7 @@ pub fn run(opts: StartupOpts) {
         .manage(DocHandleCache(Mutex::new(HashMap::new())))
         .manage(ThumbnailCache(Mutex::new(HashMap::new())))
         .manage(pdfium_renderer::PdfiumDocCache::default())
+        .manage(pdfium_renderer::PixmapCacheState::default())
         .manage(mcp_app_bridge::McpAppBridge::new())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
