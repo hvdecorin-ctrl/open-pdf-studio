@@ -1,6 +1,7 @@
 mod auth;
 pub mod mcp_app_bridge;
 pub mod mcp_server;
+pub mod pdfium_renderer;
 pub mod render_to_png;
 
 pub struct StartupOpts {
@@ -1521,6 +1522,20 @@ pub fn run(opts: StartupOpts) {
                     }
                 });
             }
+
+            // PDFium initialisation — must run before any Tauri command.
+            // resource_dir() returns the directory where Tauri's bundle.resources
+            // land. In dev (cargo run) that's target/debug/; in release it's
+            // the installer-payload root.
+            let resource_dir = app
+                .path()
+                .resource_dir()
+                .map_err(|e| format!("Cannot resolve resource_dir: {}", e))?;
+
+            pdfium_renderer::init_pdfium(&resource_dir)
+                .map_err(|e| format!("PDFium initialisation failed: {}", e))?;
+
+            log::info!("PDFium initialised from {:?}", resource_dir);
 
             Ok(())
         })
