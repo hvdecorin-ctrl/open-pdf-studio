@@ -187,6 +187,12 @@ pub fn render_page_to_rgba(
         .set_maximum_height(target_h)
         .rotate(rot, true)
         .render_form_data(true)
+        // FPDF_LCD_TEXT: subpixel antialiased text. Matches what Chromium /
+        // Edge use by default. Slightly more expensive per text glyph (RGB
+        // subpixel weights instead of grayscale AA) but at typical zoom
+        // levels the cost is dwarfed by the rest of the render. The visual
+        // win on small text and tables is significant.
+        .use_lcd_text_rendering(true)
         .set_format(PdfBitmapFormat::BGRA);
 
     let bitmap = page
