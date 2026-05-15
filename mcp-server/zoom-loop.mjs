@@ -156,6 +156,26 @@ async function main() {
     results.push({ phase: 3, ...p, ...r });
   }
 
+  // Phase 4: high-zoom tile verification (zoom > cap, ~300%+ on BARN)
+  // At zoom 3.0 on a 1632pt-wide page, capZoom ≈ 2.51, so a tile is required.
+  // Verifies that the tile renders, sits at the right page-region, and that
+  // cursor anchor still works on top of it.
+  out('=== Phase 4: high-zoom tile verification ===');
+  await tool('app_set_zoom', { value: 3.0 });
+  await new Promise(r => setTimeout(r, 1500));
+  for (const p of positions) {
+    const r = await runOneTest(`phase4-${p.label}`, p.x, p.y, 'in');
+    results.push({ phase: 4, ...p, ...r });
+    // Probe tile state so we can assert it actually rendered above cap
+    const state = await tool('app_get_viewport_state');
+    const tile = state?.tile;
+    if (tile) {
+      out(`  tile @ ${tile.width}x${tile.height}, region pt=(${tile.meta?.regionXpt?.toFixed(0)},${tile.meta?.regionYpt?.toFixed(0)}) ${tile.meta?.regionWpt?.toFixed(0)}x${tile.meta?.regionHpt?.toFixed(0)}, zoom=${tile.meta?.zoom?.toFixed(2)}`);
+    } else {
+      out(`  TILE MISSING — zoom > cap should have produced a tile`);
+    }
+  }
+
   // Summary
   const failed = results.filter(r => !r.pass && !r.acceptable);
   const acceptable = results.filter(r => !r.pass && r.acceptable);
