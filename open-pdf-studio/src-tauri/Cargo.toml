@@ -38,6 +38,7 @@ tauri-plugin-store = "2"
 reqwest = { version = "0.12", features = ["rustls-tls", "json"], default-features = false }
 open-pdf-render = { path = "../../open-pdf-render" }
 image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
+pdfium-render = { version = "0.9", features = ["thread_safe", "image_025"] }
 clap = { version = "4", features = ["derive"] }
 
 # OIDC sign-in (Impertio Accounts): Authorization Code + PKCE with a
@@ -78,4 +79,7 @@ opt-level = 3
 opt-level = 3
 
 [profile.dev.package.image]
+opt-level = 3
+
+[profile.dev.package.pdfium-render]
 opt-level = 3
