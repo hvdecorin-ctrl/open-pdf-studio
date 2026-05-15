@@ -373,10 +373,10 @@ async function _renderPageImpl(pageNum) {
     }
   }
 
-    // Bitmap rendering has moved to the unified viewport model (Task 4):
-    // activated above in the raster-mode block; pixel-fill happens via
-    // bitmap-orchestrator + drawImage in pdf-viewport.js _render() loop.
-    // No predictive resize, no canvas-width mutation, no tile DOM canvas.
+  // Bitmap rendering has moved to the unified viewport model (Task 4):
+  // activated above in the raster-mode block; pixel-fill happens via
+  // bitmap-orchestrator + drawImage in pdf-viewport.js _render() loop.
+  // No predictive resize, no canvas-width mutation, no tile DOM canvas.
 
   // Annotation canvas resize is deferred to just before redrawAnnotations()
   // so the clear+redraw happens in one synchronous block (no blink).
