@@ -32,18 +32,26 @@ let _bitmapGen = 0;
 let _tileGen = 0;
 
 export async function ensureBitmapForCurrentView() {
-    if (!viewport.active || !viewport.filePath || viewport.pageType !== 'raster') return;
+    if (!viewport.active || !viewport.filePath || viewport.pageType !== 'raster') {
+        viewport.currentBitmap = null;
+        viewport.dirty = true;
+        return;
+    }
     const myGen = ++_bitmapGen;
     const dpr = window.devicePixelRatio || 1;
     const targetScale = viewport.zoom * dpr;
 
     // Cap so PDFium never has to render above the 4096 px axis limit.
     const maxAxisPt = Math.max(viewport.pageW, viewport.pageH);
-    if (maxAxisPt <= 0) return;
+    if (maxAxisPt <= 0) {
+        viewport.currentBitmap = null;
+        viewport.dirty = true;
+        return;
+    }
     const capScale = MAX_BITMAP_AXIS_PX / maxAxisPt;
-    const requestedBucket = computeZoomBucket(targetScale);
     const cappedBucket = computeZoomBucket(Math.min(targetScale, capScale));
-    const useBucket = Math.min(requestedBucket, cappedBucket);
+    // computeZoomBucket is monotonic, so the capped bucket is always <= the requested one
+    const useBucket = cappedBucket;
 
     // Synchronous: show the best already-cached bitmap immediately. Handles
     // the "zoom-in while async render is in flight" case — we never blank
@@ -140,6 +148,7 @@ export async function ensureTileForCurrentView(canvas) {
             path: viewport.filePath,
             pageIndex: viewport.pageNum - 1,
             scale: viewport.zoom,
+            rotation: viewport.rotation || 0,
             regionXPt: bufferedRegion.x,
             regionYPt: bufferedRegion.y,
             regionWPt: bufferedRegion.w,
@@ -156,7 +165,7 @@ export async function ensureTileForCurrentView(canvas) {
             return;
         }
         const rgba = new Uint8ClampedArray(bytes.buffer, bytes.byteOffset + 8, bytes.length - 8);
-        const imageData = new ImageData(new Uint8ClampedArray(rgba), w, h);
+        const imageData = new ImageData(rgba, w, h);
         const regionMeta = {
             regionXpt: bufferedRegion.x,
             regionYpt: bufferedRegion.y,
