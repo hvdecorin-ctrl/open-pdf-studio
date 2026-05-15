@@ -1,0 +1,1126 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="UTF-8">
+<title>Open PDF Studio — Architecture Explorer</title>
+<style>
+:root {
+  --bg: #1e1e1e;
+  --bg-2: #181818;
+  --panel: #252526;
+  --panel-hover: #2d2d30;
+  --border: #3f3f46;
+  --border-strong: #5a5a5a;
+  --text: #d4d4d4;
+  --text-dim: #8a8a8a;
+  --accent: #4fc1ff;
+  --blue: #569cd6;
+  --green: #5cb85c;
+  --yellow: #d4a017;
+  --orange: #ce9178;
+  --red: #f44747;
+  --gray: #6b6b6b;
+  --rust: #ce9178;
+  --js: #d4a017;
+  --css: #569cd6;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; }
+body {
+  font-family: 'Segoe UI', Tahoma, system-ui, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.55;
+}
+header {
+  background: linear-gradient(to bottom, #2d2d30, #252526);
+  border-bottom: 1px solid var(--border);
+  padding: 10px 20px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+header h1 {
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  white-space: nowrap;
+}
+#breadcrumbs {
+  flex: 1;
+  font-size: 13px;
+  color: var(--text-dim);
+}
+.crumb {
+  color: var(--accent);
+  cursor: pointer;
+  user-select: none;
+}
+.crumb:hover { text-decoration: underline; }
+.crumb.current {
+  color: var(--text);
+  cursor: default;
+}
+.crumb.current:hover { text-decoration: none; }
+.sep { margin: 0 8px; color: var(--text-dim); }
+main {
+  padding: 24px;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+.node-header {
+  margin-bottom: 16px;
+  border-left: 4px solid var(--accent);
+  padding-left: 14px;
+}
+.node-header h2 {
+  font-size: 22px;
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+.node-header .subtitle {
+  color: var(--text-dim);
+  font-size: 13px;
+}
+.node-desc {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  padding: 14px 18px;
+  margin-bottom: 20px;
+  font-size: 14px;
+}
+.section-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  color: var(--text-dim);
+  margin: 26px 0 10px;
+  font-weight: 600;
+}
+.children-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 10px;
+}
+.card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  padding: 12px 14px;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s, transform 0.12s;
+  position: relative;
+  min-height: 100px;
+  display: flex;
+  flex-direction: column;
+}
+.card:hover {
+  background: var(--panel-hover);
+  border-color: var(--accent);
+  transform: translateY(-1px);
+}
+.card.leaf {
+  cursor: default;
+}
+.card.leaf:hover {
+  transform: none;
+  border-color: var(--border);
+  background: var(--panel);
+}
+.card .icon {
+  font-size: 20px;
+  margin-bottom: 4px;
+}
+.card .title {
+  font-weight: 600;
+  margin-bottom: 2px;
+  color: var(--text);
+}
+.card .subtitle {
+  font-size: 11px;
+  color: var(--text-dim);
+  margin-bottom: 8px;
+}
+.card .brief {
+  font-size: 12.5px;
+  color: var(--text);
+  opacity: 0.92;
+  flex: 1;
+}
+.card .status {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  font-size: 9px;
+  padding: 1px 6px;
+  border: 1px solid;
+  text-transform: uppercase;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+}
+.status-new { color: var(--green); border-color: var(--green); }
+.status-changing { color: var(--yellow); border-color: var(--yellow); }
+.status-removed { color: var(--red); border-color: var(--red); text-decoration: line-through; }
+.status-existing { color: var(--gray); border-color: var(--gray); }
+.code-block {
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  padding: 12px 14px;
+  margin: 8px 0 14px;
+  font-family: 'Cascadia Code', Consolas, 'Courier New', monospace;
+  font-size: 12.5px;
+  line-height: 1.5;
+  overflow-x: auto;
+  white-space: pre;
+  color: #d4d4d4;
+  tab-size: 2;
+}
+.code-block .c-comment { color: #6a9955; font-style: italic; }
+.code-block .c-kw { color: #569cd6; }
+.code-block .c-str { color: #ce9178; }
+.code-block .c-num { color: #b5cea8; }
+.code-block .c-fn { color: #dcdcaa; }
+.code-block .c-type { color: #4ec9b0; }
+.code-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--text-dim);
+  font-weight: 600;
+  margin-top: 12px;
+}
+.compare {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin: 12px 0;
+}
+.compare > div {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  padding: 12px 14px;
+}
+.compare > .pane-old { border-color: #555; }
+.compare > .pane-new { border-color: var(--green); }
+.compare h4 {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-bottom: 8px;
+  font-weight: 700;
+}
+.compare > .pane-old h4 { color: var(--text-dim); }
+.compare > .pane-new h4 { color: var(--green); }
+.legend {
+  display: flex;
+  gap: 18px;
+  margin: 10px 0 18px;
+  font-size: 12px;
+  flex-wrap: wrap;
+}
+.legend-item { display: flex; align-items: center; gap: 6px; color: var(--text-dim); }
+.legend-dot {
+  width: 10px; height: 10px;
+  border: 1px solid;
+}
+.flow-diagram {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  padding: 18px 22px;
+  margin: 12px 0 20px;
+}
+.flow-step {
+  display: grid;
+  grid-template-columns: 36px 80px 1fr;
+  gap: 14px;
+  margin-bottom: 10px;
+  align-items: start;
+}
+.flow-num {
+  background: var(--accent);
+  color: var(--bg);
+  width: 28px;
+  height: 28px;
+  text-align: center;
+  line-height: 28px;
+  font-weight: 700;
+  font-size: 13px;
+  border-radius: 0;
+}
+.flow-time {
+  color: var(--text-dim);
+  font-family: 'Cascadia Code', Consolas, monospace;
+  font-size: 11px;
+  padding-top: 4px;
+}
+.flow-content {
+  padding-top: 3px;
+  font-size: 13px;
+}
+.flow-content strong { color: var(--accent); }
+.flow-content code {
+  font-family: 'Cascadia Code', Consolas, monospace;
+  background: var(--bg-2);
+  padding: 1px 5px;
+  font-size: 12px;
+  color: #ce9178;
+}
+.flow-content .race {
+  display: inline-block;
+  background: rgba(244, 71, 71, 0.15);
+  color: var(--red);
+  padding: 1px 6px;
+  margin-left: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+}
+.flow-content .note {
+  display: block;
+  color: var(--text-dim);
+  font-size: 12px;
+  margin-top: 2px;
+}
+.relations {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 10px;
+  margin: 10px 0 20px;
+}
+.relation {
+  background: var(--panel);
+  border-left: 3px solid var(--accent);
+  padding: 8px 12px;
+  font-size: 13px;
+}
+.rel-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  letter-spacing: 1px;
+  margin-bottom: 3px;
+}
+.rel-target {
+  color: var(--accent);
+  cursor: pointer;
+}
+.rel-target:hover { text-decoration: underline; }
+.bubble {
+  display: inline-block;
+  padding: 1px 7px;
+  margin: 0 2px;
+  font-size: 11px;
+  border: 1px solid;
+  font-weight: 600;
+}
+.bubble.rust { color: var(--rust); border-color: var(--rust); }
+.bubble.js { color: var(--js); border-color: var(--js); }
+.bubble.css { color: var(--css); border-color: var(--css); }
+.diagram-svg {
+  width: 100%;
+  height: auto;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  padding: 16px;
+  margin: 12px 0 20px;
+}
+footer {
+  border-top: 1px solid var(--border);
+  padding: 14px 20px;
+  color: var(--text-dim);
+  font-size: 12px;
+  text-align: center;
+  margin-top: 40px;
+}
+kbd {
+  background: var(--bg-2);
+  border: 1px solid var(--border-strong);
+  padding: 1px 6px;
+  font-family: 'Cascadia Code', Consolas, monospace;
+  font-size: 11px;
+}
+.callout {
+  background: rgba(212, 160, 23, 0.08);
+  border-left: 3px solid var(--yellow);
+  padding: 10px 14px;
+  margin: 12px 0;
+  font-size: 13px;
+}
+.callout.red {
+  background: rgba(244, 71, 71, 0.08);
+  border-left-color: var(--red);
+}
+.callout.green {
+  background: rgba(92, 184, 92, 0.08);
+  border-left-color: var(--green);
+}
+.callout strong { color: var(--yellow); }
+.callout.red strong { color: var(--red); }
+.callout.green strong { color: var(--green); }
+</style>
+</head>
+<body>
+<header>
+  <h1>📐 Open PDF Studio — Architecture</h1>
+  <nav id="breadcrumbs"></nav>
+</header>
+<main id="content"></main>
+<footer>
+  Klik op een kaart om dieper te gaan • Klik op een breadcrumb om terug
+</footer>
+<script>
+// ── Architecture node tree ─────────────────────────────────────────────────
+
+const NODES = {
+
+  // ═══════════════ LEVEL 0: ROOT ═══════════════════════════════════════════
+
+  'root': {
+    title: 'Open PDF Studio',
+    subtitle: 'Tauri 2 · SolidJS · Vite · PDFium · open-pdf-render',
+    icon: '📐',
+    desc: 'Desktop PDF annotation editor. De app draait in twee processen: een <b>Rust-backend</b> (Tauri) die file I/O en PDFium-rendering doet, en een <b>WebView-frontend</b> (Chromium-based) die UI en interactie doet. IPC tussen beide gebeurt via Tauri commands. Klik op een laag om dieper te gaan.',
+    showLegend: true,
+    children: ['user', 'ui', 'pdf-engine', 'rust', 'mcp'],
+  },
+
+  // ═══════════════ LEVEL 1: TOP-LEVEL LAYERS ═══════════════════════════════
+
+  'user': {
+    parent: 'root',
+    title: 'User Input',
+    subtitle: 'OS events → WebView',
+    icon: '🖱',
+    status: 'existing',
+    brief: 'Mouse wheel, click+drag, toetsenbord, touch. Komen via Chromium binnen.',
+    desc: 'Het besturingssysteem stuurt invoer als DOM events de WebView in. De belangrijkste voor zoom: <code>WheelEvent</code> met <code>ctrlKey=true</code>. Voor pannen: <code>mousedown/move/up</code> of <code>WheelEvent</code> zonder ctrl.',
+    code: [{
+      label: 'Hoe een ctrl+wheel event eruit ziet',
+      text: `WheelEvent {
+  type: 'wheel',
+  ctrlKey: true,
+  clientX: 920, clientY: 412,     // cursor in viewport CSS px
+  deltaX: 0, deltaY: -120,        // < 0 = scroll up = zoom in
+  deltaMode: 0,                    // 0 = pixels
+  target: <element under cursor>,
+}`
+    }],
+    children: [],
+  },
+
+  'ui': {
+    parent: 'root',
+    title: 'UI Shell',
+    subtitle: 'SolidJS reactive components',
+    icon: '🪟',
+    status: 'existing',
+    brief: 'Ribbon, dialogs, panels, statusbar — alles wat NIET het PDF-canvas is.',
+    desc: 'SolidJS render de UI-chrome. Reactief via <code>createMutable</code> store. Communiceert met de PDF-engine via <code>js/bridge.ts</code> (façade). Bevat o.a. de zoom-input in de statusbar, paginanavigatie-knoppen, tool-selectie ribbon.',
+    children: [],
+  },
+
+  'pdf-engine': {
+    parent: 'root',
+    title: 'PDF Engine ★',
+    subtitle: 'Viewport state · render loop · bitmap cache',
+    icon: '⚙',
+    status: 'changing',
+    brief: 'Het hart van de app. Hier leven ALLE zoom/pan-bugs. Klik door — dit is waar je inzicht wilt.',
+    desc: 'Onderhoudt <code>viewport</code> state (zoom, offsetX/Y, pageNum), draait de RAF render loop, beheert bitmap cache. Roept Rust voor renders. Wordt aangedreven door wheel/mouse events vanuit <code>navigation-events.js</code>. Hier zit het onderscheid tussen <b>bitmap-mode</b> (huidig, voor BARN) en <b>vector-mode</b> (voor pure vector PDFs).',
+    children: ['viewport-state', 'render-loop', 'zoom-path', 'pan-path', 'bitmap-cache', 'tile-augment', 'layer-sync', 'renderer-js'],
+  },
+
+  'rust': {
+    parent: 'root',
+    title: 'Rust Backend',
+    subtitle: 'PDFium · file I/O · Tauri commands',
+    icon: '🦀',
+    status: 'existing',
+    brief: 'Doet de echte raster-rendering. JS roept Tauri commands aan via invoke().',
+    desc: 'PDFium (via pdfium-render crate) is de PDF-renderer. Pixmap cache (Rust-side LRU) bewaart gerasteriseerde pages. Andere commands: file I/O, locking, MCP bridge.',
+    children: ['rust-render-cmd', 'rust-region-cmd', 'rust-analyze-cmd', 'rust-pdfium-renderer', 'rust-caches'],
+  },
+
+  'mcp': {
+    parent: 'root',
+    title: 'MCP Server',
+    subtitle: 'AI-driven test harness · port 9223',
+    icon: '🤖',
+    status: 'new',
+    brief: 'JSON-RPC server zodat een externe AI tool calls kan doen om de app te besturen.',
+    desc: 'In-process MCP server (axum-based). Exposes tools om de live WebView te besturen: open PDF, zoom, scroll, screenshot, en de nieuwe <code>app_zoom_anchor_test</code> voor cursor-anchor metingen.',
+    children: ['mcp-tools', 'mcp-bridge'],
+  },
+
+  // ═══════════════ LEVEL 2: PDF ENGINE DETAILS ═════════════════════════════
+
+  'viewport-state': {
+    parent: 'pdf-engine',
+    title: 'Viewport State',
+    subtitle: 'js/pdf/pdf-viewport.js',
+    icon: '📊',
+    status: 'changing',
+    brief: 'Single source of truth voor zoom, pan-offset, pagina, dpr.',
+    desc: 'Eén globale singleton. Alle UI leest hieruit. Alle events (wheel, drag) schrijven hierheen. De render loop tekent op basis hiervan.',
+    code: [{
+      label: 'Viewport singleton (pdf-viewport.js)',
+      text: `export const viewport = {
+  active: false,           // is vector mode actief?
+  filePath: null,
+  pageNum: 0,
+  pageW: 0, pageH: 0,      // page dims in PDF points
+  originX: 0, originY: 0,  // MediaBox offset
+  rotation: 0,
+  zoom: 1,                 // huidige zoom (1.0 = 100%)
+  offsetX: 0, offsetY: 0,  // page positie in screen-pixels
+  dirty: false,            // markeer voor re-paint
+};`
+    }, {
+      label: 'In het nieuwe unified model worden offsetX/Y voor ALLE PDFs gebruikt',
+      text: `// Bitmap-mode dropt browser-scroll. offsetX/Y wordt
+// de enige plaats waar pan-positie leeft. Geen
+// container.scrollLeft meer.
+viewport.offsetX = -200;   // page 200px naar links geschoven
+viewport.offsetY = -100;   // 100px omhoog
+viewport.zoom = 1.5;       // 150%`
+    }],
+    children: [],
+  },
+
+  'render-loop': {
+    parent: 'pdf-engine',
+    title: 'Render Loop',
+    subtitle: '_render() in pdf-viewport.js · runs every RAF',
+    icon: '🔄',
+    status: 'changing',
+    brief: '~60 FPS paint cycle. Tekent canvas op basis van viewport state.',
+    desc: 'Loopt continu via <code>requestAnimationFrame</code>. Per frame: clamp checks (nu no-op) → clear canvas → fill background → teken page content (vector OF bitmap drawImage) → sync text/annotation layers. In het nieuwe model: één enkele paint-functie voor zowel raster als vector.',
+    compare: {
+      old: `<b>Huidig (vector-mode):</b><br>
+- clampAndCenter() <span class="bubble js">JS</span> per frame<br>
+- clearRect()<br>
+- fill gray bg<br>
+- setTransform(zoom, offsetX/Y)<br>
+- renderVectorPage() — speelt draw-commands af<br>
+- sync text layer transform<br>
+- sync annotation canvas<br><br>
+<b>Huidig (bitmap-mode):</b><br>
+Geen RAF loop. Renderen gebeurt in <code>renderPage()</code> async, met canvas.width/style resize + drawImage van full bitmap. Pan = browser scroll.`,
+      new: `<b>Eén render loop voor allebei:</b><br>
+- clearRect()<br>
+- fill gray bg<br>
+- IF raster page heeft cached bitmap:<br>
+&nbsp;&nbsp;<code>drawImage(bitmap, srcRect, destRect)</code><br>
+&nbsp;&nbsp;met destRect = (offsetX, offsetY, pageW*zoom, pageH*zoom)<br>
+- IF zoom > cap AND tile beschikbaar:<br>
+&nbsp;&nbsp;<code>drawImage(tile)</code> erover voor visible region<br>
+- IF vector content: speel draw-commands af<br>
+- sync text layer transform`,
+    },
+    children: [],
+  },
+
+  'zoom-path': {
+    parent: 'pdf-engine',
+    title: 'Zoom Path ★',
+    subtitle: 'Wheel event → paint',
+    icon: '🔍',
+    status: 'changing',
+    brief: 'WAT GEBEURT BIJ EEN CTRL+WHEEL. Hier zaten de races. Klik door.',
+    desc: 'Volg stap voor stap wat er gebeurt vanaf het OS-event tot de pixels op het scherm staan.',
+    flow: [
+      { time: '0 ms', text: `OS stuurt <strong>WheelEvent</strong> met ctrlKey=true naar de WebView. <code>.main-view</code> heeft een listener.` },
+      { time: '+0.1 ms', text: `<strong>navigation-events.js</strong> wheel-handler vuurt. Leest <code>e.clientX/Y</code>. <span class="race">RACE</span> als wheel#2 al binnenkomt voor wheel#1 klaar is.` },
+      { time: '+0.5 ms', text: `Capture <strong>fractionX/Y</strong> = (clientX - canvasRect.left) / canvasRect.width. Schaal-onafhankelijk anker.<br><span class="note">Nieuw (v1.49.0): voorheen deelden we door doc.scale wat raceconditie veroorzaakte.</span>` },
+      { time: '+1 ms', text: `<strong>await m.zoomIn()</strong> — in bitmap mode: <code>doc.scale += 0.25</code> dan <code>await renderPage()</code>. In vector mode: <code>zoomStepAtPoint(sx, sy, +1)</code> sync.` },
+      { time: '+50-300 ms', text: `<strong>analyze_page_type</strong> Rust call (bitmap path). <span class="race">RACE WINDOW</span>: hier liep doc.scale uit sync met canvas CSS — nu opgelost.` },
+      { time: '+50-2000 ms', text: `<strong>render_pdf_page</strong> Rust call OF JS-cache hit. Bitmap landt in canvas via <code>putImageData</code>.<br><span class="note">Tussen pdfCanvas.width=X en putImageData zit een microseconde "blank canvas" — niet visible, maar in unified model verdwijnt dit volledig.</span>` },
+      { time: '+next RAF', text: `(vector mode) <strong>_render()</strong> tekent met nieuwe zoom/offset.` },
+      { time: '+after await', text: `Wheel-handler post-await: stale-gen check, dan <strong>cursor anchor adjustment</strong>: <code>container.scrollLeft += dxScroll</code>.` },
+    ],
+    compare: {
+      old: `<b>5 verschillende race-condities</b> moesten ge-fixed worden:<br>
+1. Wheel#1 + Wheel#2 dezelfde scale lezen <br>
+2. doc.scale ≠ canvas CSS size in window<br>
+3. cache-hit en Rust-render allebei painten<br>
+4. tile-rerender 150ms na main paint → spring<br>
+5. analyze_page_type await lekt naar volgende zoom<br><br>
+Plus: tile-overlay shows STALE content tijdens de re-render (de "flits van een ander beeld").`,
+      new: `<b>Eén pad. Geen await tijdens zoom-anchor.</b><br>
+1. <code>zoomStepAtPoint(x, y, dir)</code><br>
+&nbsp;&nbsp;sync: bereken nieuwe offset, set viewport.dirty<br>
+2. Volgende RAF: <code>_render()</code> tekent met de oude (gecachte) bitmap op nieuwe offset/zoom<br>
+3. Parallel: kick off async PDFium re-render op nieuwe resolutie<br>
+4. Bitmap landt: viewport.dirty=true → next RAF tekent crisp<br><br>
+Geen flits omdat het CANVAS niet resized, alleen de transform.`,
+    },
+    children: ['zoom-step1', 'zoom-step2', 'zoom-step3', 'zoom-step4', 'zoom-step5'],
+  },
+
+  'pan-path': {
+    parent: 'pdf-engine',
+    title: 'Pan Path',
+    subtitle: 'Drag of wheel → page positie',
+    icon: '✋',
+    status: 'changing',
+    brief: 'Click+drag of plain wheel. Verandert offsetX/Y.',
+    desc: 'In het huidige bitmap-mode gebruikt pan native browser-scroll (<code>container.scrollLeft/Top</code>). In vector-mode gebruikt pan al <code>viewport.offsetX/Y</code> met momentum-loop. Nieuwe unified: alleen offsetX/Y, geen native scroll.',
+    compare: {
+      old: `<b>Bitmap mode:</b> <code>container.scrollLeft = X</code> via browser-native scroll. Pan geclamped door <code>scrollWidth - clientWidth</code>.<br><br>
+<b>Vector mode:</b> velocity loop in pdf-viewport.js, momentum-decay, voorheen geclamped door clampAndCenter (nu no-op).<br><br>
+<b>Probleem:</b> twee verschillende modellen → cursor-anchor logic moet twee keer geschreven.`,
+      new: `<b>Eén model:</b><br>
+- mousedown: capture (mouseX, mouseY) + huidige offsetX/Y<br>
+- mousemove: <code>offsetX += dx; offsetY += dy</code><br>
+- mouseup: stop<br><br>
+Wheel zonder ctrl: <code>addPanVelocity(dx, dy)</code> in een momentum-RAF-loop.<br><br>
+Geen clamp. User kan page volledig off-screen pannen. <kbd>F</kbd> = Fit Page recovery.`,
+    },
+    children: [],
+  },
+
+  'bitmap-cache': {
+    parent: 'pdf-engine',
+    title: 'Bitmap Cache',
+    subtitle: 'JS-side LRU + Rust-side pixmap',
+    icon: '💾',
+    status: 'changing',
+    brief: 'Twee caches: ImageBitmap (JS) en RGBA bytes (Rust).',
+    desc: 'JS-cache (<code>_BITMAP_JS_CACHE</code>, LRU max 16) bewaart gedecodeerde ImageData (via createImageBitmap). Rust pixmap cache zit in <code>PixmapCacheState</code> en bewaart RGBA bytes per <code>(path, page, scale, rotation)</code>. Bij cache hit op JS-side: drawImage in &lt;10ms. Bij Rust hit: 50-100ms IPC roundtrip. Cold: 500-2000ms.',
+    code: [{
+      label: 'Cache key (huidig)',
+      text: `\`\${doc.filePath}|\${pageNum}|\${Math.round(_effectiveScale * 10000)}|\${rotation}\`
+
+// _effectiveScale = min(scale, CAP/pageMaxAxisPt)
+// Boven cap → meerdere zoom-niveaus delen dezelfde cached bitmap`
+    }, {
+      label: 'Cache key (nieuw unified — vereenvoudigd)',
+      text: `\`\${filePath}|p\${pageNum}|r\${rotation}|z\${zoomBucket}\`
+
+// zoomBucket = round-to-preset zoom level
+// Per page: 1 bitmap per zoom-bucket
+// drawImage doet rest via browser bilinear`
+    }],
+    children: [],
+  },
+
+  'tile-augment': {
+    parent: 'pdf-engine',
+    title: 'Tile Augment',
+    subtitle: 'Crisp visible-region overlay bij >cap zoom',
+    icon: '🔬',
+    status: 'changing',
+    brief: 'Bij zoom > cap rendert PDFium een viewport-region crisp.',
+    desc: 'Onder cap (4096px hoofdas): hele page-bitmap op exacte resolutie. Boven cap: hoofd-bitmap op CAP-resolutie (stretched blurry) + tile-bitmap voor visible viewport-region op de exacte gevraagde scale.',
+    compare: {
+      old: `<b>Aparte DOM canvas:</b> <code>&lt;canvas id="pdf-canvas-tile"&gt;</code> met position:absolute binnen #canvas-container.<br><br>
+- Geupdate via _renderTileOverlay()<br>
+- Scroll listener om opnieuw te renderen bij pannen<br>
+- 150ms debounce<br>
+- BUG: tile shows stale content tijdens main re-render → "flits van een ander beeld"`,
+      new: `<b>Geen aparte DOM canvas.</b><br><br>
+In de render loop: na <code>drawImage(wholeBitmap)</code>, als zoom > cap én tile beschikbaar, een tweede <code>drawImage(tileBitmap)</code> over het visible region. Twee paints in dezelfde frame, geen race.<br><br>
+Tile-cache key: <code>(file, page, zoom, viewportRegion-rounded-to-1.25x-buffer)</code>. Pan binnen buffer = hit.`,
+    },
+    children: [],
+  },
+
+  'layer-sync': {
+    parent: 'pdf-engine',
+    title: 'Layer Sync',
+    subtitle: 'Text + annotations volgen viewport',
+    icon: '📑',
+    status: 'changing',
+    brief: 'Text layer en annotation canvas moeten met zoom mee bewegen.',
+    desc: 'Text-layer = PDF.js spans voor text-selection en search. Annotation canvas = vrije tekening/markup. Beide moeten exact uitgelijnd blijven met de gerasteriseerde page.',
+    compare: {
+      old: `<b>Bitmap mode:</b> text-layer wordt opnieuw aangemaakt bij elke zoom (PDF.js page.getViewport({scale}) → spans op pixel positie). Annotation canvas wordt geresized naar viewport.width × viewport.height.<br><br>
+Probleem: duur, en uit-sync kans tijdens zoom-burst.`,
+      new: `<b>Text layer:</b><br>
+- Eénmalig aangemaakt op scale=1<br>
+- Spans zijn in PDF-point units<br>
+- <code>transform: matrix(zoom, 0, 0, zoom, offsetX, offsetY)</code><br>
+- Volgt viewport per frame zonder DOM-updates<br><br>
+<b>Annotation canvas:</b><br>
+- Fixed size = container.clientWidth × clientHeight<br>
+- Drawn met <code>ctx.setTransform(zoom*dpr, 0, 0, zoom*dpr, offsetX*dpr, offsetY*dpr)</code>`,
+    },
+    children: [],
+  },
+
+  'renderer-js': {
+    parent: 'pdf-engine',
+    title: 'renderer.js (de fat file)',
+    subtitle: 'Wordt fors afgeslankt',
+    icon: '📜',
+    status: 'changing',
+    brief: 'Huidig: 1700+ regels, doet veel te veel. Wordt thin orchestrator.',
+    desc: 'Doet vandaag: renderPage + zoom helpers + bitmap cache + pre-render scheduler + thumbnail integration + tile overlay + text layer creation. Wordt: thin file met renderPage() als coordinator die het render loop in pdf-viewport.js voedt.',
+    code: [{
+      label: 'Wat eruit verdwijnt',
+      text: `// _renderTileOverlay              -> moves to render loop
+// _hideTileOverlay                -> not needed
+// _scheduleTileRerenderOnScroll   -> deleted
+// wireTileScrollListener          -> deleted
+// currentRenderTask?.cancel()     -> dead code, deleted
+// predictive pdfCanvas.style      -> not needed (canvas fixed size)
+// pdfCanvas.width = X clear bug   -> eliminated
+// pdf-canvas-tile DOM element     -> deleted (HTML, CSS, JS)
+// renderContinuous                -> separate v2 spec
+// dpr handling in renderer.js     -> centralized in viewport
+`,
+    }],
+    children: [],
+  },
+
+  // ═══════════════ LEVEL 3: ZOOM STEP DETAILS ══════════════════════════════
+
+  'zoom-step1': {
+    parent: 'zoom-path',
+    title: 'Step 1: Wheel event',
+    subtitle: 'OS → WebView → .main-view listener',
+    icon: '1️⃣',
+    status: 'existing',
+    brief: 'OS stuurt WheelEvent met ctrlKey=true. Listener op .main-view.',
+    desc: 'Voorbeeld: gebruiker hovert op (920, 412), draait wiel één notch omhoog. OS produceert een WheelEvent met deltaY=-120 (Chromium-standaard voor één notch).',
+    code: [{
+      label: 'navigation-events.js — listener bind',
+      text: `document.querySelector('.main-view')?.addEventListener('wheel', async (e) => {
+  if (e.ctrlKey || e.metaKey) {
+    e.preventDefault();
+    // ...zoom flow...
+  } else {
+    // ...pan flow...
+  }
+}, { passive: false });`
+    }],
+    children: [],
+  },
+
+  'zoom-step2': {
+    parent: 'zoom-path',
+    title: 'Step 2: Capture cursor anchor',
+    subtitle: 'fractionX/Y berekening',
+    icon: '2️⃣',
+    status: 'changing',
+    brief: 'Onthoud waar de cursor relatief tot de canvas zit (0..1).',
+    desc: 'Voorheen werd <code>worldX = cursorCanvasX / doc.scale</code> gebruikt. Dit faalde bij rapid wheel events omdat <code>doc.scale</code> sync werd geüpdatet terwijl de canvas CSS dimensions pas later resized werden (na de analyze_page_type await window). Nu gebruiken we direct de canvas CSS dimensies — schaal-onafhankelijk.',
+    code: [{
+      label: 'OUD (race-vulnerable)',
+      text: `const oldScale = doc.scale;  // <-- mogelijk al nieuwe waarde
+const canvasRect = pdfCanvas.getBoundingClientRect();
+const cursorCanvasX = clientX - canvasRect.left;
+worldX = cursorCanvasX / oldScale;  // RACE als oldScale en
+                                     // canvasRect.width uit sync zijn`
+    }, {
+      label: 'NIEUW (v1.49.0, schaal-onafhankelijk)',
+      text: `const canvasRect = pdfCanvas.getBoundingClientRect();
+fractionX = (clientX - canvasRect.left) / canvasRect.width;
+fractionY = (clientY - canvasRect.top) / canvasRect.height;
+// fractionX is unitless (0..1). Geldig ongeacht doc.scale.`
+    }],
+    children: [],
+  },
+
+  'zoom-step3': {
+    parent: 'zoom-path',
+    title: 'Step 3: zoomIn / zoomStepAtPoint',
+    subtitle: 'Mutate viewport state',
+    icon: '3️⃣',
+    status: 'changing',
+    brief: 'Bereken nieuwe zoom + nieuwe offset zodat cursor wereldpunt blijft.',
+    desc: 'In vector-mode (huidig): synchrone update van viewport.zoom + offsetX/Y via cursor-anchor formule. In bitmap-mode (huidig): doc.scale += 0.25 dan await renderPage. In nieuwe unified: alle paths gebruiken <code>zoomStepAtPoint</code>.',
+    code: [{
+      label: 'De cursor-anchor formule (in _anchorAt)',
+      text: `function _anchorAt(screenX, screenY, oldZoom, newZoom) {
+  // wereldpunt onder cursor (in PDF points)
+  const wx = (screenX - viewport.offsetX) / oldZoom;
+  const wy = (screenY - viewport.offsetY) / oldZoom;
+  // verschuif offset zodat (wx, wy) nu onder (screenX, screenY) ligt
+  viewport.offsetX = screenX - wx * newZoom;
+  viewport.offsetY = screenY - wy * newZoom;
+  viewport.zoom = newZoom;
+  viewport.dirty = true;
+}`
+    }],
+    children: [],
+  },
+
+  'zoom-step4': {
+    parent: 'zoom-path',
+    title: 'Step 4: viewport.dirty = true',
+    subtitle: 'Triggert volgende RAF paint',
+    icon: '4️⃣',
+    status: 'existing',
+    brief: 'Geen render-call. Markeer voor volgende frame.',
+    desc: 'Belangrijk: stap 3 doet GEEN render-call. Het markeert alleen viewport.dirty. De RAF loop pakt het op de volgende frame (<= 16ms latency).',
+    children: [],
+  },
+
+  'zoom-step5': {
+    parent: 'zoom-path',
+    title: 'Step 5: _render() paint',
+    subtitle: 'Tekent met cached bitmap + nieuwe transform',
+    icon: '5️⃣',
+    status: 'changing',
+    brief: 'Browser bilinear upscale van cached bitmap. Crisp re-render async.',
+    desc: 'De RAF loop ziet viewport.dirty=true, tekent het canvas opnieuw met de nieuwe offsetX/zoom. De CACHED bitmap (oude resolutie) wordt door drawImage geupscaled — instant feedback, blurry. Parallel start een Rust render op de nieuwe doel-resolutie. Klaar? → bitmap vervangen in cache → viewport.dirty → next frame tekent crisp.',
+    code: [{
+      label: '_render() in pdf-viewport.js (nieuw unified)',
+      text: `function _render() {
+  // 1. Clear
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  // 2. Background
+  ctx.fillStyle = '#e0e0e0';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  // 3. Page bitmap
+  if (currentBitmap) {
+    ctx.drawImage(currentBitmap,
+      0, 0, currentBitmap.width, currentBitmap.height,
+      offsetX * dpr, offsetY * dpr,
+      pageW * zoom * dpr, pageH * zoom * dpr);
+  }
+  // 4. High-zoom tile augment
+  if (zoom > capZoom && currentTile) {
+    ctx.drawImage(currentTile, ...);
+  }
+  // 5. Text/annotation layers sync via CSS transform
+}`
+    }],
+    children: [],
+  },
+
+  // ═══════════════ LEVEL 2: RUST BACKEND DETAILS ════════════════════════════
+
+  'rust-render-cmd': {
+    parent: 'rust',
+    title: 'render_pdf_page',
+    subtitle: 'Tauri command — RGBA bytes via binary IPC',
+    icon: '🦀',
+    status: 'existing',
+    brief: 'Render hele pagina naar RGBA. Resultaat in pixmap cache.',
+    desc: 'Argumenten: <code>path</code>, <code>pageIndex</code>, <code>scale</code>. Returns: <code>[w u32 LE][h u32 LE][rgba bytes...]</code> via Tauri ipc::Response (snel binary path, geen base64). Pixmap cache check eerst — hit = <50ms, miss = 500-2000ms.',
+    code: [{
+      label: 'src-tauri/src/pdfium_renderer.rs',
+      text: `pub fn render_page_to_rgba(...) -> Result<Vec<u8>> {
+  let config = PdfRenderConfig::new()
+    .set_target_size(width as i32, height as i32)
+    .render_annotations(true)
+    .use_lcd_text_rendering(true)         // crisp text
+    .set_format(PdfBitmapFormat::BGRA);
+  let bitmap = page.render_with_config(&config)?;
+  Ok(bitmap.as_image().to_rgba8().into_raw())
+}`
+    }],
+    children: [],
+  },
+
+  'rust-region-cmd': {
+    parent: 'rust',
+    title: 'render_pdf_page_region',
+    subtitle: 'Tauri command — viewport region only',
+    icon: '🦀',
+    status: 'existing',
+    brief: 'Render alleen een regio van de page. Voor tile augment.',
+    desc: 'Gebruikt <code>FPDF_RenderPageBitmapWithMatrix</code> via PdfRenderConfig.transform(). Argumenten: path, page, scale, regionX, regionY, regionW, regionH (in PDF points).',
+    code: [{
+      label: 'De transform die de region uitknipt',
+      text: `let config = PdfRenderConfig::new()
+  .set_fixed_size(bitmap_w, bitmap_h)
+  .transform(
+    scale_x, 0.0, 0.0, scale_y,
+    -region_x * scale_x,           // translate page links naar regio
+    -region_y * scale_y,           // translate page omhoog
+  )?
+  .use_lcd_text_rendering(true)
+  .set_format(PdfBitmapFormat::BGRA);`
+    }],
+    children: [],
+  },
+
+  'rust-analyze-cmd': {
+    parent: 'rust',
+    title: 'analyze_page_type',
+    subtitle: 'Vector of Tile?',
+    icon: '🔎',
+    status: 'existing',
+    brief: 'Classificeert page als Vector (extract commands) of Tile (raster via PDFium).',
+    desc: 'Walks de content stream in lopdf. Returns Vector als: geen shading op, weinig images, geen grote images. Anders Tile. 50-300ms per page.',
+    code: [{
+      label: 'Drempels',
+      text: `const MAX_IMAGE_COUNT: u32 = 8;
+const MAX_SINGLE_IMAGE_PIXELS: u64 = 4_000_000; // ~4MP
+
+if has_shading_op → Tile
+if image_count > MAX_IMAGE_COUNT → Tile
+if any image w*h > MAX_SINGLE_IMAGE_PIXELS → Tile
+else → Vector`
+    }],
+    children: [],
+  },
+
+  'rust-pdfium-renderer': {
+    parent: 'rust',
+    title: 'pdfium_renderer.rs',
+    subtitle: 'Wraps pdfium-render 0.9.1',
+    icon: '🦀',
+    status: 'existing',
+    brief: 'PDFium binding. 6.9 MB prebuilt DLL (no-V8/XFA).',
+    desc: 'Bind PDFium via pdfium-render crate. Doc handles in PdfiumDocCache (LRU). Subpixel anti-aliased text via FPDF_LCD_TEXT.',
+    children: [],
+  },
+
+  'rust-caches': {
+    parent: 'rust',
+    title: 'Rust caches',
+    subtitle: 'PdfiumDocCache + PixmapCache',
+    icon: '💾',
+    status: 'existing',
+    brief: 'Document handles + gerasteriseerde bitmaps.',
+    desc: 'PdfiumDocCache: LRU van geopende PDF-documents (PdfDocument structs). PixmapCache: per (path, page, scale, rotation) → RGBA bytes. Beide geleegd bij doc-close of via app_clear_caches MCP tool.',
+    children: [],
+  },
+
+  // ═══════════════ LEVEL 2: MCP SERVER DETAILS ══════════════════════════════
+
+  'mcp-tools': {
+    parent: 'mcp',
+    title: 'MCP Tools',
+    subtitle: 'JSON-RPC interface',
+    icon: '🔧',
+    status: 'new',
+    brief: 'Tools voor AI-driven test besturing.',
+    desc: 'De MCP-server exposes tools via JSON-RPC. Toegevoegd in v1.49.0 voor zoom-anchor verificatie.',
+    code: [{
+      label: 'Nieuwe tools v1.49.0',
+      text: `app_wheel_zoom        // synth ctrl+WheelEvent op (x,y)
+app_zoom_anchor_test  // pre/post snapshot + anchorErrorPx
+app_go_to_page        // naar specifieke page navigeren
+app_clear_caches      // force-clear Rust + JS caches
+
+// Bestaande tools (selectie):
+app_open_pdf
+app_set_zoom
+app_zoom_in/out
+app_screenshot_view
+app_mouse_move/click/drag
+app_get_viewport_state
+app_get_recent_console`
+    }],
+    children: [],
+  },
+
+  'mcp-bridge': {
+    parent: 'mcp',
+    title: 'mcp-bridge.js',
+    subtitle: 'WebView side van MCP-tools',
+    icon: '🌉',
+    status: 'new',
+    brief: 'Event handlers in WebView die naar Rust antwoorden.',
+    desc: 'Rust MCP server kan niet direct in WebView werken. Elk MCP-tool emit een Tauri event (bv. <code>mcp:zoom-anchor-test</code>). mcp-bridge.js heeft een listener per event die de actie uitvoert en via <code>app_response</code> Tauri command het antwoord terugstuurt.',
+    code: [{
+      label: 'handleZoomAnchorTest (mcp-bridge.js)',
+      text: `async function handleZoomAnchorTest(params) {
+  const pre = await _captureCanvasState(x, y);
+  await handleWheelZoom({ x, y, deltaY, ctrlKey: true });
+  await _waitForRenderIdle(6000);   // wait pdfRenderInFlight=0
+  const post = await _captureCanvasState(x, y);
+  const fractionX = pre.fractionX;
+  const expectedScreenX = post.canvas.left + fractionX * post.canvas.width;
+  const anchorErrorPx = expectedScreenX - x;
+  return { ok: true, pre, post, anchorErrorPx };
+}`
+    }],
+    children: [],
+  },
+};
+
+// ── Rendering ─────────────────────────────────────────────────────────────
+
+let currentId = 'root';
+
+function findPath(id) {
+  const path = [];
+  let cur = id;
+  while (cur) {
+    path.unshift(cur);
+    cur = NODES[cur]?.parent || null;
+  }
+  return path;
+}
+
+function renderBreadcrumbs() {
+  const path = findPath(currentId);
+  const html = path.map((id, i) => {
+    const node = NODES[id];
+    const isLast = i === path.length - 1;
+    return `<span class="crumb ${isLast ? 'current' : ''}" data-id="${id}">${node.title}</span>${!isLast ? '<span class="sep">›</span>' : ''}`;
+  }).join('');
+  document.getElementById('breadcrumbs').innerHTML = html;
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function highlightCode(text) {
+  // We escape HTML and apply highlighting via a TOKEN-BASED pass so the
+  // keyword regex can't accidentally match attribute names like `class="..."`
+  // in the spans we just inserted. Each token is replaced with a placeholder,
+  // spans are added at the END.
+  const escaped = escapeHtml(text);
+  const tokens = [];
+  let work = escaped;
+
+  // Helper: replace pattern, push wrapped text into tokens, leave placeholder
+  function tokenize(re, cls) {
+    work = work.replace(re, (m) => {
+      const idx = tokens.length;
+      tokens.push(`<span class="${cls}">${m}</span>`);
+      return `${idx}`;
+    });
+  }
+
+  // DISABLED — see comment below; tokenize calls bypassed.
+  if (false) {
+    tokenize(/\/\*[\s\S]*?\*\//g, 'c-comment');
+    tokenize(/\/\/[^\n]*/g, 'c-comment');
+    tokenize(/'[^'\n]*'/g, 'c-str');
+    tokenize(/"[^"\n]*"/g, 'c-str');
+    tokenize(/`[^`]*`/g, 'c-str');
+    tokenize(/\b\d+(?:\.\d+)?\b/g, 'c-num');
+  }
+  // Plain escaped HTML — placeholder strategy was broken (number-placeholders
+  // collided with literal numbers on restore). Documentation page, plain
+  // monospace is fine.
+  return escaped;
+
+  const kws = ['const','let','var','function','async','await','return','if','else','for','while','export','import','from','class','new','this','of','in','true','false','null','undefined','pub','fn','use','struct','impl','match','Ok','Err','Vec','Result','i32','u32','f32','f64','i64','u64'];
+  work = work.replace(new RegExp('\\b(' + kws.join('|') + ')\\b', 'g'), (m) => {
+    const idx = tokens.length;
+    tokens.push(`<span class="c-kw">${m}</span>`);
+    return `${idx}`;
+  });
+
+  // Restore tokens
+  return work.replace(/(\d+)/g, (_, idx) => tokens[parseInt(idx, 10)]);
+}
+
+function renderLegend() {
+  return `<div class="legend">
+    <div class="legend-item"><div class="legend-dot" style="border-color: var(--gray); background: var(--gray)"></div> existing</div>
+    <div class="legend-item"><div class="legend-dot" style="border-color: var(--yellow); background: var(--yellow)"></div> changing</div>
+    <div class="legend-item"><div class="legend-dot" style="border-color: var(--green); background: var(--green)"></div> new</div>
+    <div class="legend-item"><div class="legend-dot" style="border-color: var(--red); background: var(--red)"></div> removed</div>
+  </div>`;
+}
+
+function renderContent() {
+  const node = NODES[currentId];
+  if (!node) return;
+
+  let html = '';
+
+  // Header
+  html += `<div class="node-header">
+    <h2>${node.icon || ''} ${node.title}</h2>
+    ${node.subtitle ? `<div class="subtitle">${node.subtitle}</div>` : ''}
+  </div>`;
+
+  // Description
+  html += `<div class="node-desc">${node.desc || ''}</div>`;
+
+  if (node.showLegend) html += renderLegend();
+
+  // Flow diagram
+  if (node.flow) {
+    html += `<div class="section-label">Sequence</div><div class="flow-diagram">`;
+    node.flow.forEach((step, i) => {
+      html += `<div class="flow-step">
+        <div class="flow-num">${i + 1}</div>
+        <div class="flow-time">${step.time || ''}</div>
+        <div class="flow-content">${step.text}</div>
+      </div>`;
+    });
+    html += `</div>`;
+  }
+
+  // Code blocks
+  if (node.code) {
+    node.code.forEach(c => {
+      html += `<div class="code-label">${c.label}</div>`;
+      html += `<div class="code-block">${highlightCode(c.text)}</div>`;
+    });
+  }
+
+  // Compare panes
+  if (node.compare) {
+    html += `<div class="section-label">Huidig vs. Nieuw</div>`;
+    html += `<div class="compare">
+      <div class="pane-old"><h4>Huidig</h4>${node.compare.old}</div>
+      <div class="pane-new"><h4>Nieuw (unified)</h4>${node.compare.new}</div>
+    </div>`;
+  }
+
+  // Children cards
+  if (node.children && node.children.length > 0) {
+    html += `<div class="section-label">Onderdelen</div>`;
+    html += `<div class="children-grid">`;
+    node.children.forEach(cid => {
+      const c = NODES[cid];
+      if (!c) return;
+      const hasChildren = c.children && c.children.length > 0;
+      const cardClass = hasChildren || c.code || c.compare || c.flow ? '' : 'leaf';
+      html += `<div class="card ${cardClass}" data-id="${cid}">
+        ${c.status ? `<span class="status status-${c.status}">${c.status}</span>` : ''}
+        <div class="icon">${c.icon || '·'}</div>
+        <div class="title">${c.title}</div>
+        ${c.subtitle ? `<div class="subtitle">${c.subtitle}</div>` : ''}
+        <div class="brief">${c.brief || ''}</div>
+      </div>`;
+    });
+    html += `</div>`;
+  }
+
+  document.getElementById('content').innerHTML = html;
+  document.querySelectorAll('.card[data-id]').forEach(el => {
+    el.addEventListener('click', () => navigate(el.dataset.id));
+  });
+}
+
+function navigate(id) {
+  if (!NODES[id]) return;
+  currentId = id;
+  location.hash = '#' + id;
+  renderBreadcrumbs();
+  renderContent();
+  window.scrollTo(0, 0);
+}
+
+// Breadcrumb click handler
+document.getElementById('breadcrumbs').addEventListener('click', (e) => {
+  const cid = e.target.dataset?.id;
+  if (cid) navigate(cid);
+});
+
+// Hash routing
+window.addEventListener('hashchange', () => {
+  const id = location.hash.slice(1) || 'root';
+  if (NODES[id]) {
+    currentId = id;
+    renderBreadcrumbs();
+    renderContent();
+  }
+});
+
+// Initial render
+const initialId = location.hash.slice(1) || 'root';
+currentId = NODES[initialId] ? initialId : 'root';
+renderBreadcrumbs();
+renderContent();
+</script>
+</body>
+</html>
