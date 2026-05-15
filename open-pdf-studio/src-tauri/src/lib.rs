@@ -1356,69 +1356,6 @@ fn extract_draw_commands_batch(
     Ok(out)
 }
 
-/// Extract text spans for the text-selection layer of one page.
-/// Replaces the second PDF parse PDF.js used to do for getTextContent —
-/// the Rust interpreter walks the same content stream as draw command
-/// extraction but only emits text spans, sharing the document-scoped font
-/// cache so glyph parsing is amortized across pages.
-#[tauri::command]
-fn extract_text(
-    path: String,
-    page_index: u32,
-    bytes_cache: tauri::State<PdfBytesCache>,
-    handle_cache: tauri::State<DocHandleCache>,
-) -> Result<Vec<TextSpanDto>, String> {
-    let doc = get_or_load_doc(&path, &bytes_cache, &handle_cache)?;
-    let spans = doc.extract_text_spans(page_index as usize).map_err(|e| format!("{}", e))?;
-    Ok(spans.into_iter().map(TextSpanDto::from).collect())
-}
-
-/// Batch text-span extraction for multiple pages, parallelized via rayon.
-#[tauri::command]
-fn extract_text_batch(
-    path: String,
-    page_indices: Vec<u32>,
-    bytes_cache: tauri::State<PdfBytesCache>,
-    handle_cache: tauri::State<DocHandleCache>,
-) -> Result<Vec<Vec<TextSpanDto>>, String> {
-    let doc = get_or_load_doc(&path, &bytes_cache, &handle_cache)?;
-    let pages: Vec<usize> = page_indices.iter().map(|i| *i as usize).collect();
-    let results = doc.extract_text_spans_batch(&pages);
-    let mut out = Vec::with_capacity(results.len());
-    for r in results {
-        out.push(r.map(|spans| spans.into_iter().map(TextSpanDto::from).collect())
-                  .map_err(|e| format!("{}", e))?);
-    }
-    Ok(out)
-}
-
-/// Serializable mirror of `open_pdf_render::TextSpan` for Tauri IPC.
-/// Tauri's serde plumbing requires types in this crate (or with derive
-/// access). The Rust crate's TextSpan can't derive Serialize without
-/// pulling serde into open-pdf-render, so we mirror it here.
-#[derive(serde::Serialize)]
-struct TextSpanDto {
-    text: String,
-    x: f32,
-    y: f32,
-    width: f32,
-    height: f32,
-    font_size: f32,
-}
-
-impl From<open_pdf_render::TextSpan> for TextSpanDto {
-    fn from(s: open_pdf_render::TextSpan) -> Self {
-        TextSpanDto {
-            text: s.text,
-            x: s.x,
-            y: s.y,
-            width: s.width,
-            height: s.height,
-            font_size: s.font_size,
-        }
-    }
-}
-
 /// Invalidate the PDF bytes cache AND the parsed handle cache for a specific
 /// file (call after save/modify so the next render sees the new content).
 #[tauri::command]
@@ -1631,8 +1568,6 @@ pub fn run(opts: StartupOpts) {
             analyze_page_type,
             extract_draw_commands,
             extract_draw_commands_batch,
-            extract_text,
-            extract_text_batch,
             extract_page_text,
             render_thumbnail,
             render_to_png::render_page_to_png,

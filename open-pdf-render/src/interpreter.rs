@@ -3155,7 +3155,7 @@ impl Interpreter {
     /// position or content are processed; path/color/image ops are skipped.
     pub fn extract_text_only(
         content_bytes: &[u8],
-        spans: &mut Vec<crate::TextSpan>,
+        spans: &mut Vec<TextSpan>,
         state: &mut GraphicsStateStack,
         doc: &Document,
         resources: &Dictionary,
@@ -3308,7 +3308,7 @@ impl Interpreter {
         doc: &Document,
         resources: &Dictionary,
         state: &GraphicsStateStack,
-        spans: &mut Vec<crate::TextSpan>,
+        spans: &mut Vec<TextSpan>,
     ) {
         // Capture the start position in text space (BEFORE we advance tm).
         let start_tx = text_state.tm[4];
@@ -3405,7 +3405,7 @@ impl Interpreter {
         let du_y = dtx * ctm.ky + dty * ctm.sy;
         let width_user = (du_x * du_x + du_y * du_y).sqrt();
 
-        spans.push(crate::TextSpan {
+        spans.push(TextSpan {
             text: decoded,
             x: user_x,
             y: user_y,
@@ -3418,7 +3418,7 @@ impl Interpreter {
     /// Recurse into a Form XObject for text-only extraction.
     fn handle_do_text_only(
         operands: &[Object],
-        spans: &mut Vec<crate::TextSpan>,
+        spans: &mut Vec<TextSpan>,
         state: &mut GraphicsStateStack,
         doc: &Document,
         resources: &Dictionary,

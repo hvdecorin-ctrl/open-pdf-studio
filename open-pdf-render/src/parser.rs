@@ -737,30 +737,6 @@ impl DocumentHandle {
     }
 
     /// Extract text spans from a page WITHOUT producing draw commands.
-    ///
-    /// Walks the same content stream as extract_draw_commands but only emits
-    /// `TextSpan { text, x, y, width, height, font_size }` for every Tj/TJ
-    /// run. Replaces the second PDF parse the JS layer used to do via
-    /// PDF.js's getTextContent — this runs ~10x faster because it shares
-    /// the document-scoped font registry and doesn't build glyph outlines.
-    ///
-    /// Use this to populate a text-selection layer over the rendered page.
-    pub fn extract_text_spans(&self, page: usize) -> Result<Vec<crate::TextSpan>, RenderError> {
-        let page_id = self.get_page_id(page)?;
-        let content_bytes = self.get_content_stream(page_id)?;
-        let resources = self.get_page_resources(page_id)?;
-
-        let mut state = crate::graphics_state::GraphicsStateStack::new();
-        let mut spans = Vec::new();
-
-        let mut font_registry = self.font_registry.lock()
-            .map_err(|e| RenderError::RenderError(format!("Font registry poisoned: {}", e)))?;
-        crate::interpreter::Interpreter::extract_text_only(
-            &content_bytes, &mut spans, &mut state, &self.doc, &resources, &mut *font_registry,
-        )?;
-        Ok(spans)
-    }
-
     /// Extract text span positions from a page.
     /// Returns a JSON array string of text spans with x, y, width, height, fontSize, and text.
     /// Coordinates are in PDF user space (origin bottom-left, Y up).
@@ -783,14 +759,6 @@ impl DocumentHandle {
 
         let json_spans: Vec<String> = text_spans.iter().map(|s| s.to_json()).collect();
         Ok(format!("[{}]", json_spans.join(",")))
-    }
-
-    /// Extract text spans for many pages in parallel using rayon.
-    /// The font registry mutex serializes the font *parsing* work but the
-    /// content-stream walks for different pages can run in parallel.
-    pub fn extract_text_spans_batch(&self, pages: &[usize]) -> Vec<Result<Vec<crate::TextSpan>, RenderError>> {
-        use rayon::prelude::*;
-        pages.par_iter().map(|&p| self.extract_text_spans(p)).collect()
     }
 
     /// Extract draw commands for many pages in parallel using rayon.
