@@ -10,16 +10,36 @@ Dit programma omvat **acht PoCs**, plus optioneel een negende. Elke PoC test é�
 
 ## De acht PoCs
 
-| # | Naam | Hypothese (één zin) | Effort | Risico |
+| # | Naam | Hypothese (één zin) | Status | Effect |
 |---|---|---|---|---|
-| 01 | font-registry-rwlock | `font_registry` Mutex → RwLock laat parallel page renders 2-3× sneller draaien op multi-core | ½ dag | Laag |
-| 02 | doc-image-cache | Doc-scoped decoded image cache scheelt 52ms per re-render bij overlappende images tussen pages | 1 dag | Laag |
-| 03 | axis-aligned-draw-pixmap | `draw_pixmap` voor axis-aligned image draws vermindert 30-50% van image-rasterization tijd | ½ dag | Laag |
-| 04 | bitmap-pyramid-prerender | Eager parallel prerender bij doc-open levert alle pages cached binnen 1.5s | 2-3 dagen | Middel |
-| 05 | doc-glyph-cache | Doc-scoped glyph path cache (i.p.v. per-render) scheelt 50-100ms op multi-page docs | ½ dag | Laag |
-| 06 | highres-tier-on-demand | Lazy 2× tier render bij eerste zoom-in geeft instant zoom zonder open-tijd te belasten | 1 dag | Laag |
-| 07 | ui-progressive-feedback | Met visuele feedback (low-res preview + fade-in hi-res) voelt traagheid 2× minder erg | ½ dag | Laag |
-| 08 | preflight-thumbnail-ui | Open BARN toont eerst thumbnail-strip; hi-res render alleen op klik. *Minder renderen i.p.v. sneller* | 1-2 dagen | Hoog (UX shift) |
+| 01 | font-registry-rwlock | `font_registry` Mutex → RwLock laat parallel page renders 2-3× sneller draaien op multi-core | **NO-GO** | -60% (regressie — alle hot-path call sites vereisen `&mut self`, RwLock degradeert tot trager Mutex) |
+| 02 | doc-image-cache | Doc-scoped decoded image cache scheelt per re-render bij overlappende images tussen pages | **GO — gemerged** | BARN scroll −41%, scroll-back-revisit −73%, NKD1a scroll −59% |
+| 03 | axis-aligned-draw-pixmap | `draw_pixmap` voor axis-aligned image draws vermindert 30-50% van image-rasterization tijd | **NO-GO** | Geen meetbare winst (tiny_skia's `fill_path(rect, Pattern)` compileert al naar een blit-equivalent) |
+| 04 | bitmap-pyramid-prerender → pixmap cache | Cache de volledige gerenderde pixmap per (page, scale, rot) — bypass alle render-werk op revisit | **GO — gemerged** | BARN scroll-back −89% (7.3 s → 0.8 s, 9.4×), NKD1a scroll −92% (24 s → 2 s, 11.8×) |
+| 05 | doc-glyph-cache | Doc-scoped glyph path cache (i.p.v. per-render) scheelt 50-100ms op multi-page docs | **NO-GO** | Geen winst op cold pages, +30% regressie op warm pages — PoC 04 maakte het overbodig |
+| 06 | highres-tier-on-demand | Lazy 2× tier render bij eerste zoom-in geeft instant zoom zonder open-tijd te belasten | TODO | Mogelijk overbodig nu PoC 04 zoom op cached pixmap doet |
+| 07 | ui-progressive-feedback | Met visuele feedback (low-res preview + fade-in hi-res) voelt traagheid 2× minder erg | TODO | UX-laag — los van Rust-side metingen |
+| 08 | preflight-thumbnail-ui | Open BARN toont eerst thumbnail-strip; hi-res render alleen op klik. *Minder renderen i.p.v. sneller* | TODO | UX shift — minder renderen i.p.v. sneller renderen |
+
+### Samenvatting impact PoC 02 + PoC 04 (samen gemerged op main)
+
+Op BARN (raster-engineering, primaire test):
+
+| Scenario | Pre-PoC baseline | Na PoC 02+04 | Speedup |
+|----------|------------------|--------------|---------|
+| Cold open page 1 | 797 ms | 833 ms | -4% (binnen ruis) |
+| Scroll p1→p7 (warm) | 3357 ms | 870 ms | **3.9× sneller** |
+| Zoom in/out revisit | 1300 ms | 339 ms | **3.8× sneller** |
+| Scroll terug (revisit) | 7301 ms | 776 ms | **9.4× sneller** |
+
+NKD1a (raster-engineering, ATLAS-stress, 220 image-Do-refs):
+- Scroll p1→p7: 23.9 s → 2.0 s = **11.8× sneller** (-21.9 sec)
+
+zware-vector (30 pages, pure vector):
+- Zoom revisit: 1.5 s → 0.18 s = **8.2× sneller**
+
+Volgende stappen bezien op grond van bovenstaande: PoC 06/07/08 zijn UX-laag verbeteringen. PoC 04 heeft de
+Rust-side render performance al onder de Microsoft-2019 100ms-per-render drempel gebracht voor warme paths.
 
 **Optioneel — PoC 9 (geen aparte directory tot besluit):** gerichte Vello-met-tuning na de Veteraan's correctie dat Plan A is *geparkeerd*, niet definitief afgewezen.
 
