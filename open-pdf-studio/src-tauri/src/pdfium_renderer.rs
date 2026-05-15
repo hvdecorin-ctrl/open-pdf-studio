@@ -194,6 +194,13 @@ pub fn render_page_to_rgba(
         // win on small text and tables is significant.
         .use_lcd_text_rendering(true)
         .set_format(PdfBitmapFormat::BGRA);
+    // KNOWN LIMITATION: PDFs with OCG (Optional Content Group) layers that
+    // are hidden by default in viewer preferences (e.g. PDF-XChange
+    // markup-overlay layers in `*_opm_aw.pdf` files) render those layers
+    // VISIBLE because pdfium-render 0.9.1 does not expose
+    // FPDFOCG_IsContentVisible. Filed as v1.51 follow-up: add custom FFI
+    // calls to query and apply OCG visibility before rendering. Edge and
+    // PDF-XChange Editor both respect these layers correctly.
 
     let bitmap = page
         .render_with_config(&config)
