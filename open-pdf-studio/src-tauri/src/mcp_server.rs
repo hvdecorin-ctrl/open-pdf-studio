@@ -442,10 +442,10 @@ async fn tool_list_test_pdfs(state: &AppState) -> Result<Value, (i32, String)> {
     }))
 }
 
-/// `screenshot_page` tool — renders a single PDF page via `open_pdf_render`
-/// at a target output width (in pixels) and returns the PNG bytes encoded as
-/// base64. The MCP harness uses this to compare current renders against
-/// committed reference PNGs.
+/// `screenshot_page` tool — renders a single PDF page via PDFium at a target
+/// output width (in pixels) and returns the PNG bytes encoded as base64. The
+/// MCP harness uses this to compare current renders against committed reference
+/// PNGs.
 ///
 /// Scaling: `scale = width / page_w_pt` — `width` is the literal output
 /// pixel width, matching the PyMuPDF reference renderer the regression
@@ -632,14 +632,13 @@ async fn tool_get_pdf_metadata(
     }))
 }
 
-/// `screenshot_all` tool — renders every page of a PDF and returns each as a
-/// base64 PNG in a `pages` array. Pages are rendered serially to keep memory
-/// bounded for large multi-page PDFs (each render holds DocumentHandle
-/// internals).
+/// `screenshot_all` tool — renders every page of a PDF via PDFium and returns
+/// each as a base64 PNG in a `pages` array. Pages are rendered serially to
+/// keep memory bounded for large multi-page PDFs.
 ///
 /// Page count is read once via `lopdf` so we know how many render passes to
-/// schedule, then `open_pdf_render` produces the raster for each page using
-/// the same scaling convention as `screenshot_page`:
+/// schedule, then PDFium produces the raster for each page using the same
+/// scaling convention as `screenshot_page`:
 /// `scale = width / page_w_pt` (literal output width).
 async fn tool_screenshot_all(
     _state: &AppState,
@@ -675,9 +674,8 @@ async fn tool_screenshot_all(
         .map_err(|e| (jsonrpc_error::INTERNAL_ERROR, e))?
     };
 
-    // Render every page sequentially. Parallelizing would help wall-clock
-    // but each render holds the DocumentHandle internals; sticking to serial
-    // keeps memory bounded for big multi-page PDFs.
+    // Render every page sequentially. Parallelizing would help wall-clock time
+    // but sticking to serial keeps memory bounded for big multi-page PDFs.
     let bytes_arc = std::sync::Arc::new(bytes);
     let mut pages_json: Vec<Value> = Vec::with_capacity(total);
 
