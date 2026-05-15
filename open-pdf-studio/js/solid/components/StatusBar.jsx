@@ -133,6 +133,27 @@ export default function StatusBar() {
   return (
     <div class="status-bar">
       <div class="status-bar-left">
+        <Show when={state.renderEngine}>
+          <div class="status-item" title={`Render engine: ${state.renderEngine}${state.renderTiming ? '  |  ' + state.renderTiming : ''}`}>
+            <span style={{
+              "font-size": "11px",
+              "padding": "1px 8px",
+              "border-radius": "2px",
+              "background": (() => {
+                const e = state.renderEngine || '';
+                if (e === 'ERROR' || e === 'UNSUPPORTED') return '#b22';
+                if (e.startsWith('PDFium')) return '#2a5fa0';   // blue — PDFium active
+                return '#666';
+              })(),
+              "color": "#fff",
+              "font-weight": "bold",
+              "letter-spacing": "0.3px",
+            }}>
+              {state.renderEngine}
+            </span>
+          </div>
+          <div class="status-separator"></div>
+        </Show>
         <div class="status-item">
           <span class="status-item-label">{t('toolLabel')}</span>
           <span class="status-item-value">{toolName()}</span>
@@ -233,7 +254,7 @@ export default function StatusBar() {
               "font-size": "10px",
               "padding": "1px 6px",
               "border-radius": "2px",
-              "background": state.renderEngine === 'Rust' ? '#2a7d3f' : '#666',
+              "background": (state.renderEngine || '').startsWith('PDFium') ? '#2a5fa0' : '#666',
               "color": "#fff",
               "font-weight": "bold",
               "letter-spacing": "0.5px",

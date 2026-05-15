@@ -654,7 +654,7 @@ export async function renderPage(pageNum) {
         pdfCanvas.style.height = Math.floor(viewport.height) + 'px';
         pdfCanvas.getContext('2d').drawImage(_jsCached.bitmap, 0, 0);
         const _hitMs = Math.round(performance.now() - _t0);
-        state.renderEngine = 'Rust (JS cache)';
+        state.renderEngine = 'PDFium (cached)';
         state.renderTiming = `${_hitMs}ms (cached)`;
         console.log(`[render] ✅ JS-cache HIT: ${_jsCached.w}x${_jsCached.h}, total=${_hitMs}ms`);
         // High-zoom: overlay tile even on cache hits (the cache holds the
@@ -727,7 +727,7 @@ export async function renderPage(pageNum) {
             const imageData = new ImageData(rgba, rustW, rustH);
             pdfCanvas.getContext('2d').putImageData(imageData, 0, 0);
             const _totalMs = Math.round(_t2 - _t0);
-            state.renderEngine = 'Rust';
+            state.renderEngine = 'PDFium';
             state.renderTiming = `${_totalMs}ms`;
             console.log(`[render] ✅ Rust OK: ${rustW}x${rustH}, cmd=${Math.round(_t1 - _t0)}ms, read=${Math.round(_t2 - _t1)}ms, total=${_totalMs}ms`);
             // Insert into JS-side ImageBitmap cache. Fire-and-forget (the
@@ -923,7 +923,7 @@ export async function renderPageOffscreen(pageNum) {
     const imageData = new ImageData(rgba, rustW, rustH);
     pdfCanvas.getContext('2d').putImageData(imageData, 0, 0);
     setupCanvasHiDPI(annotationCanvas, viewport.width, viewport.height);
-    state.renderEngine = 'Rust';
+    state.renderEngine = 'PDFium';
   } catch (e) {
     state.renderEngine = 'ERROR';
     console.error('[render-offscreen] HARD ERROR: Rust render threw. NO FALLBACK.', e);
@@ -1132,7 +1132,7 @@ async function renderContinuousPage(pageNum) {
     pdfCanvasEl.style.height = _cached.h + 'px';
     pdfCtxEl.drawImage(_cached.bitmap, 0, 0);
     console.timeEnd(label + ' canvas-draw-cached');
-    state.renderEngine = 'Rust (JS cache)';
+    state.renderEngine = 'PDFium (cached)';
     console.timeEnd(label);
   } else {
     try {
@@ -1163,7 +1163,7 @@ async function renderContinuousPage(pageNum) {
       const imageData = new ImageData(rgba, rustW, rustH);
       pdfCtxEl.putImageData(imageData, 0, 0);
       console.timeEnd(label + ' canvas-putImageData');
-      state.renderEngine = 'Rust';
+      state.renderEngine = 'PDFium';
       // Cache the freshly-rendered bitmap (clone the RGBA into its own buffer
       // — the view into _contBytes becomes invalid once that array is GC'd).
       console.time(label + ' cache-store');
