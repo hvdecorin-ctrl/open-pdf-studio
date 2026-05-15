@@ -13,11 +13,15 @@ import { spawn } from 'node:child_process';
 
 const env = { ...process.env, WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: '--remote-debugging-port=9222' };
 
-// The double `--` is intentional:
-//   npm-script runs `tauri dev -- --mcp-server`. The first `--` tells `tauri`
-//   to forward everything that follows to the bundled binary, so the binary
-//   itself receives `--mcp-server` (parsed by clap in src-tauri/src/main.rs).
-const child = spawn('npx', ['tauri', 'dev', '--', '--mcp-server'], {
+// The TRIPLE-dash dance is intentional and verified against tauri 2.10:
+//   `tauri dev` runs `cargo run` under the hood.
+//   - First `--` tells `tauri` to forward the rest to cargo.
+//   - Second `--` tells cargo to forward the rest to the binary.
+//   - `--mcp-server` lands as a CLI arg to the binary itself
+//     (parsed by clap in src-tauri/src/main.rs).
+// Without the second `--`, cargo tries to interpret `--mcp-server`
+// as a cargo flag and fails with "unexpected argument '--mcp-server'".
+const child = spawn('npx', ['tauri', 'dev', '--', '--', '--mcp-server'], {
   stdio: 'inherit',
   env,
   shell: process.platform === 'win32',
