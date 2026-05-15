@@ -360,8 +360,21 @@ async function _renderTileOverlay(doc, pageNum, scale, viewport) {
     }
     const rgba = new Uint8ClampedArray(bytes.buffer, bytes.byteOffset + 8, bytes.length - 8);
 
-    tileCanvas.width = w;
-    tileCanvas.height = h;
+    // HTML Canvas spec: assigning to canvas.width OR canvas.height — even
+    // to the same value — clears all pixels and resets the 2D context.
+    // The tile fires TWICE per zoom (once from renderPage post-paint, once
+    // from the debounced scroll listener after the wheel-handler's scroll
+    // anchor adjustment). At the same viewport size both renders would
+    // produce w/h identical to the existing canvas, so unconditional
+    // assignment caused the canvas to BLANK between the two paints —
+    // visible as flicker at exactly the zoom level where the cap+tile
+    // kick in (user-reported "200% en daarna gekke flikkeringen").
+    //
+    // Only resize when the bitmap dims actually changed. putImageData
+    // unconditionally overwrites the pixels, so same-size re-renders are
+    // a seamless replacement.
+    if (tileCanvas.width !== w) tileCanvas.width = w;
+    if (tileCanvas.height !== h) tileCanvas.height = h;
     tileCanvas.style.width = Math.floor(visW_css) + 'px';
     tileCanvas.style.height = Math.floor(visH_css) + 'px';
     tileCanvas.style.left = Math.floor(visLeft_css) + 'px';
