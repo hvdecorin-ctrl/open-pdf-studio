@@ -244,6 +244,21 @@ function setupCanvasHiDPI(canvas, width, height) {
 // Track current render task to cancel if needed
 let currentRenderTask = null;
 
+// Foreground-render generation counter. Bumped on every renderPage() entry;
+// each in-flight invocation captures the value at start, then re-checks after
+// each await. If the captured gen differs from the current gen, a newer
+// renderPage() has been triggered — the older one must NOT write to the
+// shared #pdf-canvas (its scale-N bitmap would clobber the newer scale-M
+// result that already landed). Same pattern as _preRenderGen for the
+// background prerender queue (renderer.js ~L82) but for the foreground
+// hot path that was previously unguarded.
+//
+// User-visible symptom this fixes: rapid mouse-wheel zoom on raster PDFs
+// (BARN) showed the page "springing back and forth" between intermediate
+// zoom levels — earlier-started but slower-completing renders were stomping
+// over the freshest user-requested zoom level.
+let _foregroundRenderGen = 0;
+
 // Returns true if `doc` is no longer the active document. Use this after every
 // `await` in render code to abort late completions whose results would corrupt
 // the SHARED #pdf-canvas / pdf-viewport singleton with a different document's
@@ -290,6 +305,12 @@ export async function renderPage(pageNum) {
 
   // Validate page number against THIS document's page count
   if (!Number.isInteger(pageNum) || pageNum < 1 || pageNum > pdfDoc.numPages) return;
+
+  // Stamp this invocation with a fresh render-generation. Re-checked after
+  // each await before any canvas / viewport mutation — see `_isStaleGen`
+  // below. Prevents the rapid-zoom out-of-order race.
+  const _renderGen = ++_foregroundRenderGen;
+  const _isStaleGen = () => _renderGen !== _foregroundRenderGen;
 
   // Cancel any ongoing render task and wait for it to finish
   if (currentRenderTask) {
@@ -490,6 +511,23 @@ export async function renderPage(pageNum) {
         const _t1 = performance.now();
         const _spBytes = rgbaData instanceof Uint8Array ? rgbaData : new Uint8Array(rgbaData);
         const _t2 = performance.now();
+
+        // Bail-out for stale render: a newer renderPage() has been triggered
+        // since this one started. Cache the bitmap anyway (it's correct for
+        // its (file, page, scale, rotation) and useful on later revisit) but
+        // do NOT write to the shared canvas — that would clobber the newer
+        // render's pixels and cause the "zoom springs back-and-forth" UX.
+        if (_isStaleGen() && _spBytes && _spBytes.length > 8) {
+          const _shdr = new DataView(_spBytes.buffer, _spBytes.byteOffset, 8);
+          const _sw = _shdr.getUint32(0, true);
+          const _sh = _shdr.getUint32(4, true);
+          if (_sw > 0 && _sh > 0 && _sw * _sh * 4 === _spBytes.length - 8) {
+            const _srgba = new Uint8ClampedArray(_spBytes.buffer, _spBytes.byteOffset + 8, _sw * _sh * 4);
+            _bitmapJSCacheSet(_jsCacheKey, new ImageData(new Uint8ClampedArray(_srgba), _sw, _sh));
+          }
+          console.log(`[render] STALE gen ${_renderGen} (current ${_foregroundRenderGen}) @ scale=${scale} — cached but skipping canvas write`);
+          return;
+        }
 
         // RUST-ONLY: hard error on any malformed buffer (no PDF.js fallback).
         if (!_spBytes || _spBytes.length <= 8) {
