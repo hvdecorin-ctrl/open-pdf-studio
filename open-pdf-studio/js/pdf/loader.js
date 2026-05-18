@@ -92,6 +92,44 @@ export function clearCachedPdfBytes(filePath) {
 // Set worker source (path relative to HTML file, not this module)
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL('pdfjs-dist/build/pdf.worker.mjs', import.meta.url).href;
 
+/**
+ * Wrap doc.pdfDoc.getPage with a recovery layer that re-loads the doc when
+ * PDF.js's shared-static PagesMapper rejects a valid page (see callsite for
+ * full bug description). The recovery rebinds `doc.pdfDoc` to a freshly
+ * loaded WorkerTransport whose PagesMapper static reflects THIS doc's
+ * numPages. Re-attaches the wrapper to the new pdfDoc so the next bug hit
+ * also recovers automatically.
+ */
+function _attachPdfDocGetPageRecovery(doc, filePath) {
+  if (!doc?.pdfDoc) return;
+  const orig = doc.pdfDoc.getPage.bind(doc.pdfDoc);
+  doc.pdfDoc.getPage = async function (pageNum) {
+    try {
+      return await orig(pageNum);
+    } catch (e) {
+      const msg = e?.message || '';
+      if (msg === 'Invalid page request.' && Number.isInteger(pageNum)
+          && pageNum > 0 && pageNum <= doc.pdfDoc.numPages) {
+        console.warn(`[loader] PDF.js pagesMapper out of sync (numPages=${doc.pdfDoc.numPages}, requested ${pageNum}); reloading doc to reset.`);
+        const cached = originalBytesCache.get(filePath);
+        if (!cached) throw e;
+        const fresh = await pdfjsLib.getDocument({
+          data: cached.slice(),
+          cMapUrl: '/pdfjs/web/cmaps/',
+          cMapPacked: true,
+          standardFontDataUrl: '/pdfjs/web/standard_fonts/',
+          isEvalSupported: false,
+          verbosity: 0,
+        }).promise;
+        doc.pdfDoc = fresh;
+        _attachPdfDocGetPageRecovery(doc, filePath); // protect future calls
+        return await doc.pdfDoc.getPage(pageNum);
+      }
+      throw e;
+    }
+  };
+}
+
 // ─── PDF/A compliance bar ──────────────────────────────────────────────────────
 
 async function checkPdfACompliance(doc) {
@@ -261,6 +299,22 @@ export async function loadPDF(filePath, docIndex, preloadedData = null) {
     }).promise;
     if (isClosed()) return;
     console.log(`[PERF] PDF.js getDocument done: ${(performance.now() - _t0).toFixed(0)}ms, pages: ${doc.pdfDoc.numPages}`);
+
+    // ─── PDF.js v5.4 multi-doc pagesMapper RECOVERY PATCH ─────────────────
+    // PDF.js 5.4 introduced a regression: PagesMapper.#pagesNumber is a
+    // STATIC class field shared across all WorkerTransport instances. The
+    // GetDoc message handler does
+    //   this.#pagesMapper.pagesNumber = pdfInfo.numPages;
+    // which OVERWRITES the static every time a new doc loads. After
+    // opening a 5-page doc and then switching back to a 7-page doc,
+    // pdfDoc.numPages still says 7 but pagesMapper says 5 — getPage(6)
+    // and getPage(7) reject with "Invalid page request."
+    //
+    // We can't access the private static directly. Recovery: when getPage
+    // fails for a page within doc.numPages, re-load the doc via
+    // pdfjsLib.getDocument which re-runs the GetDoc handler and resets
+    // pagesMapper to the correct count. ~500 ms cost on recovery only.
+    _attachPdfDocGetPageRecovery(doc, filePath);
 
     // ─── BACKGROUND ANALYZE PRE-WARM ─────────────────────────────────────
     // analyze_page_type is what makes per-page navigation feel slow on
