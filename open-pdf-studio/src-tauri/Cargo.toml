@@ -1,6 +1,6 @@
 [package]
 name = "open-pdf-studio"
-version = "1.58.4"
+version = "1.59.0"
 description = "A free, open-source PDF annotation editor"
 authors = ["OpenAEC Foundation"]
 license = "MIT"

@@ -100,6 +100,18 @@ Three coordinate systems interact in this app:
 
 - **ALWAYS** check `loadId` and `isClosed()` after every `await` boundary during annotation loading. Stale async operations from a previous document load MUST be aborted.
 
+### PDFium worker pool (v1.59+)
+
+- The Tauri main process spawns 4 `pdfium-worker.exe` sidecars at app
+  start. `render_pdf_page` routes through `WorkerPool::render` when the
+  pool is ready, with in-proc fallback when not.
+- **NEVER** assume `render_pdf_page` runs in the main process — it may
+  return from a worker via shared memory.
+- Workers are TRANSPARENT to JS: `invoke('render_pdf_page', ...)` is
+  unchanged.
+- Worker bug? Test in isolation: `cargo test -p pdfium-worker -- --ignored`
+  spawns one worker subprocess and renders Tekst.pdf p1.
+
 ---
 
 ## Key Files Map
