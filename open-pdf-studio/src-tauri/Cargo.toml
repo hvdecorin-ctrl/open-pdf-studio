@@ -46,8 +46,9 @@ clap = { version = "4", features = ["derive"] }
 oauth2 = { version = "4", default-features = false, features = ["reqwest", "rustls-tls"] }
 tiny_http = "0.12"
 url = "2"
-tokio = { version = "1", features = ["sync", "macros", "rt-multi-thread", "net", "process", "io-util"] }
+tokio = { version = "1", features = ["sync", "macros", "rt-multi-thread", "net", "process", "io-util", "time"] }
 memmap2 = "0.9"
+anyhow = "1"
 
 # In-process MCP server for the render-regression-test harness. We hand-roll
 # the JSON-RPC layer on top of axum rather than pulling in `rmcp`, because
