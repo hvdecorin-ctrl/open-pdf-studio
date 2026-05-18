@@ -1218,20 +1218,21 @@ fn render_pdf_page_skia(
 }
 
 #[tauri::command]
-fn render_pdf_page(
+async fn render_pdf_page(
     path: String,
     page_index: u32,
     scale: f32,
     rotation: Option<i32>,
-    bytes_cache: tauri::State<PdfBytesCache>,
-    pdfium_cache: tauri::State<pdfium_renderer::PdfiumDocCache>,
-    pixmap_cache: tauri::State<pdfium_renderer::PixmapCacheState>,
+    bytes_cache: tauri::State<'_, PdfBytesCache>,
+    pdfium_cache: tauri::State<'_, pdfium_renderer::PdfiumDocCache>,
+    pixmap_cache: tauri::State<'_, pdfium_renderer::PixmapCacheState>,
+    pool: tauri::State<'_, std::sync::Arc<tokio::sync::OnceCell<worker_pool::WorkerPool>>>,
 ) -> Result<tauri::ipc::Response, String> {
     let extra_rot = rotation.unwrap_or(0);
     let scale_q = (scale * 10_000.0).round() as u32;
     let cache_key = (path.clone(), page_index, scale_q, extra_rot);
 
-    // Cache fast path
+    // Cache fast path (unchanged)
     pixmap_cache.ensure();
     if let Ok(guard) = pixmap_cache.0.lock() {
         if let Some(cache) = guard.as_ref() {
@@ -1245,7 +1246,31 @@ fn render_pdf_page(
         }
     }
 
-    // Miss — render via PDFium and insert into cache.
+    // Try the worker pool first
+    if let Some(p) = pool.get() {
+        match p.render(&path, page_index, scale, extra_rot).await {
+            Ok((width, height, rgba)) => {
+                let rgba_arc = std::sync::Arc::new(rgba);
+                if let Ok(mut guard) = pixmap_cache.0.lock() {
+                    if let Some(cache) = guard.as_mut() {
+                        cache.insert(cache_key, std::sync::Arc::new(pdfium_renderer::CachedPixmap {
+                            width, height, rgba: rgba_arc.clone(),
+                        }));
+                    }
+                }
+                let mut data = Vec::with_capacity(8 + rgba_arc.len());
+                data.extend_from_slice(&width.to_le_bytes());
+                data.extend_from_slice(&height.to_le_bytes());
+                data.extend_from_slice(&rgba_arc);
+                return Ok(tauri::ipc::Response::new(data));
+            }
+            Err(e) => {
+                eprintln!("[render_pdf_page] pool render failed: {} — falling back to in-proc", e);
+            }
+        }
+    }
+
+    // Fallback: in-proc PDFium (existing path, unchanged)
     let bytes = {
         let mut bm = bytes_cache.0.lock().map_err(|e| format!("Bytes cache lock: {}", e))?;
         if let Some(cached) = bm.get(&path) {
@@ -1271,19 +1296,14 @@ fn render_pdf_page(
     )?;
 
     let rgba_arc = std::sync::Arc::new(rgba);
-
-    // Insert into cache
     if let Ok(mut guard) = pixmap_cache.0.lock() {
         if let Some(cache) = guard.as_mut() {
             cache.insert(cache_key, std::sync::Arc::new(pdfium_renderer::CachedPixmap {
-                width,
-                height,
-                rgba: rgba_arc.clone(),
+                width, height, rgba: rgba_arc.clone(),
             }));
         }
     }
 
-    // Wire format unchanged: [width: u32 LE][height: u32 LE][rgba bytes...]
     let mut data = Vec::with_capacity(8 + rgba_arc.len());
     data.extend_from_slice(&width.to_le_bytes());
     data.extend_from_slice(&height.to_le_bytes());
@@ -1633,6 +1653,39 @@ pub fn run(opts: StartupOpts) {
         .cloned()
         .collect();
 
+    // Spawn the PDFium worker pool. Failures here are non-fatal — the
+    // existing in-proc PDFium path serves as fallback when the pool is
+    // unavailable.
+    let pool: Arc<tokio::sync::OnceCell<worker_pool::WorkerPool>> = Arc::new(tokio::sync::OnceCell::new());
+    let pool_for_init = pool.clone();
+    tauri::async_runtime::spawn(async move {
+        // pdfium-worker.exe sits next to the main binary after bundling.
+        let exe_dir = std::env::current_exe().ok()
+            .and_then(|p| p.parent().map(|d| d.to_path_buf()))
+            .unwrap_or_else(|| std::path::PathBuf::from("."));
+        let worker_exe = exe_dir.join("pdfium-worker.exe");
+
+        if !worker_exe.exists() {
+            eprintln!("[pool] pdfium-worker.exe not found at {:?} — pool disabled, using in-proc PDFium", worker_exe);
+            return;
+        }
+
+        match worker_pool::spawn::spawn_pool(4, &worker_exe).await {
+            Ok(workers) => {
+                let pool = worker_pool::WorkerPool::new(workers);
+                if pool.is_ready() {
+                    eprintln!("[pool] initialised with {} workers", pool.workers.len());
+                    let _ = pool_for_init.set(pool);
+                } else {
+                    eprintln!("[pool] no workers became ready — pool disabled");
+                }
+            }
+            Err(e) => {
+                eprintln!("[pool] spawn_pool failed: {} — pool disabled", e);
+            }
+        }
+    });
+
     let mut builder = tauri::Builder::default()
         .manage(OpenedFiles(Mutex::new(opened_files)))
         .manage(LockedFiles(Mutex::new(HashMap::new())))
@@ -1642,6 +1695,7 @@ pub fn run(opts: StartupOpts) {
         .manage(PageTypeCache(Mutex::new(HashMap::new())))
         .manage(pdfium_renderer::PdfiumDocCache::default())
         .manage(pdfium_renderer::PixmapCacheState::default())
+        .manage(pool.clone())
         .manage(mcp_app_bridge::McpAppBridge::new())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
