@@ -241,59 +241,6 @@ export async function generateThumbnails() {
   }
   const docCache = thumbnailCache.get(docId);
 
-  // -- Parallel vector-command prefetch -----------------------------------
-  // Kicks a single rayon-parallel batch extract in Rust for ALL pages. On
-  // arrival, each page's commands are pushed into the vector-renderer cache
-  // so the per-page renderThumbnailToDataURL() loop further down hits the
-  // fast JS-replay path instead of falling through to the slow per-page
-  // Rust render_thumbnail invoke.
-  //
-  // Fire-and-forget: we don't await. Thumbnails that race ahead of the
-  // batch fall back to render_thumbnail as today; thumbnails that come
-  // after hit the cache and render in ~30 ms.
-  //
-  // Pages that lopdf reports empty (16-byte header only -- typical for
-  // tile-classified raster-only pages) silently no-op inside cacheCommands;
-  // their thumbnails then fall back to render_thumbnail, same as today.
-  if (activeDoc.filePath && window.__TAURI__?.core?.invoke) {
-    const _filePathForBatch = activeDoc.filePath;
-    const _pageIndices = [];
-    const _rotations = [];
-    for (let i = 0; i < numPages; i++) {
-      _pageIndices.push(i);
-      _rotations.push(getPageRotation(i + 1) || 0);
-    }
-    const _t0 = performance.now();
-    window.__TAURI__.core
-      .invoke('extract_draw_commands_batch', {
-        path: _filePathForBatch,
-        pageIndices: _pageIndices,
-        rotations: _rotations,
-      })
-      .then(async (results) => {
-        const vr = await import('../../pdf/vector-renderer.js');
-        const _t1 = performance.now();
-        let _cachedCount = 0;
-        for (let i = 0; i < results.length; i++) {
-          const bytes = results[i] instanceof Uint8Array
-            ? results[i]
-            : new Uint8Array(results[i]);
-          if (bytes.length > 16) {
-            vr.cacheCommands(_filePathForBatch, i + 1, bytes, _rotations[i]);
-            _cachedCount++;
-          }
-        }
-        console.log(
-          `[Thumbnails] batch-prefetch: extracted ${results.length} pages in ${Math.round(_t1 - _t0)}ms, cached ${_cachedCount}`
-        );
-      })
-      .catch((e) => {
-        // Non-fatal -- per-page thumbnails fall back to the existing Rust
-        // render_thumbnail path automatically.
-        console.warn('[Thumbnails] batch-prefetch failed (using per-page fallback):', e);
-      });
-  }
-
   // Update Solid store signals - this triggers reactive rendering of ThumbnailItem components
   setPlaceholderSize({ width: placeholderWidth, height: placeholderHeight });
   setPageCount(numPages);
