@@ -15,5 +15,12 @@ fn main() {
         let _ = std::fs::copy(&src, &dst);
     }
 
+    // Re-run this build script when the worker binary or its sources change,
+    // so incremental builds pick up worker rebuilds instead of bundling a
+    // stale exe.
+    println!("cargo:rerun-if-changed={}", src.display());
+    println!("cargo:rerun-if-changed=../../pdfium-worker/src");
+    println!("cargo:rerun-if-changed=../../pdfium-worker/Cargo.toml");
+
     tauri_build::build();
 }
