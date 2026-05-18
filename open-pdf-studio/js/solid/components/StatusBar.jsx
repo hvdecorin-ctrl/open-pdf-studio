@@ -263,20 +263,16 @@ export default function StatusBar() {
         </Show>
         <Show when={state.renderEngine}>
           <div class="status-separator"></div>
-          <div class="status-item" title={`${state.renderTiming || ''}\nClick to cycle render engine: PDFium → Rust (alpha) → Auto`}>
-            <span
-              onClick={() => {
-                // Cycle: null (auto) → 'pdfium' → 'rust-skia' → null
-                const cur = state.renderEngineOverride;
-                let next;
-                if (cur === null) next = 'pdfium';
-                else if (cur === 'pdfium') next = 'rust-skia';
-                else next = null;
-                state.renderEngineOverride = next;
-                // Force a re-render of the current page so the change takes
-                // effect immediately. Bitmap cache is per-engine — flushing
-                // is overkill; the next renderPage will dispatch to the new
-                // engine via page-bitmap-cache.ensureBitmap.
+          <div class="status-item" title={state.renderTiming || ''}>
+            {/* Dropdown replaces the old cycle-on-click badge. Auto / PDFium
+                (Raster) / Onze engine (Rust alpha). Triggers a re-render
+                of the current page on change so the engine swap is visible
+                immediately. */}
+            <select
+              value={state.renderEngineOverride ?? 'auto'}
+              onChange={(e) => {
+                const v = e.currentTarget.value;
+                state.renderEngineOverride = (v === 'auto') ? null : v;
                 try {
                   if (window.__pdfViewport) {
                     window.__pdfViewport.currentBitmap = null;
@@ -290,34 +286,26 @@ export default function StatusBar() {
               }}
               style={{
                 "font-size": "10px",
-                "padding": "1px 6px",
+                "padding": "1px 4px",
                 "border-radius": "2px",
                 "background": (() => {
                   const ov = state.renderEngineOverride;
                   if (ov === 'rust-skia') return '#a04a2a'; // orange for alpha
                   const e = state.renderEngine || '';
-                  if (e.startsWith('Raster')) return '#2a5fa0';  // blue for PDFium raster
-                  if (e === 'Vector') return '#2a8a3a';            // green for vector
+                  if (e.startsWith('Raster')) return '#2a5fa0';
+                  if (e === 'Vector') return '#2a8a3a';
                   return '#666';
                 })(),
                 "color": "#fff",
                 "font-weight": "bold",
-                "letter-spacing": "0.5px",
+                "letter-spacing": "0.3px",
+                "border": "1px solid rgba(255,255,255,0.2)",
                 "cursor": "pointer",
-                "user-select": "none",
               }}>
-              {(() => {
-                const ov = state.renderEngineOverride;
-                if (ov === 'rust-skia') return 'Engine: Rust (alpha)';
-                if (ov === 'pdfium') return 'Engine: PDFium';
-                // auto — strip the "Raster (...)" / parenthetical decorations
-                // from the renderer-reported engine name and prefix "Engine:"
-                const e = state.renderEngine || '';
-                if (e.startsWith('Raster')) return 'Engine: PDFium';
-                if (e === 'Vector') return 'Engine: Vector';
-                return e ? `Engine: ${e}` : 'Engine: ?';
-              })()}
-            </span>
+              <option value="auto" style={{ background: '#222' }}>Engine: Auto</option>
+              <option value="pdfium" style={{ background: '#222' }}>Engine: PDFium (Raster)</option>
+              <option value="rust-skia" style={{ background: '#222' }}>Engine: Onze engine (alpha)</option>
+            </select>
             <Show when={state.renderTiming}>
               <span style={{ "font-size": "10px", "margin-left": "4px", "opacity": "0.7" }}>
                 {state.renderTiming}
