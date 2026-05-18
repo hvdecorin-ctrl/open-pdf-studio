@@ -669,6 +669,25 @@ export async function createBlankPDF(widthPt, heightPt, numPages) {
     // Mark as modified so Ctrl+S will trigger Save As
     markDocumentModified();
 
+    // ─── INITIAL FIT for large blank docs ─────────────────────────────────
+    // Default doc.scale = 1.5 makes a fresh A2 (1191×1684 pt) render at
+    // 1786×2526 px — way bigger than any reasonable viewport. The user has
+    // to click Uitzoomen ~6× before they can see the full page outline.
+    // Blank docs bypass the vector viewport (gated on doc.filePath which is
+    // null for in-memory docs), so the auto-fit logic in fitToViewport()
+    // never triggers. Compute a fit-zoom from the container right here.
+    if (pdfContainer) {
+      const r = pdfContainer.getBoundingClientRect();
+      const padding = 20; // small breathing room around the page
+      const availW = Math.max(100, r.width - padding * 2);
+      const availH = Math.max(100, r.height - padding * 2);
+      const fitScale = Math.min(availW / widthPt, availH / heightPt);
+      // Cap at 1.5 so smaller-than-fit pages (A6, B5) still display at a
+      // reasonable size instead of being scaled UP to fill the viewport.
+      // Floor at 0.05 to match the new zoom-out limit below.
+      doc.scale = Math.max(0.05, Math.min(1.5, fitScale));
+    }
+
     // Render
     await setViewMode(doc.viewMode);
     generateThumbnails();

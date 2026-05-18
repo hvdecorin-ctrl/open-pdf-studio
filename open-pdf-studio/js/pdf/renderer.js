@@ -1084,11 +1084,14 @@ export async function zoomOut() {
     m.zoomStepAtCenter(-1);
     return;
   }
-  // Allow zooming out to 0.1 for large pages (e.g. blank A1/A0 docs that bypass
-  // the vector viewport). Use proportional steps so big jumps near the floor
-  // don't cause weird increments.
-  if (doc.scale > 0.1) {
-    if (doc.scale <= 0.5) doc.scale = Math.max(0.1, doc.scale - 0.1);
+  // Allow zooming out to 0.05 (5 %) for huge blank pages — A0 (2384×3370 pt)
+  // at 0.05 = 119×169 px which fits any reasonable viewport with margin.
+  // Floor of 0.1 was visible to the user as "kan niet zo ver uitzoomen om
+  // het hele tekeningkader te zien" on A2/A1/A0 blank docs that bypass
+  // the vector viewport (filePath===null skips the viewport singleton).
+  if (doc.scale > 0.05) {
+    if (doc.scale <= 0.2) doc.scale = Math.max(0.05, doc.scale - 0.025);
+    else if (doc.scale <= 0.5) doc.scale = Math.max(0.05, doc.scale - 0.1);
     else doc.scale -= 0.25;
     if (doc.viewMode === 'continuous') {
       await renderContinuous();
