@@ -3,6 +3,7 @@ pub mod mcp_app_bridge;
 pub mod mcp_server;
 pub mod pdfium_renderer;
 pub mod render_to_png;
+mod worker_pool;
 
 pub struct StartupOpts {
     pub mcp_server: bool,
