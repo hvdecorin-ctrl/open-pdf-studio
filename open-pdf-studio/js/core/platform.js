@@ -135,19 +135,36 @@ export async function toggleWindowFullscreen() {
 }
 
 // File dialogs - using Tauri commands since plugin APIs may not be globally available
-export async function openFileDialog(extensions) {
+//
+// Performance note (Windows): the first call to dialog.open() in a process is
+// always slow (1–3 s) because IFileOpenDialog/CoCreateInstance has to load
+// shell32.dll + comdlg32.dll + every shell extension DLL (OneDrive, AV hooks,
+// cloud providers, etc.). Subsequent calls are much faster (~100–300 ms). We
+// can't avoid the cold-start cost in the dialog plugin itself (rfd 0.16 calls
+// CoInitializeEx + CoCreateInstance fresh every call), but we mitigate two
+// things here:
+//   1) Pass a `defaultPath` derived from the most-recently-opened file's
+//      directory — saves Windows from enumerating Documents or the install
+//      dir as the cold default.
+//   2) Pre-warm shell32 at app idle (see `prewarmFileDialog()` below) so the
+//      first user click pays only the enumeration cost, not the DLL load.
+// Timings are logged when `localStorage.openPdfStudio.debugDialog === '1'`.
+export async function openFileDialog(extensions, options = {}) {
   if (isTauri()) {
     const filters = extensions
       ? [{ name: 'Files', extensions }]
       : [{ name: 'PDF Files', extensions: ['pdf'] }];
 
+    const dbg = (() => { try { return localStorage.getItem('openPdfStudio.debugDialog') === '1'; } catch { return false; } })();
+    const t0 = dbg ? performance.now() : 0;
+
     // Try using the dialog plugin via window.__TAURI__.dialog
     if (window.__TAURI__.dialog) {
       try {
-        const result = await window.__TAURI__.dialog.open({
-          multiple: false,
-          filters
-        });
+        const args = { multiple: false, filters };
+        if (options.defaultPath) args.defaultPath = options.defaultPath;
+        const result = await window.__TAURI__.dialog.open(args);
+        if (dbg) console.log(`[openFileDialog] dialog.open resolved in ${(performance.now() - t0).toFixed(0)}ms (result=${result ? 'picked' : 'cancelled'})`);
         return result;
       } catch (e) {
         console.error('Dialog plugin error:', e);

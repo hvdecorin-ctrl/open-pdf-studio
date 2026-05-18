@@ -63,7 +63,7 @@ lopdf = "0.34"
 tauri-plugin-updater = "2"
 
 [target.'cfg(target_os = "windows")'.dependencies]
-windows-sys = { version = "0.59", features = ["Win32_Graphics_Printing", "Win32_Foundation"] }
+windows-sys = { version = "0.59", features = ["Win32_Graphics_Printing", "Win32_Foundation", "Win32_System_Com", "Win32_UI_Shell"] }
 
 # Compile open-pdf-render with optimizations even in dev mode (rendering is 100x slower without)
 [profile.dev.package.open-pdf-render]

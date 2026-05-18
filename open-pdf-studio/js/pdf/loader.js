@@ -8,7 +8,7 @@ import * as pdfjsLib from 'pdfjs-dist';
 import { isTauri, readBinaryFile, openFileDialog, lockFile, invoke } from '../core/platform.js';
 import { PDFDocument } from 'pdf-lib';
 import { resetAnnotationStorage } from './form-layer.js';
-import { addRecentFile } from '../mobile/recent-files.js';
+import { addRecentFile, getRecentFiles } from '../mobile/recent-files.js';
 import { extractFileName } from '../core/platform.js';
 import i18next from '../i18n/config.js';
 import { showMessage } from '../bridge.js';
@@ -598,7 +598,23 @@ export async function loadPDF(filePath, docIndex, preloadedData = null) {
 // Open file dialog and load PDF
 export async function openPDFFile() {
   try {
-    const result = await openFileDialog();
+    // Suggest the directory of the most-recently opened file as the
+    // dialog's starting folder. The Windows Shell caches recently-visited
+    // folders, so this is materially faster than letting the OS fall back
+    // to its built-in default (Documents or the install dir on cold start).
+    let defaultPath;
+    try {
+      const recents = getRecentFiles();
+      if (recents.length > 0) {
+        recents.sort((a, b) => b.timestamp - a.timestamp);
+        const last = recents[0].path;
+        // Strip the filename so the dialog opens IN that folder.
+        const i = Math.max(last.lastIndexOf('\\'), last.lastIndexOf('/'));
+        if (i > 0) defaultPath = last.slice(0, i);
+      }
+    } catch { /* recents is best-effort */ }
+
+    const result = await openFileDialog(undefined, { defaultPath });
     if (result) {
       // Create a new tab for the file (will switch to existing tab if already open)
       const { index } = createTab(result);

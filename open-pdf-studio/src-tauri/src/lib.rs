@@ -1721,6 +1721,72 @@ pub fn run(opts: StartupOpts) {
 
             log::info!("PDFium initialised from {:?}", resource_dir);
 
+            // Windows-only: pre-warm shell32.dll + comdlg32.dll + the
+            // IFileOpenDialog COM factory in a background thread so the
+            // first time the user clicks Bestand → Open → Bladeren the
+            // OS dialog pops in ~100–300ms instead of the cold 1–3 s it
+            // takes to load shell32 + every shell extension (OneDrive,
+            // cloud-sync providers, AV hooks) on demand.
+            //
+            // We spend ~50 ms on a background thread at app startup to
+            // amortise this cost. The dialog plugin (rfd 0.16) calls
+            // CoInitializeEx/CoUninitialize around every Show(), so we
+            // can't keep the COM apartment alive across calls — but the
+            // DLLs and the registered class factory stay loaded for the
+            // life of the process, which is what costs the seconds.
+            #[cfg(target_os = "windows")]
+            {
+                std::thread::spawn(|| {
+                    use windows_sys::Win32::System::Com::{
+                        CoCreateInstance, CoInitializeEx, CoUninitialize,
+                        CLSCTX_INPROC_SERVER, COINIT_APARTMENTTHREADED,
+                        COINIT_DISABLE_OLE1DDE,
+                    };
+                    use windows_sys::Win32::UI::Shell::FileOpenDialog;
+                    use windows_sys::core::GUID;
+                    const FILE_OPEN_DIALOG_IID: GUID =
+                        GUID::from_u128(0xd57c7288_d4ad_4768_be02_9d969532d960);
+
+                    let t0 = std::time::Instant::now();
+                    unsafe {
+                        let res = CoInitializeEx(
+                            std::ptr::null(),
+                            (COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE) as u32,
+                        );
+                        if res < 0 {
+                            eprintln!("[prewarm] CoInitializeEx failed: 0x{:x}", res);
+                            return;
+                        }
+                        let mut iptr: *mut std::ffi::c_void = std::ptr::null_mut();
+                        let hr = CoCreateInstance(
+                            &FileOpenDialog,
+                            std::ptr::null_mut(),
+                            CLSCTX_INPROC_SERVER,
+                            &FILE_OPEN_DIALOG_IID,
+                            &mut iptr as *mut _ as *mut *mut std::ffi::c_void,
+                        );
+                        if hr >= 0 && !iptr.is_null() {
+                            // Release: vtbl()[2] is Release.
+                            #[repr(C)]
+                            struct IUnknownV {
+                                _qi: usize,
+                                _add_ref: usize,
+                                release: unsafe extern "system" fn(
+                                    this: *mut std::ffi::c_void,
+                                ) -> u32,
+                            }
+                            let vtbl = *(iptr as *mut *mut IUnknownV);
+                            ((*vtbl).release)(iptr);
+                        }
+                        CoUninitialize();
+                    }
+                    log::info!(
+                        "[prewarm] shell32 + IFileOpenDialog factory warmed in {} ms",
+                        t0.elapsed().as_millis()
+                    );
+                });
+            }
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
