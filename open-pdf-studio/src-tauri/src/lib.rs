@@ -1182,6 +1182,40 @@ fn get_or_load_doc(
     Ok(arc)
 }
 
+/// DEBUG / BENCHMARK TOOL. Render a page using our own open-pdf-render Skia
+/// kernel instead of PDFium. NOT wired into the live render path — production
+/// rendering always goes through `render_pdf_page` (PDFium). Kept callable so
+/// `mcp-server/skia-vs-pdfium-render.mjs` can re-run the head-to-head speed
+/// comparison whenever open-pdf-render's accuracy improves.
+///
+/// Wire format matches `render_pdf_page` exactly: `[w:u32 LE][h:u32 LE]
+/// [rgba…]`. Probes can swap one invoke for the other without unpacking
+/// differently.
+///
+/// IMPORTANT: open-pdf-render is currently below the < 2 % pixel-diff goal
+/// vs the PyMuPDF reference (per scripts/render-regression-test.py). Some
+/// pages render incorrectly. Speed numbers from this command must always be
+/// read with that disclaimer until the regression suite reports green.
+#[tauri::command]
+fn render_pdf_page_skia(
+    path: String,
+    page_index: u32,
+    scale: f32,
+    rotation: Option<i32>,
+    bytes_cache: tauri::State<PdfBytesCache>,
+    handle_cache: tauri::State<DocHandleCache>,
+) -> Result<tauri::ipc::Response, String> {
+    let extra_rot = rotation.unwrap_or(0);
+    let doc = get_or_load_doc(&path, &bytes_cache, &handle_cache)?;
+    let rendered = doc.render_page(page_index as usize, scale, extra_rot)
+        .map_err(|e| format!("{}", e))?;
+    let mut out = Vec::with_capacity(8 + rendered.rgba.len());
+    out.extend_from_slice(&rendered.width.to_le_bytes());
+    out.extend_from_slice(&rendered.height.to_le_bytes());
+    out.extend_from_slice(&rendered.rgba);
+    Ok(tauri::ipc::Response::new(out))
+}
+
 #[tauri::command]
 fn render_pdf_page(
     path: String,
@@ -1733,6 +1767,7 @@ pub fn run(opts: StartupOpts) {
             clear_pdf_cache,
             analyze_page_type,
             analyze_page_type_batch,
+            render_pdf_page_skia,
             extract_draw_commands,
             extract_draw_commands_batch,
             extract_page_text,
