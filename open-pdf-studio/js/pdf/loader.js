@@ -538,30 +538,28 @@ export async function loadPDF(filePath, docIndex, preloadedData = null) {
                   await vr.prepareImages(filePath, p, 0);
                   warmedVector++;
                 } else {
-                  // TILE page — warm the bitmap cache at bucket=0.125. This
-                  // is the SMALLEST sub-1 bucket; PDFium renders 2-3× faster
-                  // here than at bucket=0.25 (scale=0.125 vs 0.25), which
-                  // matters because the per-page prefetch is the bottleneck
-                  // that decides whether the user gets a cache hit or a
-                  // cold render on first navigation.
+                  // TILE page — DELIBERATELY no prefetch.
                   //
-                  // Measured PDFium times on NKD1a p4 (5156×2384 pt):
-                  //   scale=0.05  → 1295 ms (258×119 bitmap)
-                  //   scale=0.125 → ~1500 ms (estimate)
-                  //   scale=0.25  → 2737 ms (1032×477)
-                  //   scale=1.0   → 3184 ms (5157×2384, 46 MB)
-                  // 6 tile pages × 1.5 s ≈ 9 s total prefetch instead of
-                  // 16 s at scale=0.25 — user is more likely to navigate
-                  // AFTER prefetch completes (= cache hit, instant paint).
+                  // We tried prefetching tile-page bitmaps at scale=0.125 in
+                  // v1.55/v1.56 (~1.5 s per huge construction-PDF page). It
+                  // gave a blurry fallback bitmap that the orchestrator's
+                  // getBestAvailableBitmap surfaced on first navigation, but:
+                  //   - PDFium serializes via global mutex, so the prefetch
+                  //     blocked the thumbnail-processor's render_thumbnail
+                  //     calls for 6+ pages × ~1.5 s = 9-20 s. User reported
+                  //     thumbnails "weer trager".
+                  //   - The orchestrator's exact-bucket render still ran
+                  //     after the fallback paint (~2.7 s for NKD1a fit-zoom),
+                  //     so the user still waited for the crisp upgrade.
+                  //   - Net win was only the brief "blurry instead of blank"
+                  //     first paint — not worth the thumbnail regression.
                   //
-                  // getBestAvailableBitmap's proximity search means an
-                  // orchestrator targeting bucket=0.25 (fit-zoom on huge
-                  // pages) still finds the 0.125 entry as fallback. Visible
-                  // result: instant stretched paint, upgraded to crisp by
-                  // the async exact-bucket render within ~2 s.
-                  await pbc.ensureBitmap(filePath, p, 0, 0.125);
-                  if (isClosed()) return;
-                  warmedTile++;
+                  // Better: let thumbnails own PDFium during cold-open. The
+                  // first nav to a tile page pays the ~2.7 s cold-render
+                  // cost ONCE; subsequent navigations hit the Rust pixmap
+                  // cache and are ~150 ms. Multi-process PDFium (v1.58+)
+                  // is the real fix for cold-render latency on huge pages.
+                  warmedTile++; // counted as "decided not to warm" for diagnostics
                 }
               } catch (e) {
                 // One bad page shouldn't kill prefetch — just log and move on

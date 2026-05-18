@@ -64,6 +64,15 @@ export interface AppState {
   statusMessageVisible: boolean;
   renderEngine: string;    // 'Rust' or 'PDF.js' — shown in status bar
   renderTiming: string;    // e.g. '680ms' — shown next to engine name
+  /**
+   * User-chosen render-engine override. null = automatic (PDFium for raster,
+   * vector replay for vector). 'rust-skia' = force the open-pdf-render
+   * pure-Rust kernel (alpha — accuracy not yet at PDFium parity, see
+   * scripts/render-regression-test.py). 'pdfium' = force PDFium explicitly.
+   * Wired in js/pdf/page-bitmap-cache.js (ensureBitmap dispatches to the
+   * matching Tauri command) and exposed via a clickable badge in StatusBar.
+   */
+  renderEngineOverride: 'pdfium' | 'rust-skia' | null;
   textSelection: TextSelection;
   search: SearchState;
 
@@ -158,6 +167,7 @@ export const state = createMutable<AppState>({
   statusMessageVisible: true,
   renderEngine: '',
   renderTiming: '',
+  renderEngineOverride: null,
   textSelection: {
     hasSelection: false,
     selectedText: '',

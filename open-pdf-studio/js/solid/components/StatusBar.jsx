@@ -255,22 +255,55 @@ export default function StatusBar() {
         </Show>
         <Show when={state.renderEngine}>
           <div class="status-separator"></div>
-          <div class="status-item" title={state.renderTiming || ''}>
-            <span style={{
-              "font-size": "10px",
-              "padding": "1px 6px",
-              "border-radius": "2px",
-              "background": (() => {
-                const e = state.renderEngine || '';
-                if (e.startsWith('Raster')) return '#2a5fa0';  // blue for PDFium raster
-                if (e === 'Vector') return '#2a8a3a';            // green for vector
-                return '#666';
-              })(),
-              "color": "#fff",
-              "font-weight": "bold",
-              "letter-spacing": "0.5px",
-            }}>
-              {state.renderEngine}
+          <div class="status-item" title={`${state.renderTiming || ''}\nClick to cycle render engine: PDFium → Rust (alpha) → Auto`}>
+            <span
+              onClick={() => {
+                // Cycle: null (auto) → 'pdfium' → 'rust-skia' → null
+                const cur = state.renderEngineOverride;
+                let next;
+                if (cur === null) next = 'pdfium';
+                else if (cur === 'pdfium') next = 'rust-skia';
+                else next = null;
+                state.renderEngineOverride = next;
+                // Force a re-render of the current page so the change takes
+                // effect immediately. Bitmap cache is per-engine — flushing
+                // is overkill; the next renderPage will dispatch to the new
+                // engine via page-bitmap-cache.ensureBitmap.
+                try {
+                  if (window.__pdfViewport) {
+                    window.__pdfViewport.currentBitmap = null;
+                    window.__pdfViewport.dirty = true;
+                  }
+                  import('../../pdf/renderer.js').then(m => {
+                    const doc = state.documents[state.activeDocumentIndex];
+                    if (doc?.currentPage) m.renderPage(doc.currentPage);
+                  });
+                } catch {}
+              }}
+              style={{
+                "font-size": "10px",
+                "padding": "1px 6px",
+                "border-radius": "2px",
+                "background": (() => {
+                  const ov = state.renderEngineOverride;
+                  if (ov === 'rust-skia') return '#a04a2a'; // orange for alpha
+                  const e = state.renderEngine || '';
+                  if (e.startsWith('Raster')) return '#2a5fa0';  // blue for PDFium raster
+                  if (e === 'Vector') return '#2a8a3a';            // green for vector
+                  return '#666';
+                })(),
+                "color": "#fff",
+                "font-weight": "bold",
+                "letter-spacing": "0.5px",
+                "cursor": "pointer",
+                "user-select": "none",
+              }}>
+              {(() => {
+                const ov = state.renderEngineOverride;
+                if (ov === 'rust-skia') return 'Rust (alpha)';
+                if (ov === 'pdfium') return state.renderEngine || 'PDFium';
+                return state.renderEngine; // auto
+              })()}
             </span>
             <Show when={state.renderTiming}>
               <span style={{ "font-size": "10px", "margin-left": "4px", "opacity": "0.7" }}>
