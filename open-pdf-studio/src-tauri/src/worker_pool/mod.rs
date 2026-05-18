@@ -51,18 +51,37 @@ impl WorkerPool {
         scale: f32,
         rotation: i32,
     ) -> Result<(u32, u32, Vec<u8>)> {
+        // First attempt
         let depths = self.depths();
         let slot = routing::pick_worker(path, page_index, &depths);
         let worker = self.workers[slot].clone();
-
-        // Increment depth; we decrement after we receive the ack
         worker.queue_depth.fetch_add(1, Ordering::Release);
-
         let result = self.render_on_worker(worker.clone(), path, page_index, scale, rotation).await;
-
         worker.queue_depth.fetch_sub(1, Ordering::Release);
 
-        result
+        if result.is_ok() {
+            return result;
+        }
+
+        // First attempt failed → mark crash, retry on a DIFFERENT live slot
+        let exe = std::env::current_exe()
+            .ok()
+            .and_then(|p| p.parent().map(|d| d.join("pdfium-worker.exe")))
+            .unwrap_or_else(|| std::path::PathBuf::from("pdfium-worker.exe"));
+        let recover_task = recovery::handle_worker_crash(worker.clone(), exe);
+        tokio::spawn(recover_task);
+
+        let mut depths_retry = self.depths();
+        depths_retry[slot] = usize::MAX; // mark as dead for this retry
+        if depths_retry.iter().all(|&d| d == usize::MAX) {
+            return result; // no other workers — bubble up the error
+        }
+        let slot2 = routing::pick_worker(path, page_index, &depths_retry);
+        let worker2 = self.workers[slot2].clone();
+        worker2.queue_depth.fetch_add(1, Ordering::Release);
+        let result2 = self.render_on_worker(worker2.clone(), path, page_index, scale, rotation).await;
+        worker2.queue_depth.fetch_sub(1, Ordering::Release);
+        result2
     }
 
     async fn render_on_worker(
