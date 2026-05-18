@@ -598,19 +598,12 @@ impl DocumentHandle {
     /// when the user actually navigates to the page in the main view.
     pub fn analyze_page_type(&self, page: usize) -> Result<crate::PageType, RenderError> {
         let page_id = self.get_page_id(page)?;
-        let content_bytes = self.get_content_stream(page_id)?;
-        let content = lopdf::content::Content::decode(&content_bytes)
-            .map_err(|e| RenderError::ParseError(format!("{}", e)))?;
 
-        // 1. Shading operator → Tile
-        for op in &content.operations {
-            if op.operator.as_str() == "sh" {
-                return Ok(crate::PageType::Tile);
-            }
-        }
-
-        // 2 + 3. Inspect XObjects in page resources. Walk the /XObject dict
-        // and count Image entries + their pixel counts.
+        // ─── XObject check FIRST (cheap: just dict iteration, no content
+        //     stream decompression or operator decode) ─────────────────────
+        // Pages with large or numerous raster XObjects classify as Tile
+        // unconditionally. Walking the /XObject dict is microseconds —
+        // contrast with decoding a multi-megabyte content stream below.
         let resources = self.get_page_resources(page_id)?;
         if let Ok(xobj_obj) = resources.get(b"XObject") {
             let xobj_dict_opt = match xobj_obj {
@@ -660,6 +653,37 @@ impl DocumentHandle {
                         return Ok(crate::PageType::Tile);
                     }
                 }
+            }
+        }
+
+        // ─── Content-stream size shortcut ────────────────────────────────
+        // For pages with very large content streams, the full lopdf operator
+        // decode (Content::decode) takes 500-2800 ms on construction PDFs
+        // (NKD1a page 2: ~2787 ms, Zware vector PDF: ~741 ms). The result
+        // is virtually always Tile anyway — content streams that big have
+        // too many vector commands for the JS-replay path to be faster than
+        // a single PDFium raster. Skip the decode and classify Tile when
+        // the decompressed content stream exceeds this threshold.
+        //
+        // Tunable: 1 MB picked empirically — small enough that legitimate
+        // 100-500 KB vector pages still get JS-replay, large enough to
+        // catch the construction-drawing pages that hurt perceived nav.
+        const TILE_CONTENT_THRESHOLD_BYTES: usize = 1_000_000;
+        let content_bytes = self.get_content_stream(page_id)?;
+        if content_bytes.len() > TILE_CONTENT_THRESHOLD_BYTES {
+            return Ok(crate::PageType::Tile);
+        }
+
+        // ─── Small content stream: full decode + sh-operator scan ────────
+        // Shading operator (`sh`) draws a Pattern shading dictionary across
+        // a region. Patterns can be radial/axial gradients or function-based
+        // — none of which our JS-replay vector path handles correctly, so
+        // any page using `sh` falls back to PDFium raster.
+        let content = lopdf::content::Content::decode(&content_bytes)
+            .map_err(|e| RenderError::ParseError(format!("{}", e)))?;
+        for op in &content.operations {
+            if op.operator.as_str() == "sh" {
+                return Ok(crate::PageType::Tile);
             }
         }
 
@@ -767,6 +791,17 @@ impl DocumentHandle {
     pub fn extract_draw_commands_batch(&self, pages: &[(usize, i32)]) -> Vec<Result<crate::DrawCommandBuffer, RenderError>> {
         use rayon::prelude::*;
         pages.par_iter().map(|&(p, rot)| self.extract_draw_commands(p, rot)).collect()
+    }
+
+    /// Classify many pages in parallel using rayon. Used for a one-shot
+    /// background warm-up immediately after cold-open so subsequent page
+    /// navigation never pays the analyze_page_type cost again (when paired
+    /// with the lib.rs-side `PageTypeCache`). With the size-shortcut in
+    /// analyze_page_type, huge content-stream pages return in microseconds,
+    /// so a 7-page batch is typically <50 ms total even on construction PDFs.
+    pub fn analyze_page_types_batch(&self, pages: &[usize]) -> Vec<Result<crate::PageType, RenderError>> {
+        use rayon::prelude::*;
+        pages.par_iter().map(|&p| self.analyze_page_type(p)).collect()
     }
 
     /// Extract dimensions for ALL pages in parallel. Faster than the

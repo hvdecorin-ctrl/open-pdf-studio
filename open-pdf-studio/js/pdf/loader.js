@@ -262,6 +262,30 @@ export async function loadPDF(filePath, docIndex, preloadedData = null) {
     if (isClosed()) return;
     console.log(`[PERF] PDF.js getDocument done: ${(performance.now() - _t0).toFixed(0)}ms, pages: ${doc.pdfDoc.numPages}`);
 
+    // ─── BACKGROUND ANALYZE PRE-WARM ─────────────────────────────────────
+    // analyze_page_type is what makes per-page navigation feel slow on
+    // construction PDFs — the lopdf operator decoder takes 500-2800 ms per
+    // huge content-stream page (NKD1a p2: ~2787 ms). Even with the new
+    // size-shortcut in analyze_page_type, the FIRST call to each page still
+    // pays the dict + size check. Fire one batch invoke for all pages in
+    // parallel (rayon on the Rust side, populates PageTypeCache) so by the
+    // time the user navigates anywhere, the result is a cached HashMap
+    // lookup. Total batch cost on NKD1a: ~50 ms total instead of ~600 ms
+    // × 7 pages sequentially as the user scrolls.
+    if (filePath && isTauri() && doc.pdfDoc.numPages > 1) {
+      const _abT0 = performance.now();
+      const allPages = Array.from({ length: doc.pdfDoc.numPages }, (_, i) => i);
+      window.__TAURI__.core.invoke('analyze_page_type_batch', {
+        path: filePath,
+        pageIndices: allPages,
+      }).then((results) => {
+        console.log(`[PERF] analyze_page_type_batch ${doc.pdfDoc.numPages} pages: ${(performance.now() - _abT0).toFixed(0)}ms ` +
+          `(vector=${results.filter(r => r === 'vector').length}, tile=${results.filter(r => r === 'tile').length})`);
+      }).catch((e) => {
+        console.warn('[PERF] analyze_page_type_batch failed:', e?.message ?? e);
+      });
+    }
+
     doc.filePath = filePath;
     doc.fileName = filePath ? filePath.split(/[\\/]/).pop() : 'Untitled';
 

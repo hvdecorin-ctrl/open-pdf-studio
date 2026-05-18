@@ -45,6 +45,14 @@ struct DocHandleCache(Mutex<HashMap<String, Arc<open_pdf_render::DocumentHandle>
 /// makes scrolling back to previously-rendered pages essentially free.
 struct ThumbnailCache(Mutex<HashMap<(String, u32, u32, i32), String>>);
 
+/// Cache for `analyze_page_type` results. Keyed by (path, page_index). The
+/// underlying lopdf classifier is cheap on most pages but for construction
+/// PDFs with multi-megabyte content streams the size-shortcut in
+/// `analyze_page_type` keeps it fast even cold; this cache makes warm hits
+/// effectively free (HashMap lookup) so per-page navigation has zero analyze
+/// cost after the first visit (or after `analyze_page_type_batch` warms it).
+struct PageTypeCache(Mutex<HashMap<(String, u32), String>>);
+
 #[tauri::command]
 fn get_opened_file(state: tauri::State<OpenedFiles>) -> Vec<String> {
     state.0.lock().unwrap().clone()
@@ -1359,12 +1367,74 @@ fn analyze_page_type(
     page_index: u32,
     bytes_cache: tauri::State<PdfBytesCache>,
     handle_cache: tauri::State<DocHandleCache>,
+    page_type_cache: tauri::State<PageTypeCache>,
 ) -> Result<String, String> {
-    let doc = get_or_load_doc(&path, &bytes_cache, &handle_cache)?;
-    match doc.analyze_page_type(page_index as usize).map_err(|e| format!("{}", e))? {
-        open_pdf_render::PageType::Vector => Ok("vector".into()),
-        open_pdf_render::PageType::Tile => Ok("tile".into()),
+    let key = (path.clone(), page_index);
+    if let Ok(cache) = page_type_cache.0.lock() {
+        if let Some(cached) = cache.get(&key) {
+            return Ok(cached.clone());
+        }
     }
+    let doc = get_or_load_doc(&path, &bytes_cache, &handle_cache)?;
+    let result = match doc.analyze_page_type(page_index as usize).map_err(|e| format!("{}", e))? {
+        open_pdf_render::PageType::Vector => "vector".to_string(),
+        open_pdf_render::PageType::Tile => "tile".to_string(),
+    };
+    if let Ok(mut cache) = page_type_cache.0.lock() {
+        cache.insert(key, result.clone());
+    }
+    Ok(result)
+}
+
+/// Batch-classify many pages in one Tauri invoke using rayon for parallelism.
+/// Used immediately after cold-open to populate `PageTypeCache` for every
+/// page in the document so subsequent per-page navigation hits the cache
+/// instead of paying any lopdf analyze cost. Safe to call multiple times
+/// — already-cached pages are skipped in the parallel loop and the result
+/// returns the cached value.
+#[tauri::command]
+fn analyze_page_type_batch(
+    path: String,
+    page_indices: Vec<u32>,
+    bytes_cache: tauri::State<PdfBytesCache>,
+    handle_cache: tauri::State<DocHandleCache>,
+    page_type_cache: tauri::State<PageTypeCache>,
+) -> Result<Vec<String>, String> {
+    // Pre-fill: copy already-cached results out of the lock; remaining indices
+    // get computed in parallel below. Avoids contending on the cache mutex
+    // from inside the rayon workers.
+    let mut results: Vec<Option<String>> = vec![None; page_indices.len()];
+    let mut todo: Vec<(usize, u32)> = Vec::new();
+    if let Ok(cache) = page_type_cache.0.lock() {
+        for (i, &p) in page_indices.iter().enumerate() {
+            if let Some(v) = cache.get(&(path.clone(), p)) {
+                results[i] = Some(v.clone());
+            } else {
+                todo.push((i, p));
+            }
+        }
+    }
+    if todo.is_empty() {
+        return Ok(results.into_iter().map(|o| o.unwrap_or_default()).collect());
+    }
+
+    let doc = get_or_load_doc(&path, &bytes_cache, &handle_cache)?;
+    let pages: Vec<usize> = todo.iter().map(|&(_, p)| p as usize).collect();
+    let batch_results = doc.analyze_page_types_batch(&pages);
+
+    // Stitch new results back into `results` and into the persistent cache.
+    if let Ok(mut cache) = page_type_cache.0.lock() {
+        for ((i_in_input, p_idx), r) in todo.iter().zip(batch_results.iter()) {
+            let s = match r {
+                Ok(open_pdf_render::PageType::Vector) => "vector".to_string(),
+                Ok(open_pdf_render::PageType::Tile) => "tile".to_string(),
+                Err(_) => "vector".to_string(), // fall through to vector path on parse error
+            };
+            cache.insert((path.clone(), *p_idx), s.clone());
+            results[*i_in_input] = Some(s);
+        }
+    }
+    Ok(results.into_iter().map(|o| o.unwrap_or_default()).collect())
 }
 
 #[tauri::command]
@@ -1428,11 +1498,15 @@ fn invalidate_pdf_cache(
     bytes_cache: tauri::State<PdfBytesCache>,
     handle_cache: tauri::State<DocHandleCache>,
     thumb_cache: tauri::State<ThumbnailCache>,
+    page_type_cache: tauri::State<PageTypeCache>,
 ) -> Result<bool, String> {
     bytes_cache.0.lock().map_err(|e| format!("Bytes cache lock: {}", e))?.remove(&path);
     handle_cache.0.lock().map_err(|e| format!("Handle cache lock: {}", e))?.remove(&path);
     if let Ok(mut tc) = thumb_cache.0.lock() {
         tc.retain(|(p, _, _, _), _| p != &path);
+    }
+    if let Ok(mut pc) = page_type_cache.0.lock() {
+        pc.retain(|(p, _), _| p != &path);
     }
     Ok(true)
 }
@@ -1444,12 +1518,14 @@ fn clear_pdf_cache(
     bytes_cache: tauri::State<PdfBytesCache>,
     handle_cache: tauri::State<DocHandleCache>,
     thumb_cache: tauri::State<ThumbnailCache>,
+    page_type_cache: tauri::State<PageTypeCache>,
     pdfium_cache: tauri::State<pdfium_renderer::PdfiumDocCache>,
     pixmap_cache: tauri::State<pdfium_renderer::PixmapCacheState>,
 ) -> Result<bool, String> {
     bytes_cache.0.lock().map_err(|e| format!("Bytes cache lock: {}", e))?.clear();
     handle_cache.0.lock().map_err(|e| format!("Handle cache lock: {}", e))?.clear();
     if let Ok(mut tc) = thumb_cache.0.lock() { tc.clear(); }
+    if let Ok(mut ptc) = page_type_cache.0.lock() { ptc.clear(); }
     if let Ok(mut pc) = pdfium_cache.0.lock() { pc.clear(); }
     if let Ok(mut guard) = pixmap_cache.0.lock() {
         if let Some(cache) = guard.as_mut() {
@@ -1528,6 +1604,7 @@ pub fn run(opts: StartupOpts) {
         .manage(PdfBytesCache(Mutex::new(HashMap::new())))
         .manage(DocHandleCache(Mutex::new(HashMap::new())))
         .manage(ThumbnailCache(Mutex::new(HashMap::new())))
+        .manage(PageTypeCache(Mutex::new(HashMap::new())))
         .manage(pdfium_renderer::PdfiumDocCache::default())
         .manage(pdfium_renderer::PixmapCacheState::default())
         .manage(mcp_app_bridge::McpAppBridge::new())
@@ -1655,6 +1732,7 @@ pub fn run(opts: StartupOpts) {
             invalidate_pdf_cache,
             clear_pdf_cache,
             analyze_page_type,
+            analyze_page_type_batch,
             extract_draw_commands,
             extract_draw_commands_batch,
             extract_page_text,
