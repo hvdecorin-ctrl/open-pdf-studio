@@ -1,0 +1,7 @@
+[workspace]
+resolver = "2"
+members = [
+  "open-pdf-studio/src-tauri",
+  "open-pdf-render",
+  "pdfium-worker",
+]
