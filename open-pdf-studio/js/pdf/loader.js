@@ -431,24 +431,34 @@ export async function loadPDF(filePath, docIndex, preloadedData = null) {
       }
     }).catch((e) => { console.error('[PERF-BG] loadExistingAnnotations error:', e); });
 
-    // Background prefetch of vector draw commands for ALL pages, so the
-    // thumbnail processor can hit the JS-side vector cache (which renders
-    // text correctly) instead of falling back to the Rust `render_thumbnail`
-    // path that explicitly skips text operators — that path produces blank /
-    // background-only thumbnails on text-only pages (e.g. AC294 page 2 came
-    // out as a solid green band because only the vector header was drawn).
+    // Background prefetch for ALL pages, dispatched by per-page classification:
+    //   - VECTOR pages → extract_draw_commands so thumbnails + main view hit
+    //     the JS-replay cache instead of falling back to the Rust thumbnail
+    //     path (which skips text operators and produces blank/colored
+    //     placeholder thumbnails on text-heavy pages).
+    //   - TILE pages → render_pdf_page at scale 1.0 so the Rust pixmap cache
+    //     is warm. Without this, the FIRST time the user navigates to a
+    //     tile-classified page (NKD1a pages 2-7, huge construction drawings)
+    //     they wait 600-2500 ms for PDFium to walk all vector commands and
+    //     produce the bitmap. With warm pixmap cache the navigation is
+    //     ~150 ms total.
     //
-    // Concurrency is limited to 2 workers so this prefetch never starves the
-    // active page render or interactive thumbnail requests.
+    // Both go through the analyze cache (already populated by
+    // analyze_page_type_batch earlier in loadPDF), so the per-page analyze
+    // invoke is microseconds. Concurrency=2 keeps interactive renders
+    // responsive.
     if (filePath && isTauri()) {
       (async () => {
         try {
           const vr = await import('./vector-renderer.js');
+          const pbc = await import('./page-bitmap-cache.js');
           const numPages = doc.pdfDoc?.numPages || 0;
           if (numPages <= 0) return;
 
           let nextPage = 1;
           const CONCURRENCY = 2;
+          let warmedVector = 0;
+          let warmedTile = 0;
 
           const worker = async () => {
             while (true) {
@@ -456,28 +466,43 @@ export async function loadPDF(filePath, docIndex, preloadedData = null) {
               const p = nextPage++;
               if (p > numPages) return;
 
-              // Skip if cache already populated (e.g. user already viewed it)
-              if (vr.hasCachedCommands(filePath, p, 0)) continue;
-
               try {
                 const pageType = await invoke('analyze_page_type', {
                   path: filePath, pageIndex: p - 1,
                 });
                 if (isClosed()) return;
-                if (pageType !== 'vector') continue;
 
-                if (vr.hasCachedCommands(filePath, p, 0)) continue;
-                const cmdData = await invoke('extract_draw_commands', {
-                  path: filePath, pageIndex: p - 1, rotation: 0,
-                });
-                if (isClosed()) return;
-                const cmdBytes = cmdData instanceof Uint8Array
-                  ? cmdData : new Uint8Array(cmdData);
-                vr.cacheCommands(filePath, p, cmdBytes, 0);
-                await vr.prepareImages(filePath, p, 0);
+                if (pageType === 'vector') {
+                  if (vr.hasCachedCommands(filePath, p, 0)) continue;
+                  const cmdData = await invoke('extract_draw_commands', {
+                    path: filePath, pageIndex: p - 1, rotation: 0,
+                  });
+                  if (isClosed()) return;
+                  const cmdBytes = cmdData instanceof Uint8Array
+                    ? cmdData : new Uint8Array(cmdData);
+                  vr.cacheCommands(filePath, p, cmdBytes, 0);
+                  await vr.prepareImages(filePath, p, 0);
+                  warmedVector++;
+                } else {
+                  // TILE page — warm a SMALL fallback bitmap so the first
+                  // navigation to this page lands in getBestAvailableBitmap's
+                  // proximity search and the orchestrator paints INSTANTLY
+                  // (stretched, but recognisable) while the exact-bucket
+                  // render settles in the background.
+                  //
+                  // We render at scale=0.25 to keep memory bounded. For
+                  // NKD1a's biggest tile page (5156×2384 pt) that's a
+                  // 1289×596 = ~3 MB bitmap, vs 50 MB at scale=1.0. The
+                  // bitmap is stored under cacheBucket=1 so any later
+                  // targetBucket finds it via the log-distance fallback
+                  // search in getBestAvailableBitmap.
+                  await pbc.prefetchFallbackBitmap(filePath, p, 0, 0.25);
+                  if (isClosed()) return;
+                  warmedTile++;
+                }
               } catch (e) {
                 // One bad page shouldn't kill prefetch — just log and move on
-                console.warn(`[PERF-BG] vector prefetch failed page ${p}:`, e);
+                console.warn(`[PERF-BG] prefetch failed page ${p}:`, e?.message ?? e);
               }
 
               // Yield between pages so we don't starve interactive renders
@@ -488,9 +513,9 @@ export async function loadPDF(filePath, docIndex, preloadedData = null) {
           const workers = [];
           for (let i = 0; i < CONCURRENCY; i++) workers.push(worker());
           await Promise.all(workers);
-          console.log(`[PERF-BG] vector prefetch complete (${numPages} pages)`);
+          console.log(`[PERF-BG] prefetch complete (${numPages} pages, vector=${warmedVector}, tile=${warmedTile})`);
         } catch (e) {
-          console.warn('[PERF-BG] vector prefetch error:', e);
+          console.warn('[PERF-BG] prefetch error:', e);
         }
       })();
     }

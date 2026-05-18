@@ -30,14 +30,32 @@ function _key(filePath, pageNum, rotation, zoomBucket) {
 
 // Compute the zoom bucket (power of 2) to render at, given a target scale.
 // We round UP to the next power of 2 so we always have at least the requested
-// resolution. Capped at 16 to keep memory bounded for very high zoom levels.
+// resolution.
+//
+// For WHOLE-PAGE bitmaps the caller caps targetScale at MAX_BITMAP_AXIS_PX
+// / maxAxisPt before invoking (see bitmap-orchestrator.js:51), so this can
+// never produce a bucket large enough to blow the 4096 px PDFium cap.
+//
+// For TILE bitmaps the caller passes viewport.zoom * dpr unbounded. Here
+// the bucket can grow with zoom — but the tile bitmap pixel size is bounded
+// by the VISIBLE viewport region (typically 600-1000 px on each axis at
+// css scale), so even at bucket=64 the tile stays well under PDFium's limit.
+//
+// Before this change the bucket was capped at 16, which meant every zoom
+// above 8x shared the same cache key. The first tile rendered at that
+// bucket "owned" it; subsequent zooms within the bucket got the SAME
+// (lower-zoom) tile drawn stretched at higher css zoom — the user
+// reported this as "zoom > 600% suddenly picks a worse-resolution tile".
 export function computeZoomBucket(targetScale) {
   if (!Number.isFinite(targetScale) || targetScale <= 0) return 1;
   if (targetScale <= 1) return 1;
   if (targetScale <= 2) return 2;
   if (targetScale <= 4) return 4;
   if (targetScale <= 8) return 8;
-  return 16;
+  if (targetScale <= 16) return 16;
+  if (targetScale <= 32) return 32;
+  if (targetScale <= 64) return 64;
+  return 128;
 }
 
 export function getCachedBitmap(filePath, pageNum, rotation, zoomBucket) {
@@ -51,9 +69,11 @@ export function getCachedBitmap(filePath, pageNum, rotation, zoomBucket) {
 export function getBestAvailableBitmap(filePath, pageNum, rotation, targetBucket) {
   const exact = getCachedBitmap(filePath, pageNum, rotation, targetBucket);
   if (exact) return exact;
-  // Search downwards then upwards
-  const buckets = [1, 2, 4, 8, 16];
-  // closest first
+  // Search by proximity (in log space) to targetBucket. Includes the higher
+  // buckets that computeZoomBucket can now produce so a tile prefetched at
+  // scale=1.0 (bucket=1) is still findable as a fallback at zoom 16x or
+  // higher (bucket=16 or 32).
+  const buckets = [1, 2, 4, 8, 16, 32, 64, 128];
   const sorted = buckets.slice().sort((a, b) =>
     Math.abs(Math.log2(a) - Math.log2(targetBucket)) -
     Math.abs(Math.log2(b) - Math.log2(targetBucket))
@@ -83,7 +103,24 @@ function _evictIfNeeded() {
  * one is already in flight. Resolves to the cached entry (or null on failure).
  */
 export function ensureBitmap(filePath, pageNum, rotation, zoomBucket) {
-  const key = _key(filePath, pageNum, rotation, zoomBucket);
+  return _ensureBitmapAtScale(filePath, pageNum, rotation, zoomBucket, zoomBucket);
+}
+
+/**
+ * Background prefetch: render a small fallback bitmap and cache it under
+ * `cacheBucket` so getBestAvailableBitmap finds it as a stretched fallback
+ * on first user navigation. Intended for tile-classified pages where the
+ * cold PDFium render at full scale=1.0 produces a 50+ MB bitmap (NKD1a's
+ * construction drawings). Renders at `prefetchScale` (typically 0.25–0.5)
+ * for a much smaller bitmap, cached under `cacheBucket=1` so any later
+ * targetBucket finds it via the proximity-sort search.
+ */
+export function prefetchFallbackBitmap(filePath, pageNum, rotation, prefetchScale) {
+  return _ensureBitmapAtScale(filePath, pageNum, rotation, 1, prefetchScale);
+}
+
+function _ensureBitmapAtScale(filePath, pageNum, rotation, cacheBucket, renderScale) {
+  const key = _key(filePath, pageNum, rotation, cacheBucket);
   if (_cache.has(key)) return Promise.resolve(_cache.get(key));
   if (_pending.has(key)) return _pending.get(key);
   if (!isTauri() || !filePath) return Promise.resolve(null);
@@ -95,7 +132,7 @@ export function ensureBitmap(filePath, pageNum, rotation, zoomBucket) {
       const result = await invoke('render_pdf_page', {
         path: filePath,
         pageIndex: pageNum - 1,
-        scale: zoomBucket,
+        scale: renderScale,
         rotation: rotation || 0,
       });
       const fileBytes = result instanceof Uint8Array ? result : new Uint8Array(result);
@@ -111,7 +148,7 @@ export function ensureBitmap(filePath, pageNum, rotation, zoomBucket) {
       const rgba = new Uint8ClampedArray(fileBytes.buffer, fileBytes.byteOffset + 8, expected);
       const imageData = new ImageData(rgba, w, h);
       const bitmap = await createImageBitmap(imageData);
-      const entry = { bitmap, w, h, scale: zoomBucket };
+      const entry = { bitmap, w, h, scale: renderScale };
       _cache.set(key, entry);
       _evictIfNeeded();
       return entry;
