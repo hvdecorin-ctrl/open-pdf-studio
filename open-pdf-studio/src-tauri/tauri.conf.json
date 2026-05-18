@@ -69,6 +69,9 @@
       "icons/file-icon.ico": "file-icon.ico",
       "binaries/win-x64/pdfium.dll": "pdfium.dll"
     },
+    "externalBin": [
+      "binaries/pdfium-worker"
+    ],
     "fileAssociations": [
       {
         "ext": [
