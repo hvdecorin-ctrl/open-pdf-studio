@@ -120,7 +120,30 @@ export function setupWheelZoom() {
             const dxScroll = targetClientX - clientX;
             const dyScroll = targetClientY - clientY;
             if (dyScroll !== 0) container.scrollTop += dyScroll;
-            if (dxScroll !== 0) container.scrollLeft += dxScroll;
+            if (dxScroll !== 0) {
+              // Try scrollLeft first (preferred — the user keeps a working
+              // horizontal scrollbar). What the browser refuses to clamp goes
+              // into a translateX fallback on #continuous-container so cursor
+              // anchor still works for narrow pages where scrollLeft is
+              // pinned at 0 by flex centering. Clamped to ±viewport-width
+              // so we cannot ever push the page fully off-screen the way an
+              // unbounded transform did before.
+              const beforeSL = container.scrollLeft;
+              container.scrollLeft += dxScroll;
+              const appliedSL = container.scrollLeft - beforeSL;
+              const residual = dxScroll - appliedSL;
+              if (Math.abs(residual) > 0.5) {
+                const cc = document.getElementById('continuous-container');
+                if (cc) {
+                  const oldTxMatch = (cc.style.transform || '').match(/translateX\(([-\d.]+)px\)/);
+                  const oldTx = oldTxMatch ? parseFloat(oldTxMatch[1]) : 0;
+                  const newTx = oldTx - residual;
+                  const maxShift = container.clientWidth;
+                  const clampedTx = Math.max(-maxShift, Math.min(maxShift, newTx));
+                  cc.style.transform = clampedTx === 0 ? '' : `translateX(${clampedTx}px)`;
+                }
+              }
+            }
           }
         }
         return;

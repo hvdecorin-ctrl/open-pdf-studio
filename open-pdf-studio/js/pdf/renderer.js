@@ -1444,6 +1444,10 @@ export function clearPdfView() {
   const continuousContainer = document.getElementById('continuous-container');
   if (continuousContainer) {
     continuousContainer.innerHTML = '';
+    // Reset cursor-anchor translateX (set by the wheel-zoom handler in
+    // navigation-events.js); closing the doc must clear it so a fresh doc
+    // doesn't open with the previous doc's accumulated shift.
+    continuousContainer.style.transform = '';
   }
 
   // Clear PDF vector snap cache
