@@ -707,13 +707,9 @@ async function renderContinuousPage(pageNum) {
     canvasContainer.appendChild(annotationCanvasEl);
   }
 
-  // NOTE: deliberately NOT resizing pdfCanvasEl or annotationCanvasEl here.
-  // Setting canvas.width clears the bitmap; doing so before the async Rust
-  // render leaves the canvas blank-white for 200-500ms (= the visible flicker
-  // on every zoom step). The cache-hit and fresh-render paths below resize
-  // pdfCanvasEl atomically together with the draw, so old pixels stay on
-  // screen until new pixels arrive. annotationCanvasEl is resized just
-  // before renderAnnotationsForPage further down, same atomic reasoning.
+  // Update canvas dimensions for new scale
+  setupCanvasHiDPI(pdfCanvasEl, viewport.width, viewport.height);
+  setupCanvasHiDPI(annotationCanvasEl, viewport.width, viewport.height);
   // Cursor is handled centrally by js/ui/cursor.js — no need to set it here.
 
   if (state.currentTool === 'select' || state.currentTool === 'editText') {
@@ -846,11 +842,7 @@ async function renderContinuousPage(pageNum) {
     });
   }
 
-  // Render annotations. Resize the overlay right here (deferred from the
-  // top of the function) so the old annotation pixels stay on screen during
-  // the async Rust render above — canvas.width=N clears the bitmap, and
-  // doing it early creates the visible blank-flicker during zoom.
-  setupCanvasHiDPI(annotationCanvasEl, viewport.width, viewport.height);
+  // Render annotations
   const annotationCtxEl = annotationCanvasEl.getContext('2d');
   renderAnnotationsForPage(annotationCtxEl, pageNum, viewport.width, viewport.height);
 
@@ -868,53 +860,40 @@ async function renderContinuousPage(pageNum) {
   }
 }
 
-// Re-render only visible pages at new scale, keeping the existing DOM
-// structure intact so the old canvas pixels stay on screen until the new
-// ones arrive — avoids the full white flicker that an innerHTML='' rebuild
-// would cause on every zoom step.
+// Re-render only visible pages at new scale (keeps existing DOM structure)
 export async function reRenderVisibleContinuousPages() {
   const doc = state.documents[state.activeDocumentIndex];
   if (!doc || !doc.pdfDoc) return;
-
-  const continuousContainer = document.getElementById('continuous-container');
-  if (!continuousContainer) return;
-
-  // First-paint fallback: no wrappers yet → fall through to the full build.
-  if (continuousContainer.children.length === 0) {
-    return renderContinuous();
-  }
-
   const scale = doc.scale;
+
+  // Mark all pages as needing re-render at new scale
   _renderedPages.clear();
   _renderingPages.clear();
   _renderedPagesScale = scale;
 
-  // Resolve every page's viewport in parallel (same pattern as the
-  // first-paint loop in renderContinuous), then update wrapper dimensions
-  // in DOM order — N sequential `await getPage` round-trips per zoom step
-  // was the bottleneck on multi-page PDFs.
-  const wrappers = Array.from(continuousContainer.querySelectorAll('.page-wrapper'));
-  const wrapperInfo = await Promise.all(wrappers.map(async (wrapper) => {
+  // Update wrapper dimensions for new scale without destroying canvases
+  const continuousContainer = document.getElementById('continuous-container');
+  if (!continuousContainer) return;
+
+  for (const wrapper of continuousContainer.querySelectorAll('.page-wrapper')) {
     const pageNum = parseInt(wrapper.dataset.page, 10);
-    if (!pageNum) return null;
+    if (!pageNum) continue;
+
     const page = await doc.pdfDoc.getPage(pageNum);
     const extraRotation = getPageRotation(pageNum);
     const vpOpts = { scale };
     if (extraRotation) vpOpts.rotation = (page.rotate + extraRotation) % 360;
-    return { wrapper, viewport: page.getViewport(vpOpts) };
-  }));
-  for (const info of wrapperInfo) {
-    if (!info) continue;
-    const cc = info.wrapper.querySelector('.canvas-container-cont');
+    const viewport = page.getViewport(vpOpts);
+
+    const cc = wrapper.querySelector('.canvas-container-cont');
     if (cc) {
-      cc.style.width = `${info.viewport.width}px`;
-      cc.style.height = `${info.viewport.height}px`;
+      cc.style.width = `${viewport.width}px`;
+      cc.style.height = `${viewport.height}px`;
     }
   }
 
-  // Force the observer to re-fire on now-visible wrappers (otherwise IO
-  // doesn't trigger when the same wrapper stays intersecting, even if it
-  // resized).
+  // IntersectionObserver will automatically trigger re-render for visible pages
+  // Force a re-check by briefly disconnecting and reconnecting
   if (_continuousObserver) {
     _continuousObserver.disconnect();
     continuousContainer.querySelectorAll('.page-wrapper').forEach(wrapper => {
@@ -1096,7 +1075,7 @@ export async function zoomIn() {
   }
   doc.scale += 0.25;
   if (doc.viewMode === 'continuous') {
-    await reRenderVisibleContinuousPages();
+    await renderContinuous();
   } else {
     await renderPage(doc.currentPage);
   }
@@ -1121,7 +1100,7 @@ export async function zoomOut() {
     else if (doc.scale <= 0.5) doc.scale = Math.max(0.05, doc.scale - 0.1);
     else doc.scale -= 0.25;
     if (doc.viewMode === 'continuous') {
-      await reRenderVisibleContinuousPages();
+      await renderContinuous();
     } else {
       await renderPage(doc.currentPage);
     }
