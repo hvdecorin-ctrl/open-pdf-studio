@@ -80,8 +80,61 @@ export function setupWheelZoom() {
           }
           _zoomAccum = 0;
         }
+        // Cursor-anchor for continuous mode: capture the PDF user-space
+        // point under the cursor BEFORE zoom (pageNum + pageX/pageY
+        // normalized by oldScale, so it's scale-independent), then after
+        // the re-render shift the scroll container so the same point lands
+        // back under the cursor at the new scale.
+        const clientX = e.clientX, clientY = e.clientY;
+        const container = document.getElementById('pdf-container');
+        const oldScale = activeDoc.scale;
+        let anchorPageNum = null, anchorPageX = 0, anchorPageY = 0;
+        const elAtPoint = document.elementFromPoint(clientX, clientY);
+        const wrapper = elAtPoint?.closest?.('.page-wrapper');
+        const inner = wrapper?.querySelector('.canvas-container-cont');
+        if (inner && container) {
+          const innerRect = inner.getBoundingClientRect();
+          // Clamp inside the page so an edge hover doesn't anchor outside.
+          const localX = Math.max(0, Math.min(innerRect.width, clientX - innerRect.left));
+          const localY = Math.max(0, Math.min(innerRect.height, clientY - innerRect.top));
+          anchorPageNum = parseInt(wrapper.dataset.page, 10);
+          anchorPageX = localX / oldScale;
+          anchorPageY = localY / oldScale;
+        }
         const m = await import('../../pdf/renderer.js');
         if (direction > 0) await m.zoomIn(); else await m.zoomOut();
+        if (anchorPageNum != null && container) {
+          const newScale = activeDoc.scale;
+          const newWrapper = document.querySelector(`.page-wrapper[data-page="${anchorPageNum}"]`);
+          const newInner = newWrapper?.querySelector('.canvas-container-cont');
+          if (newInner) {
+            const newRect = newInner.getBoundingClientRect();
+            const targetClientX = newRect.left + anchorPageX * newScale;
+            const targetClientY = newRect.top + anchorPageY * newScale;
+            const dxScroll = targetClientX - clientX;
+            const dyScroll = targetClientY - clientY;
+            // Vertical: container has scroll room (multi-page stack is tall),
+            // scrollTop works as expected.
+            if (dyScroll !== 0) container.scrollTop += dyScroll;
+            // Horizontal: pages are usually narrower than the container and
+            // centered by flex `align-items: center`, so container.scrollLeft
+            // is pinned to 0 and can't compensate. Use a translateX on
+            // #continuous-container instead — it shifts every page-wrapper by
+            // the same amount and anchors the cursor's PDF-coord under the
+            // cursor. The transform survives renderContinuous's `innerHTML=''`
+            // (only children are replaced). The wider-than-container case
+            // still works because newRect.left already reflects the current
+            // transform, so the next dxScroll calc compensates correctly.
+            if (dxScroll !== 0) {
+              const cc = document.getElementById('continuous-container');
+              if (cc) {
+                const m = (cc.style.transform || '').match(/translateX\(([-\d.]+)px\)/);
+                const currentTx = m ? parseFloat(m[1]) : 0;
+                cc.style.transform = `translateX(${currentTx - dxScroll}px)`;
+              }
+            }
+          }
+        }
         return;
       }
       // Always anchor to pdf-canvas rect. The cursor may be over a non-canvas
