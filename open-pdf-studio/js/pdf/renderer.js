@@ -592,6 +592,15 @@ const _renderedPages = new Set();
 const _renderingPages = new Set();
 let _renderedPagesScale = null; // scale at which pages were rendered
 let _continuousObserver = null;
+// Generation counter for renderContinuous CALLS (not per-page renders).
+// Bumped at function entry. Re-checked after the single await
+// (Promise.all of getPage). If a newer call started in between, the older
+// call bails before appending its wrappers — otherwise rapid ctrl+wheel
+// zoom queues multiple in-flight renderContinuous and they race to append,
+// leaving the DOM with wrappers at MIXED scales (the "two columns of pages
+// at different sizes" symptom observed on Text pdf gecombineerd after
+// scroll-then-rapid-zoom).
+let _renderContinuousCallGen = 0;
 
 // Track active continuous page renders for cancellation
 const _continuousRenderTasks = new Map(); // pageNum -> RenderTask
@@ -904,6 +913,10 @@ export async function reRenderVisibleContinuousPages() {
 
 // Render all pages (continuous mode) — creates placeholders, lazily renders visible pages
 export async function renderContinuous(forceRebuild) {
+  // Bump call-gen FIRST so any in-flight earlier call sees a stale gen
+  // when its Promise.all returns and bails before re-appending wrappers.
+  const _myGen = ++_renderContinuousCallGen;
+
   // Clear search highlights immediately to prevent stale positions during re-render
   clearHighlights();
 
@@ -946,6 +959,11 @@ export async function renderContinuous(forceRebuild) {
     if (extraRotation) vpOpts.rotation = (page.rotate + extraRotation) % 360;
     return { pageNum, viewport: page.getViewport(vpOpts) };
   }));
+  // Race guard: if a newer renderContinuous call started while we were
+  // awaiting Promise.all, it has already cleared the container and may be
+  // appending its own wrappers (or about to). Bail before our for-loop so
+  // we don't pile our wrappers on top of theirs at a stale scale.
+  if (_myGen !== _renderContinuousCallGen) return;
   for (const { pageNum, viewport } of _pageInfo) {
     const pageWrapper = document.createElement('div');
     pageWrapper.className = 'page-wrapper';
