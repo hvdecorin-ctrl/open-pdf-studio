@@ -465,14 +465,6 @@ export function markAnchored() { _anchorActive = true; }
 
 function _render() {
   if (!_ctx || !_canvas || !viewport.filePath) return;
-  // Continuous mode flips `viewport.active = false` so the legacy
-  // doc.scale → renderContinuous flow owns rendering. _render must
-  // skip in that state — its `doc.scale = viewport.zoom` sync at the
-  // bottom would otherwise clobber doc.scale back to the dormant
-  // viewport zoom on every RAF tick where `viewport.dirty` got set
-  // (scroll-triggered re-layout among others), making the continuous
-  // page sizes oscillate as the user scrolls.
-  if (!viewport.active) return;
   // CSS-pixel viewport (backing is dpr-scaled). All math below stays in CSS px;
   // the dpr multiplier is folded into the canvas transform so output
   // hits device pixels and stays crisp on HiDPI displays.
