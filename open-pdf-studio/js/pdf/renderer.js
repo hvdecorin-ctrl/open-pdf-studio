@@ -592,6 +592,14 @@ const _renderedPages = new Set();
 const _renderingPages = new Set();
 let _renderedPagesScale = null; // scale at which pages were rendered
 let _continuousObserver = null;
+// Generation counter for stale-render detection. Bumped on every scale
+// change (renderContinuous / reRenderVisibleContinuousPages); each
+// renderContinuousPage call captures the value at entry and re-checks
+// after every async boundary. A render that started at an older gen
+// neither writes to the canvas nor marks itself complete in
+// _renderedPages, so a rapid zoom sequence cannot leave a page stuck
+// at a stale scale because the slower stale render won the finally race.
+let _continuousRenderGen = 0;
 
 // Track active continuous page renders for cancellation
 const _continuousRenderTasks = new Map(); // pageNum -> RenderTask
@@ -646,6 +654,10 @@ async function renderContinuousPage(pageNum) {
   if (_renderedPages.has(pageNum) || _renderingPages.has(pageNum)) return;
   _renderingPages.add(pageNum);
   let _rendered = false;
+  // Capture the gen at entry — checked after every async boundary so a
+  // stale render (started before the user kept zooming) bails out before
+  // writing pixels at the wrong scale to the now-resized canvas.
+  const _myGen = _continuousRenderGen;
   try {
 
   const pageWrapper = document.querySelector(`.page-wrapper[data-page="${pageNum}"]`);
@@ -663,7 +675,7 @@ async function renderContinuousPage(pageNum) {
   const doc = state.documents[state.activeDocumentIndex];
   if (!doc || !doc.pdfDoc) return;
   const page = await doc.pdfDoc.getPage(pageNum);
-  if (_isStaleDoc(doc)) return; // tab switched while we awaited PDF.js page
+  if (_isStaleDoc(doc) || _myGen !== _continuousRenderGen) return; // tab switched or scale changed
   const extraRotation = getPageRotation(pageNum);
   const vpOpts = { scale: doc.scale };
   if (extraRotation) {
@@ -779,7 +791,13 @@ async function renderContinuousPage(pageNum) {
         scale: doc.scale,
       });
       console.timeEnd(label + ' invoke-render');
-      if (_isStaleDoc(doc)) { console.timeEnd(label); return; }
+      if (_isStaleDoc(doc) || _myGen !== _continuousRenderGen) {
+        // Stale doc OR a later zoom step bumped the gen while Rust was
+        // crunching. Either way, this buffer is for the wrong scale —
+        // drop it before it stomps the canvas at a stale dimension.
+        console.timeEnd(label);
+        return;
+      }
       const _contBytes = rgbaData instanceof Uint8Array ? rgbaData : new Uint8Array(rgbaData);
       if (!_contBytes || _contBytes.length <= 8) {
         state.renderEngine = 'ERROR';
@@ -864,7 +882,12 @@ async function renderContinuousPage(pageNum) {
   _rendered = true;
   } finally {
     _renderingPages.delete(pageNum);
-    if (_rendered) _renderedPages.add(pageNum);
+    // Only commit to _renderedPages if our render is for the CURRENT gen.
+    // A stale render that successfully completed (gen incremented while we
+    // were rendering) must NOT mark the page as rendered — otherwise the
+    // fresh observe-triggered render bails on `_renderedPages.has(pageNum)`
+    // and the page stays stuck at the stale scale.
+    if (_rendered && _myGen === _continuousRenderGen) _renderedPages.add(pageNum);
   }
 }
 
@@ -888,6 +911,12 @@ export async function reRenderVisibleContinuousPages() {
   _renderedPages.clear();
   _renderingPages.clear();
   _renderedPagesScale = scale;
+  // Bump gen so any in-flight render from a previous scale aborts before
+  // writing stale pixels to its canvas (race observed on NKD1a: rapid
+  // zoom-out left pages 1 and 2 stuck at an intermediate scale because
+  // a slower stale render's finally block re-added them to _renderedPages
+  // after this clear).
+  _continuousRenderGen++;
 
   // Resolve every page's viewport in parallel (same pattern as the
   // first-paint loop in renderContinuous), then update wrapper dimensions
@@ -948,6 +977,9 @@ export async function renderContinuous(forceRebuild) {
   _renderedPages.clear();
   _renderingPages.clear();
   _renderedPagesScale = scale;
+  // Bump gen so any in-flight stale render aborts (see comment on the
+  // identical bump in reRenderVisibleContinuousPages).
+  _continuousRenderGen++;
 
   continuousContainer.innerHTML = '';
 
