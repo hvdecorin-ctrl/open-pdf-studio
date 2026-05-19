@@ -513,6 +513,12 @@ body.pdf-cursor-override #canvas-container * {
   position: absolute;
   top: 0;
   left: 0;
+  /* Override `.continuous-container canvas { background: white }` — the annotation
+     overlay sits on top of .pdf-canvas with absolute positioning, and a white
+     background would obscure the rendered page underneath. Box-shadow likewise
+     belongs to the page canvas, not its transparent overlay. */
+  background: transparent;
+  box-shadow: none;
 }
 
 /* PDF Text Edit Tool */
