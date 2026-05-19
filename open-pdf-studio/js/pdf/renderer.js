@@ -1065,28 +1065,6 @@ export async function setViewMode(mode) {
   const doc = getActiveDocument();
   if (!doc?.pdfDoc) return;
 
-  // Continuous-view only handles uniform-size docs cleanly — once pages
-  // have wildly different widths (architectural cover-page + landscape
-  // sheets is the canonical example), flex-centering, cursor-anchor
-  // transforms, and horizontal scroll all interact in ways that produce
-  // visible glitches. Detect mixed page sizes and downgrade to
-  // single-page-per-view in that case; the per-page toolbar paging then
-  // gives the user a deterministic, glitch-free way to read the doc.
-  if (mode === 'continuous' && doc.pdfDoc.numPages > 1) {
-    const sampleCount = Math.min(doc.pdfDoc.numPages, 10);
-    const samples = await Promise.all(
-      Array.from({ length: sampleCount }, (_, i) =>
-        doc.pdfDoc.getPage(i + 1).then(p => p.getViewport({ scale: 1 }))
-      )
-    );
-    const refW = samples[0].width, refH = samples[0].height;
-    const uniform = samples.every(v => Math.abs(v.width - refW) < 1 && Math.abs(v.height - refH) < 1);
-    if (!uniform) {
-      console.log(`[viewMode] mixed page sizes — falling back to single-page (continuous requires uniform dimensions)`);
-      mode = 'single';
-    }
-  }
-
   if (doc) doc.viewMode = mode;
   const singleContainer = document.getElementById('canvas-container');
   const continuousContainer = document.getElementById('continuous-container');
