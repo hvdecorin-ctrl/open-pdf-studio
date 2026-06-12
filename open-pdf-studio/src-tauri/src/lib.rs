@@ -821,6 +821,107 @@ Get-PrinterPort | Where-Object { $_.Name -like '*OpenPDFStudio*print-capture*' -
     }
 }
 
+// ── Virtual-printer job queue ───────────────────────────────────────────
+// With the collection port installed, every print to "Open PDF Printer"
+// lands as spool/latest.pdf. The queue sweeps that into unique job files
+// (so the next print can't overwrite it) and lists them for the in-app
+// merge/reorder dialog.
+
+fn vp_spool_dir() -> Result<std::path::PathBuf, String> {
+    let base = dirs::data_local_dir().ok_or("local data dir unknown")?;
+    Ok(base.join("OpenPDFPrinter").join("spool"))
+}
+
+/// Sweep the spool: rename a finished `latest.pdf` into `job_<epoch>.pdf`.
+/// Returns true when a new job was collected. The driver may still be
+/// writing — only collect once the file has been stable for a moment.
+#[tauri::command]
+fn virtual_printer_collect() -> Result<bool, String> {
+    let dir = vp_spool_dir()?;
+    let latest = dir.join("latest.pdf");
+    if !latest.exists() {
+        return Ok(false);
+    }
+    let meta = std::fs::metadata(&latest).map_err(|e| e.to_string())?;
+    if meta.len() == 0 {
+        return Ok(false);
+    }
+    if let Ok(modified) = meta.modified() {
+        if let Ok(age) = modified.elapsed() {
+            if age.as_millis() < 1500 {
+                return Ok(false);
+            }
+        }
+    }
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0);
+    let job = dir.join(format!("job_{stamp}.pdf"));
+    match std::fs::rename(&latest, &job) {
+        Ok(()) => Ok(true),
+        // Still locked by the spooler — pick it up on the next sweep.
+        Err(_) => Ok(false),
+    }
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct VpJob {
+    file: String,
+    path: String,
+    size: u64,
+    modified_ms: u64,
+    pages: u32,
+}
+
+/// List collected jobs (oldest first — print order).
+#[tauri::command]
+fn virtual_printer_jobs() -> Result<Vec<VpJob>, String> {
+    let dir = vp_spool_dir()?;
+    let mut jobs = Vec::new();
+    if let Ok(rd) = std::fs::read_dir(&dir) {
+        for e in rd.flatten() {
+            let name = e.file_name().to_string_lossy().to_string();
+            if !(name.starts_with("job_") && name.ends_with(".pdf")) {
+                continue;
+            }
+            let meta = match e.metadata() {
+                Ok(m) => m,
+                Err(_) => continue,
+            };
+            let modified_ms = meta
+                .modified()
+                .ok()
+                .and_then(|m| m.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|d| d.as_millis() as u64)
+                .unwrap_or(0);
+            let pages = lopdf::Document::load(e.path())
+                .map(|d| d.get_pages().len() as u32)
+                .unwrap_or(0);
+            jobs.push(VpJob {
+                file: name,
+                path: e.path().to_string_lossy().to_string(),
+                size: meta.len(),
+                modified_ms,
+                pages,
+            });
+        }
+    }
+    jobs.sort_by_key(|j| j.modified_ms);
+    Ok(jobs)
+}
+
+/// Delete one collected job. Basename only — no path traversal.
+#[tauri::command]
+fn virtual_printer_delete_job(file: String) -> Result<(), String> {
+    if file.contains('/') || file.contains('\\') || !file.starts_with("job_") || !file.ends_with(".pdf") {
+        return Err("invalid job file".into());
+    }
+    let p = vp_spool_dir()?.join(file);
+    std::fs::remove_file(&p).map_err(|e| e.to_string())
+}
+
 /// Check whether the "Open PDF Printer" virtual printer is installed.
 /// Also returns `true` for the legacy "Open PDF Studio" name so users on
 /// an older installation see "installed" until they reinstall.
@@ -1785,9 +1886,13 @@ pub fn run(opts: StartupOpts) {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_os::init())
         .plugin(tauri_plugin_process::init())
-        .plugin(tauri_plugin_drag::init())
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_store::Builder::default().build());
+    // Drag-out window detach is desktop-only (no mobile backend in the crate).
+    #[cfg(not(target_os = "android"))]
+    {
+        builder = builder.plugin(tauri_plugin_drag::init());
+    }
 
     // Single-instance and updater plugins are desktop-only.
     //
@@ -1961,6 +2066,9 @@ pub fn run(opts: StartupOpts) {
             install_virtual_printer,
             remove_virtual_printer,
             is_virtual_printer_installed,
+            virtual_printer_collect,
+            virtual_printer_jobs,
+            virtual_printer_delete_job,
             open_pdf_in_default_viewer,
             get_printer_spool_dir,
             list_printer_spool,

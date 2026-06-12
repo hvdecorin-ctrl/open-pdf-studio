@@ -109,11 +109,12 @@ export function moveTargets() {
   return tryStartGMove();
 }
 
-/** 'CO': duplicate the targets and immediately move the copies with the
- *  cursor (one interactive session, commit on click). */
+/** 'CO': duplicate the targets and move the copies AutoCAD-style — the
+ *  first click picks the (object-snapped) BASE point, the second click (or
+ *  a typed distance) drops the copies. One interactive session. */
 export function copyAndMove() {
   const clones = duplicateTargets();
   if (clones.length === 0) return false;
-  tryStartGMove();
+  tryStartGMove({ basePoint: true });
   return true;
 }

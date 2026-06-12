@@ -42,11 +42,17 @@ export default function VirtualPrinterTab() {
     setBusy(true);
     try {
       const { invoke } = await import('../../../core/platform.js');
-      await invoke('install_virtual_printer');
+      // Collection port: prints land in the spool dir so the in-app print
+      // queue (sort/merge dialog) picks them up — from ANY application.
+      await invoke('install_virtual_printer', { useCollection: true });
       setStatus(tCommon('installed'));
       setStatusColor('#2e7d32');
       setShowInstall(false);
       setShowRemove(true);
+      // Start watching the spool right away (no restart needed).
+      import('../../stores/printQueueStore.js')
+        .then(m => m.startPrintQueueWatcher())
+        .catch(() => {});
     } catch (err) {
       setStatus(t('virtualPrinter.installationFailed'));
       setStatusColor('#c62828');

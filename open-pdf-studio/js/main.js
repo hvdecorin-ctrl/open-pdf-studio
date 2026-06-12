@@ -216,6 +216,13 @@ async function init() {
   // entire downstream init chain). Inert outside Tauri.
   initMcpBridge().catch(e => console.warn('initMcpBridge failed:', e));
 
+  // "Open PDF Printer" job queue: watch the spool so prints from ANY
+  // application pop the in-app sort/merge dialog. No-op when the virtual
+  // printer isn't installed.
+  import('./solid/stores/printQueueStore.js')
+    .then(m => m.startPrintQueueWatcher())
+    .catch(() => {});
+
   // Show the window after frontend init. The previous double-rAF paint-wait
   // gate permanently hides the window on WebKitGTK builds where accelerated
   // compositing stalls before the first paint (observed on Linux Mint 22.3 +

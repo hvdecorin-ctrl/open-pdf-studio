@@ -43,6 +43,12 @@ import { applyTemplateRealSize } from '../symbols/real-size.js';
 import { getEditTargets, trackerFresh } from './edit-ops.js';
 import { performSnap, collectSnapPoints } from './snap-engine.js';
 import { getCachedPdfSnapPoints } from './pdf-snap-extractor.js';
+import {
+  enterTypeLengthMode, exitTypeLengthMode, typeLengthHasBuffer,
+  consumeKey as typeLengthConsumeKey, applyToEndpoint as typeLengthApply,
+  setTypeLengthCursorScreen,
+} from './type-length-input.js';
+import { snapAngle } from '../utils/helpers.js';
 
 // Ids of every annotation in the move session — the moving selection must
 // never snap onto itself (single OR multi).
@@ -192,6 +198,8 @@ function onMouseMove(e) {
   e.stopPropagation();
   const cRaw = pointerToAppCoords(e);
   if (!cRaw) return;
+  // Keep the coord-input HUD glued to the cursor.
+  setTypeLengthCursorScreen(e.clientX, e.clientY);
   // Base-point flow ('mv'): nothing moves until the base point is clicked,
   // but the snap indicator must track the cursor so the user SEES which
   // corner/endpoint the pick will land on (own corners included).
@@ -209,27 +217,64 @@ function onMouseMove(e) {
     mode.startX = cRaw.x;
     mode.startY = cRaw.y;
     mode.startSeeded = true;
+    enterTypeLengthMode(mode.startX, mode.startY);
     return;
   }
-  // Two independent snap candidates against the RAW cursor; the closest one
-  // wins (stacking them would double-correct):
+  // Shift = CAD ortho/angle constraint: snap the start→cursor direction to
+  // preferences.angleSnapDegrees multiples (45°). The constrained cursor is
+  // the basis for everything below (typed distance follows the snapped ray).
+  let cur = cRaw;
+  if (e.shiftKey && state.preferences.enableAngleSnap) {
+    const ddx = cRaw.x - mode.startX;
+    const ddy = cRaw.y - mode.startY;
+    const len = Math.hypot(ddx, ddy);
+    if (len > 1e-6) {
+      const ang = snapAngle(Math.atan2(ddy, ddx) * (180 / Math.PI),
+        state.preferences.angleSnapDegrees || 45) * (Math.PI / 180);
+      cur = { x: mode.startX + len * Math.cos(ang), y: mode.startY + len * Math.sin(ang) };
+    }
+  }
+  mode.lastCursor = cur;
+
+  // Typed coordinate input ("100", "100,50", "100<45", "=x,y") overrides
+  // every snap: the number IS the instruction.
+  const typed = typeLengthApply(mode.startX, mode.startY, cur.x, cur.y);
+  if (typed.constrained) {
+    let dx = typed.x - mode.startX;
+    let dy = typed.y - mode.startY;
+    if (mode.lockAxis === 'x') dy = 0;
+    else if (mode.lockAxis === 'y') dx = 0;
+    state.lastSnapResult = null;
+    mode.lastDx = dx;
+    mode.lastDy = dy;
+    applyDeltaToAll(dx, dy);
+    redraw();
+    return;
+  }
+
+  // Two independent snap candidates against the (possibly angle-constrained)
+  // cursor; the closest one wins (stacking them would double-correct):
   //   1. cursor snap — the cursor itself lands on a static point (also the
   //      precision channel of the 'mv' base-point flow)
   //   2. object snap — a corner/endpoint of the MOVING selection lands on a
   //      static point ("hoek van het element" klikt vast)
-  let dx = cRaw.x - mode.startX;
-  let dy = cRaw.y - mode.startY;
+  let dx = cur.x - mode.startX;
+  let dy = cur.y - mode.startY;
   if (mode.lockAxis === 'x') dy = 0;
   else if (mode.lockAxis === 'y') dx = 0;
 
   let indicator = null;
-  const cursorSnap = _snapSessionPoint(cRaw);
-  const cursorDist = cursorSnap.snapped ? Math.hypot(cursorSnap.x - cRaw.x, cursorSnap.y - cRaw.y) : Infinity;
+  // While Shift constrains the angle, object/cursor snaps are off — the
+  // constraint is the instruction.
+  const constrainAngle = e.shiftKey && state.preferences.enableAngleSnap;
+  const cursorSnap = constrainAngle ? { snapped: false } : _snapSessionPoint(cur);
+  const cursorDist = cursorSnap.snapped ? Math.hypot(cursorSnap.x - cur.x, cursorSnap.y - cur.y) : Infinity;
   const doc = getActiveDocument();
   const tol = (state.preferences.objectSnapRadius || 12) / (doc?.scale || 1.5);
   // Object snap: skipped while an axis is locked (it would break the lock)
   // and in the base-point flow (the user picked their reference point).
-  const objSnap = (!mode.lockAxis && !mode.basePointFlow) ? _bestObjectSnap(dx, dy, tol) : null;
+  const objSnap = (!mode.lockAxis && !mode.basePointFlow && !constrainAngle)
+    ? _bestObjectSnap(dx, dy, tol) : null;
 
   if (objSnap && objSnap.dist <= cursorDist) {
     dx += objSnap.ddx;
@@ -256,6 +301,34 @@ function onKeyDown(e) {
   // be entered while typing, but guard anyway).
   const inInput = e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA';
   if (inInput) return;
+
+  // CAD coord-input first: typed distances ("100"), offsets ("100,50"),
+  // polar ("100<45") and absolute ("=x,y") drive the move exactly. Enter
+  // with a valid buffer commits at the typed position; un-handled keys
+  // (Escape with empty buffer, x/y, plain Enter) fall through below.
+  if (!mode.awaitingBase && mode.startSeeded) {
+    const r = typeLengthConsumeKey(e.key);
+    if (r.handled) {
+      e.preventDefault();
+      e.stopPropagation();
+      const lc = mode.lastCursor || { x: mode.startX + 1, y: mode.startY };
+      if (r.committed) {
+        const p = typeLengthApply(mode.startX, mode.startY, lc.x, lc.y);
+        applyDeltaToAll(p.x - mode.startX, p.y - mode.startY);
+        mode.lastDx = p.x - mode.startX;
+        mode.lastDy = p.y - mode.startY;
+        commitMove();
+        return;
+      }
+      // Buffer edited (or cleared via Esc): live re-preview at the cursor.
+      const p = typeLengthApply(mode.startX, mode.startY, lc.x, lc.y);
+      mode.lastDx = p.x - mode.startX;
+      mode.lastDy = p.y - mode.startY;
+      applyDeltaToAll(mode.lastDx, mode.lastDy);
+      redraw();
+      return;
+    }
+  }
 
   if (e.key === 'Escape') {
     e.preventDefault();
@@ -332,6 +405,9 @@ function onMouseDown(e) {
         mode.startSeeded = true;
         mode.awaitingBase = false;
         state.lastSnapResult = snapped.snapped ? snapped : null;
+        // From the base point on, typed distances steer the move ("100",
+        // "100,50", "100<45", "=x,y") — scale-region aware at the anchor.
+        enterTypeLengthMode(mode.startX, mode.startY);
       }
       return;
     }
@@ -372,6 +448,7 @@ function detachListeners() {
 
 function endMode() {
   detachListeners();
+  exitTypeLengthMode();
   state.gMoveMode = null;
   state.lastSnapResult = null;
   mode = null;
@@ -473,12 +550,16 @@ export function tryStartGMove(options = {}) {
     basePointFlow: !!options.basePoint,
     lastDx: 0,
     lastDy: 0,
+    lastCursor: hasTracker ? { x: startX, y: startY } : null,
     ownPoints: [],
     staticPoints: []
   };
   // Candidates for corner-to-corner object snap; own points translate with
   // the delta, static geometry doesn't change during the session.
   _cacheObjectSnapPoints();
+  // Typed distances work from the moment the session has an anchor (plain G
+  // with a fresh cursor); the 'mv' flow re-anchors at the picked base point.
+  if (hasTracker && !options.basePoint) enterTypeLengthMode(startX, startY);
   state.gMoveMode = mode;
   document.body.style.cursor = 'move';
   attachListeners();

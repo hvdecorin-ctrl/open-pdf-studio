@@ -123,6 +123,47 @@ $a = (Call 'app_get_annotation' @{id=$box4.id}).annotation
 $t6ok = ([Math]::Abs($a.x - 300) -lt 0.1) -and ([Math]::Abs($a.y - 240) -lt 0.1)
 Assert 'T6 mv base-point snap' $t6ok "x=$([Math]::Round($a.x,2)) y=$([Math]::Round($a.y,2)) (verwacht exact 300,240)"
 
+# ── T7: 'mv' + typed ABSOLUTE coordinate ("=x,y") drops exactly there ───
+$box7 = Call 'app_create_annotation' @{type='box'; page=1; props=@{x=200; y=400; width=100; height=60}}
+$null = Call 'app_select_annotation' @{id=$box7.id}
+MoveTo 303 462
+$null = Call 'app_key' @{key='m'}
+$null = Call 'app_key' @{key='v'}
+MoveTo 303 462
+ClickAt 303 462          # base point snaps to own corner (300,460)
+Start-Sleep -Milliseconds 200
+MoveTo 320 440           # any tracking move; the typed coord overrides it
+foreach ($k in @('=','3','5','0',',','4','0','0')) { $null = Call 'app_key' @{key=$k} }
+$null = Call 'app_key' @{key='Enter'}
+Start-Sleep -Milliseconds 300
+$a = (Call 'app_get_annotation' @{id=$box7.id}).annotation
+$t7ok = ([Math]::Abs($a.x - 250) -lt 0.1) -and ([Math]::Abs($a.y - 340) -lt 0.1)
+Assert 'T7 mv typed =x,y' $t7ok "x=$([Math]::Round($a.x,2)) y=$([Math]::Round($a.y,2)) (verwacht exact 250,340)"
+$null = Call 'app_delete_annotation' @{id=$box7.id}
+
+# ── T8: 'co' copy with base point — clone lands corner-on-endpoint ──────
+$box8 = Call 'app_create_annotation' @{type='box'; page=1; props=@{x=200; y=100; width=100; height=60}}
+$before = (Call 'app_list_annotations' @{}).count
+$null = Call 'app_select_annotation' @{id=$box8.id}
+MoveTo 250 130
+$null = Call 'app_key' @{key='c'}
+$null = Call 'app_key' @{key='o'}
+Start-Sleep -Milliseconds 200
+MoveTo 303 162
+ClickAt 303 162          # base point on the CLONE's own corner (300,160)
+Start-Sleep -Milliseconds 200
+MoveTo 320 180           # any tracking move; the typed coord overrides it
+foreach ($k in @('=','5','0','0',',','5','0','0')) { $null = Call 'app_key' @{key=$k} }
+$null = Call 'app_key' @{key='Enter'}
+Start-Sleep -Milliseconds 300
+$after = Call 'app_list_annotations' @{}
+$orig = (Call 'app_get_annotation' @{id=$box8.id}).annotation
+# Base (300,160) -> typed end (500,500): delta (200,340) -> clone at (400,440)
+$clone = $after.annotations | Where-Object { $_.type -eq 'box' -and $_.id -ne $box8.id -and [Math]::Abs($_.x - 400) -lt 0.5 -and [Math]::Abs($_.y - 440) -lt 0.5 } | Select-Object -First 1
+$t8ok = ($after.count -eq $before + 1) -and ($null -ne $clone) -and
+        ([Math]::Abs($orig.x - 200) -lt 0.1) -and ([Math]::Abs($orig.y - 100) -lt 0.1)
+Assert 'T8 co base-point copy' $t8ok "count $before->$($after.count) orig=($([Math]::Round($orig.x,1)),$([Math]::Round($orig.y,1))) clone=$(if($clone){"($([Math]::Round($clone.x,1)),$([Math]::Round($clone.y,1)))"}else{'-'})"
+
 # ── T5: far-field move stays exact ──────────────────────────────────────
 $box3 = Call 'app_create_annotation' @{type='box'; page=1; props=@{x=600; y=100; width=60; height=40}}
 $null = Call 'app_select_annotation' @{id=$box3.id}

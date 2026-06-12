@@ -381,7 +381,11 @@ export default function PrintDialog(props) {
                 >
                   <For each={printerList()}>
                     {(printer) => (
-                      <option value={printer.Name}>{printer.Name}</option>
+                      /* selected-attribute per option: the list arrives async,
+                         so a bare value= on the <select> can be applied before
+                         the options exist and silently falls back to option 0
+                         — the OS default would never show as preselected. */
+                      <option value={printer.Name} selected={printer.Name === selectedPrinter()}>{printer.Name}</option>
                     )}
                   </For>
                 </select>

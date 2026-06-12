@@ -130,6 +130,10 @@ jobs:
           cargo build --release -p pdfium-worker --target aarch64-apple-darwin
           cargo build --release -p pdfium-worker --target x86_64-apple-darwin
           mkdir -p open-pdf-studio/src-tauri/binaries
+          # tauri-build validates the sidecar PER ARCH during the per-target
+          # cargo builds of a universal bundle, so all three names must exist.
+          cp target/aarch64-apple-darwin/release/pdfium-worker open-pdf-studio/src-tauri/binaries/pdfium-worker-aarch64-apple-darwin
+          cp target/x86_64-apple-darwin/release/pdfium-worker open-pdf-studio/src-tauri/binaries/pdfium-worker-x86_64-apple-darwin
           lipo -create -output open-pdf-studio/src-tauri/binaries/pdfium-worker-universal-apple-darwin \
             target/aarch64-apple-darwin/release/pdfium-worker \
             target/x86_64-apple-darwin/release/pdfium-worker
@@ -142,27 +146,18 @@ jobs:
           $conf.bundle.windows.nsis.installMode = "currentUser"
           $conf | ConvertTo-Json -Depth 10 | Set-Content src-tauri/tauri.conf.json
 
-      - name: Pre-build cargo (Windows) to materialize WebView2Loader.dll
+      # WebView2Loader.dll is committed in src-tauri/ and bundled via
+      # bundle.resources — just verify it's there. (The old pre-build step
+      # searched src-tauri/target, which no longer exists since the crate
+      # moved into the workspace: the target dir lives at the repo root.)
+      - name: Verify WebView2Loader.dll resource (Windows)
         if: contains(matrix.target, 'windows')
         shell: pwsh
-        working-directory: open-pdf-studio/src-tauri
         run: |
-          cargo build --release
-          $dll = Get-ChildItem -Path 'target/release/build' -Recurse -Filter 'WebView2Loader.dll' -ErrorAction SilentlyContinue |
-            Where-Object { $_.FullName -like '*\x64\*' } |
-            Select-Object -First 1
-          if ($dll) {
-            Copy-Item -Path $dll.FullName -Destination 'target/release/WebView2Loader.dll' -Force
-            Write-Output "Copied WebView2Loader.dll from $($dll.FullName)"
+          if (Test-Path 'src-tauri/WebView2Loader.dll') {
+            Write-Output "OK: src-tauri/WebView2Loader.dll present (bundled as resource)"
           } else {
-            Write-Output "WARNING: WebView2Loader.dll not found under target/release/build"
-            Get-ChildItem -Path 'target/release' -Recurse -Filter 'WebView2Loader.dll' -ErrorAction SilentlyContinue |
-              ForEach-Object { Write-Output "  found: $($_.FullName)" }
-          }
-          if (Test-Path 'target/release/WebView2Loader.dll') {
-            Write-Output "OK: target/release/WebView2Loader.dll is present"
-          } else {
-            Write-Error "WebView2Loader.dll missing from target/release - NSIS bundle will not include it"
+            Write-Error "src-tauri/WebView2Loader.dll missing - NSIS bundle would lack the loader"
             exit 1
           }
 
@@ -197,7 +192,8 @@ jobs:
           signing-account-name: ${{ secrets.AZURE_TRUSTED_SIGNING_ACCOUNT_NAME }}
           certificate-profile-name: ${{ secrets.AZURE_CERTIFICATE_PROFILE_NAME }}
           cache-dependencies: false
-          files-folder: ${{ github.workspace }}/open-pdf-studio/src-tauri/target/release/bundle/nsis
+          # Workspace target dir lives at the repo root (src-tauri is a member)
+          files-folder: ${{ github.workspace }}/target/release/bundle/nsis
           files-folder-filter: exe
           files-folder-depth: 1
           file-digest: SHA256
@@ -211,7 +207,8 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           $VERSION = "${{ needs.create-release.outputs.version }}"
-          $NSIS_DIR = "src-tauri/target/release/bundle/nsis"
+          # Workspace target dir lives at the repo root (src-tauri is a member)
+          $NSIS_DIR = "$env:GITHUB_WORKSPACE/target/release/bundle/nsis"
 
           $EXE = Get-ChildItem "$NSIS_DIR/*-setup.exe" | Select-Object -First 1
           $ZIP = Get-ChildItem "$NSIS_DIR/*.nsis.zip" | Select-Object -First 1
@@ -277,7 +274,8 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           $VERSION = "${{ needs.create-release.outputs.version }}"
-          $NSIS_DIR = "src-tauri/target/release/bundle/nsis"
+          # Workspace target dir lives at the repo root (src-tauri is a member)
+          $NSIS_DIR = "$env:GITHUB_WORKSPACE/target/release/bundle/nsis"
           $EXE = Get-ChildItem "$NSIS_DIR/*-setup.exe" | Select-Object -First 1
           # Rename: "Open PDF Studio_x.y.z_x64-setup.exe" -> "Open PDF Studio_x.y.z_x64_user-setup.exe"
           $NEW_NAME = $EXE.Name -replace '_x64-setup\.exe$', '_x64_user-setup.exe'

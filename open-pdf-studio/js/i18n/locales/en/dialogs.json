@@ -12,6 +12,18 @@
     "other": "Other",
     "customSize": "Custom..."
   },
+  "printQueue": {
+    "title": "Print jobs — Open PDF Printer",
+    "empty": "No print jobs yet. Print from any application to \"Open PDF Printer\" and the job shows up here.",
+    "pages": "Pages",
+    "merge": "Merge",
+    "open": "Open",
+    "moveUp": "Move up",
+    "moveDown": "Move down",
+    "merging": "Merging…",
+    "opening": "Opening…",
+    "mergedName": "Merged.pdf"
+  },
   "print": {
     "title": "Print",
     "printer": "Printer",

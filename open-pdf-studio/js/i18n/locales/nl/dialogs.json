@@ -12,6 +12,18 @@
     "other": "Overig",
     "customSize": "Aangepast..."
   },
+  "printQueue": {
+    "title": "Afdrukopdrachten — Open PDF Printer",
+    "empty": "Nog geen afdrukopdrachten. Print vanuit een programma naar \"Open PDF Printer\" en de opdracht verschijnt hier.",
+    "pages": "Bladzijden",
+    "merge": "Samenvoegen",
+    "open": "Openen",
+    "moveUp": "Omhoog",
+    "moveDown": "Omlaag",
+    "merging": "Samenvoegen…",
+    "opening": "Openen…",
+    "mergedName": "Samengevoegd.pdf"
+  },
   "print": {
     "title": "Afdrukken",
     "printer": "Printer",
