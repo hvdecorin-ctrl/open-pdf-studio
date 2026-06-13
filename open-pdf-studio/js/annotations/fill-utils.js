@@ -14,10 +14,3 @@
 export function hasFill(color) {
   return !!color && color !== 'none' && color !== 'transparent';
 }
-
-// Normalise a fill value to the canonical form: a real color, or 'none'.
-// Use when storing fill on an annotation so 'transparent'/null collapse to
-// the single sentinel the rest of the app understands.
-export function normalizeFill(color) {
-  return hasFill(color) ? color : 'none';
-}

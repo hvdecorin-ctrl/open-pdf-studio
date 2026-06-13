@@ -20,6 +20,87 @@ import { saveWatermarksToPages } from './saver/watermarks.js';
 import { saveBookmarksToOutline } from './saver/bookmarks.js';
 import { catmullRomSpline } from '../tools/tools/spline-tool.js';
 
+// ── Rotated-page coordinate remap ──────────────────────────────────────────
+// On a page with /Rotate 90/180/270 the annotation coordinates live in the
+// DISPLAYED (rotated) visual space, but the PDF page box (CropBox) is unrotated.
+// The save-time convert helpers only know the unrotated box, so without
+// compensation the saved /Rect lands rotated and annotations drift on reopen
+// (the loader, via pdf.js viewport, IS rotation-aware). We remap every visual
+// coordinate into the UNROTATED page frame once, up front, so the existing
+// convert + appearance code produces correct PDF coordinates for every type.
+//
+// The map is the inverse of pdf.js viewport.convertToViewportPoint, so that
+// naiveConvert(remappedPoint) === rotationAwareConvert(originalPoint). cw/ch are
+// the UNROTATED page-box width/height. rot 0 is identity (callers skip it), so
+// non-rotated pages are completely unaffected.
+function _rotVisualMapper(rot, cw, ch) {
+  switch (((rot % 360) + 360) % 360) {
+    case 90:  return (x, y) => ({ x: y,      y: ch - x });
+    case 180: return (x, y) => ({ x: cw - x, y: ch - y });
+    case 270: return (x, y) => ({ x: cw - y, y: x });
+    default:  return (x, y) => ({ x, y });
+  }
+}
+
+// Map a rect's two corners and re-derive an axis-aligned rect (width/height
+// swap under 90/270).
+function _remapRect(obj, m) {
+  const a = m(obj.x, obj.y);
+  const b = m(obj.x + obj.width, obj.y + obj.height);
+  return { x: Math.min(a.x, b.x), y: Math.min(a.y, b.y),
+           width: Math.abs(b.x - a.x), height: Math.abs(b.y - a.y) };
+}
+
+function remapAnnotationForRotatedPage(annRaw, rot, cw, ch) {
+  const m = _rotVisualMapper(rot, cw, ch);
+  const ann = { ...annRaw };
+  // Bounding rect (also covers box/circle/textbox/etc. dimensions).
+  if (['x', 'y', 'width', 'height'].every(k => typeof ann[k] === 'number')) {
+    Object.assign(ann, _remapRect(ann, m));
+  } else if (typeof ann.x === 'number' && typeof ann.y === 'number') {
+    Object.assign(ann, m(ann.x, ann.y));
+  }
+  // Scalar coordinate pairs.
+  const PAIRS = [
+    ['startX', 'startY'], ['endX', 'endY'], ['centerX', 'centerY'],
+    ['arrowX', 'arrowY'], ['kneeX', 'kneeY'], ['armOriginX', 'armOriginY'],
+    ['leaderStartX', 'leaderStartY'], ['leaderEndX', 'leaderEndY'],
+    ['labelX', 'labelY'], ['cx', 'cy'],
+  ];
+  for (const [kx, ky] of PAIRS) {
+    if (typeof ann[kx] === 'number' && typeof ann[ky] === 'number') {
+      const p = m(ann[kx], ann[ky]); ann[kx] = p.x; ann[ky] = p.y;
+    }
+  }
+  // Nested {x,y} objects.
+  for (const k of ['vertex', 'point1', 'point2', 'at']) {
+    const o = ann[k];
+    if (o && typeof o.x === 'number' && typeof o.y === 'number') ann[k] = { ...o, ...m(o.x, o.y) };
+  }
+  // Arrays of {x,y} points.
+  for (const k of ['points', 'path', 'controlPoints', 'vertices']) {
+    if (Array.isArray(ann[k])) ann[k] = ann[k].map(p => ({ ...p, ...m(p.x, p.y) }));
+  }
+  // Holes: array of point rings.
+  if (Array.isArray(ann.holes)) {
+    ann.holes = ann.holes.map(r => Array.isArray(r) ? r.map(p => ({ ...p, ...m(p.x, p.y) })) : r);
+  }
+  // Text-markup rectangles (highlight/underline/strikeout quadpoints).
+  if (Array.isArray(ann.rects)) {
+    ann.rects = ann.rects.map(r => (typeof r.width === 'number') ? { ...r, ..._remapRect(r, m) } : r);
+  }
+  // Textbox multi-leaders.
+  if (Array.isArray(ann.leaders)) {
+    ann.leaders = ann.leaders.map(l => {
+      const nl = { ...l };
+      if (typeof l.tipX === 'number' && typeof l.tipY === 'number') { const p = m(l.tipX, l.tipY); nl.tipX = p.x; nl.tipY = p.y; }
+      if (typeof l.kneeX === 'number' && typeof l.kneeY === 'number') { const p = m(l.kneeX, l.kneeY); nl.kneeX = p.x; nl.kneeY = p.y; }
+      return nl;
+    });
+  }
+  return ann;
+}
+
 // Save PDF with annotations
 export async function savePDF(saveAsPath = null) {
   const activeDoc = getActiveDocument();
@@ -128,6 +209,12 @@ export async function savePDF(saveAsPath = null) {
         page.setRotation(degrees(existingDeg + appRotation));
       }
 
+      // Total displayed rotation of this page (native /Rotate + any in-app
+      // rotation just applied). Annotation coordinates are stored in this
+      // rotated visual space; on rotated pages we remap them to the unrotated
+      // page frame before writing so they don't drift on reopen.
+      const pageRot = (((page.getRotation().angle) % 360) + 360) % 360;
+
       const pageAnnotations = annotationsByPage[pageNum] || [];
 
       // Build annotations array: keep existing annotations we don't handle (widgets, links, etc.)
@@ -163,7 +250,11 @@ export async function savePDF(saveAsPath = null) {
       const convertY = (canvasY) => viewTop - canvasY;
 
       // Add our annotations
-      for (const ann of pageAnnotations) {
+      for (const annRaw of pageAnnotations) {
+        // On rotated pages, remap visual coords into the unrotated page frame
+        // so the convert helpers below produce correct PDF coordinates. rot 0
+        // returns the annotation unchanged (non-rotated pages untouched).
+        const ann = pageRot ? remapAnnotationForRotatedPage(annRaw, pageRot, cropBox.width, cropBox.height) : annRaw;
         const colorArr = hexToColorArray(ann.color || '#000000');
         const opacity = ann.opacity !== undefined ? ann.opacity : 1;
         const borderWidth = ann.lineWidth ?? 2;
@@ -219,6 +310,7 @@ export async function savePDF(saveAsPath = null) {
           }
 
           case 'mask': // wipeout — Square with white IC + OPS_Subtype (set below)
+          case 'redaction': // redaction MARK — Square + OPS_Subtype (set below)
           case 'box': {
             // Square annotation
             let bx1 = convertX(ann.x);
@@ -268,6 +360,15 @@ export async function savePDF(saveAsPath = null) {
             if (ann.type === 'mask') {
               annDictObj.OPS_Subtype = PDFString.of('mask');
               annDictObj.IC = hexToColorArray('#ffffff');
+            }
+            // Redaction MARK (not yet applied): round-trip via the subtype key so
+            // pending marks survive save+reopen instead of being silently dropped.
+            // Other viewers degrade to a plain filled square. (Applying a
+            // redaction converts it to a permanent black box — see redaction.js.)
+            if (ann.type === 'redaction') {
+              const rcol = (typeof ann.overlayColor === 'string' && ann.overlayColor.startsWith('#')) ? ann.overlayColor : '#000000';
+              annDictObj.OPS_Subtype = PDFString.of('redaction');
+              annDictObj.IC = hexToColorArray(rcol);
             }
 
             if (ann.rotation) annDictObj.OPS_Rotation = ann.rotation;

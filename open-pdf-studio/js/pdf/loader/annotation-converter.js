@@ -177,6 +177,21 @@ export async function convertPdfAnnotation(annot, pageNum, viewport, stampImageM
           opacity: 1,
         });
       }
+      // Redaction mark: Square + OPS_Subtype 'redaction' — restore the pending
+      // mark (rendered as a red hatched overlay; overlayColor is the black-out
+      // colour used when the redaction is applied).
+      if (extraColors.opsSubtype === 'redaction') {
+        const rdRect = convertRect(annot.rect);
+        return createAnnotation({
+          ...baseProps,
+          type: 'redaction',
+          x: rdRect.x,
+          y: rdRect.y,
+          width: rdRect.width,
+          height: rdRect.height,
+          overlayColor: extraColors.ic || '#000000',
+        });
+      }
       // Check for scheduleTable custom type
       if (extraColors.opsSubtype === 'scheduleTable') {
         const stRect = convertRect(annot.rect);
@@ -910,6 +925,9 @@ export async function convertPdfAnnotation(annot, pageNum, viewport, stampImageM
         if (Math.abs(ftRotation) <= 1) ftRotation = 0;
       }
 
+      // Rotation-aware viewport rect — its width/height already account for the
+      // page /Rotate (they SWAP vs the raw PDF Rect on 90/270 pages).
+      const ftRectVp = convertRect(annot.rect);
       // Recover the original (unrotated) textbox dimensions from Rect.
       const rectW = rect[2] - rect[0];
       const rectH = rect[3] - rect[1];
@@ -938,11 +956,13 @@ export async function convertPdfAnnotation(annot, pageNum, viewport, stampImageM
           }
         }
       } else {
-        ftWidth = rectW;
-        ftHeight = rectH;
+        // No text rotation: the box is axis-aligned in visual space, so the
+        // rotation-aware viewport rect gives the correct visual size. Using raw
+        // rectW/rectH left textboxes mis-sized and shifted on /Rotate 90/270 pages.
+        ftWidth = ftRectVp.width;
+        ftHeight = ftRectVp.height;
       }
       // Position: center of the Rect (bounding box center = rotated textbox center)
-      const ftRectVp = convertRect(annot.rect);
       const cx = ftRectVp.x + ftRectVp.width / 2;
       const cy = ftRectVp.y + ftRectVp.height / 2;
       const ftX = cx - ftWidth / 2;
