@@ -9,6 +9,7 @@ export default function VirtualPrinterTab() {
   const [statusColor, setStatusColor] = createSignal('#666');
   const [showInstall, setShowInstall] = createSignal(false);
   const [showRemove, setShowRemove] = createSignal(false);
+  const [showReconfigure, setShowReconfigure] = createSignal(false);
   const [busy, setBusy] = createSignal(false);
 
   onMount(() => {
@@ -18,12 +19,23 @@ export default function VirtualPrinterTab() {
   async function checkStatus() {
     setShowInstall(false);
     setShowRemove(false);
+    setShowReconfigure(false);
     try {
       const { invoke } = await import('../../../core/platform.js');
       const installed = await invoke('is_virtual_printer_installed');
       if (installed) {
-        setStatus(tCommon('installed'));
-        setStatusColor('#2e7d32');
+        // Installed — but is it in SILENT CATCH mode, or the legacy
+        // save-dialog (PORTPROMPT) port? Offer to reconfigure if the latter.
+        let catchMode = false;
+        try { catchMode = await invoke('virtual_printer_catch_enabled'); } catch {}
+        if (catchMode) {
+          setStatus(t('virtualPrinter.catchActive') || 'Geïnstalleerd — PDF-opvang actief');
+          setStatusColor('#2e7d32');
+        } else {
+          setStatus(t('virtualPrinter.saveDialogMode') || 'Geïnstalleerd — toont nog een opslaan-venster');
+          setStatusColor('#b26a00');
+          setShowReconfigure(true);
+        }
         setShowRemove(true);
       } else {
         setStatus(tCommon('notInstalled'));
@@ -45,14 +57,13 @@ export default function VirtualPrinterTab() {
       // Collection port: prints land in the spool dir so the in-app print
       // queue (sort/merge dialog) picks them up — from ANY application.
       await invoke('install_virtual_printer', { useCollection: true });
-      setStatus(tCommon('installed'));
-      setStatusColor('#2e7d32');
-      setShowInstall(false);
-      setShowRemove(true);
       // Start watching the spool right away (no restart needed).
       import('../../stores/printQueueStore.js')
         .then(m => m.startPrintQueueWatcher())
         .catch(() => {});
+      // Re-read state so the status reflects "catch active" (and hides the
+      // reconfigure button).
+      await checkStatus();
     } catch (err) {
       setStatus(t('virtualPrinter.installationFailed'));
       setStatusColor('#c62828');
@@ -95,8 +106,13 @@ export default function VirtualPrinterTab() {
             {t('virtualPrinter.installButton')}
           </button>
         )}
+        {showReconfigure() && (
+          <button type="button" class="pref-btn pref-btn-primary" style="width:100%;" onClick={handleInstall} disabled={busy()}>
+            {t('virtualPrinter.enableCatch') || 'PDF-opvang inschakelen (geen opslaan-venster)'}
+          </button>
+        )}
         {showRemove() && (
-          <button type="button" class="pref-btn pref-btn-secondary" style="width:100%;" onClick={handleRemove} disabled={busy()}>
+          <button type="button" class="pref-btn pref-btn-secondary" style="width:100%;margin-top:6px;" onClick={handleRemove} disabled={busy()}>
             {t('virtualPrinter.removeButton')}
           </button>
         )}

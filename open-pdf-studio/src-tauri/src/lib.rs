@@ -735,17 +735,17 @@ exit 1
 /// "Microsoft Print to PDF" driver. Sets the default paper size to A4.
 /// Requires one-time UAC admin elevation.
 ///
-/// `use_collection`:
-///   - `false` (default behaviour) → PORTPROMPT: port. Each print job pops
-///     the standard Windows Save As dialog and the user picks a destination
-///     immediately. No collection dialog appears.
-///   - `true` → routes the output to a fixed file port pointing at
-///     `%LOCALAPPDATA%\OpenPDFPrinter\spool\latest.pdf`. Our app watches
-///     that folder, rotates the captured file into a timestamped name, and
-///     shows the PdfCollectionDialog so the user can combine multiple
-///     print jobs before saving. (Single-port approach: concurrent print
-///     jobs lock on the rotate step inside the app — Windows already
-///     serialises print jobs to a given port so the race window is tiny.)
+/// `use_collection` (DEFAULT true — the "catch and merge" behaviour):
+///   - `true` (default) → routes the output to a fixed file port pointing at
+///     `%LOCALAPPDATA%\OpenPDFPrinter\spool\latest.pdf`. NO Windows Save As
+///     dialog appears. Our app watches that folder, rotates the captured
+///     file into a timestamped job, and pops the print-queue dialog so the
+///     user can merge/reorder multiple print jobs from ANY program before
+///     saving. (Single-port approach: concurrent print jobs lock on the
+///     rotate step inside the app — Windows already serialises print jobs to
+///     a given port so the race window is tiny.)
+///   - `false` → PORTPROMPT: port (legacy): each print job pops the standard
+///     Windows Save As dialog. Only used if explicitly requested.
 ///
 /// Backward compatibility: removes the legacy printer name "Open PDF
 /// Studio" if present, so an existing installation cleanly migrates to
@@ -754,7 +754,9 @@ exit 1
 fn install_virtual_printer(use_collection: Option<bool>) -> Result<bool, String> {
     #[cfg(target_os = "windows")]
     {
-        let use_collection = use_collection.unwrap_or(false);
+        // Default to the silent collection port — the user wants prints
+        // CAUGHT for merging, never a Save As dialog.
+        let use_collection = use_collection.unwrap_or(true);
         let (port_setup_block, port_arg) = if use_collection {
             // Pre-create the spool dir + port pointing at it. Windows
             // file-ports require the port NAME to be the file path itself.
@@ -933,6 +935,37 @@ fn virtual_printer_delete_job(file: String) -> Result<(), String> {
     }
     let p = vp_spool_dir()?.join(file);
     std::fs::remove_file(&p).map_err(|e| e.to_string())
+}
+
+/// Whether "Open PDF Printer" is in SILENT CATCH mode — i.e. its port is the
+/// spool file (no Save As dialog). Returns false when it's on PORTPROMPT (the
+/// legacy save-dialog port) so the UI can offer to reconfigure it.
+#[tauri::command]
+fn virtual_printer_catch_enabled() -> bool {
+    #[cfg(target_os = "windows")]
+    {
+        let expected = match vp_spool_dir() {
+            Ok(p) => p.join("latest.pdf").to_string_lossy().to_lowercase(),
+            Err(_) => return false,
+        };
+        let out = no_window_command("powershell")
+            .args(&[
+                "-NoProfile", "-NonInteractive", "-Command",
+                "(Get-Printer -Name 'Open PDF Printer' -ErrorAction SilentlyContinue).PortName"
+            ])
+            .output();
+        match out {
+            Ok(o) => {
+                let port = String::from_utf8_lossy(&o.stdout).trim().to_lowercase();
+                !port.is_empty() && port == expected
+            }
+            Err(_) => false,
+        }
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        false
+    }
 }
 
 /// Check whether the "Open PDF Printer" virtual printer is installed.
@@ -2082,6 +2115,7 @@ pub fn run(opts: StartupOpts) {
             virtual_printer_collect,
             virtual_printer_jobs,
             virtual_printer_delete_job,
+            virtual_printer_catch_enabled,
             open_pdf_in_default_viewer,
             get_printer_spool_dir,
             list_printer_spool,
