@@ -968,6 +968,41 @@ fn virtual_printer_catch_enabled() -> bool {
     }
 }
 
+/// Switch the EXISTING "Open PDF Printer" to the silent collection file port
+/// — turns OFF the Windows Save As dialog. Verified to work WITHOUT UAC:
+/// changing a printer's port is permitted for the current user (unlike
+/// ADDING a printer). This is the fix for a printer installed on PORTPROMPT.
+#[tauri::command]
+fn virtual_printer_enable_catch() -> Result<bool, String> {
+    #[cfg(target_os = "windows")]
+    {
+        let spool = vp_spool_dir()?;
+        std::fs::create_dir_all(&spool).map_err(|e| format!("spool dir: {e}"))?;
+        let port = spool.join("latest.pdf").to_string_lossy().to_string();
+        // Idempotent: only add the port if missing (Add-PrinterPort errors if
+        // it exists), then point the printer at it.
+        let script = format!(
+            r#"$ErrorActionPreference='Stop'
+$port = '{}'
+if (-not (Get-PrinterPort -Name $port -ErrorAction SilentlyContinue)) {{ Add-PrinterPort -Name $port }}
+Set-Printer -Name 'Open PDF Printer' -PortName $port"#,
+            port.replace('\'', "''")
+        );
+        let out = no_window_command("powershell")
+            .args(&["-NoProfile", "-NonInteractive", "-Command", &script])
+            .output()
+            .map_err(|e| format!("powershell: {e}"))?;
+        if !out.status.success() {
+            return Err(String::from_utf8_lossy(&out.stderr).trim().to_string());
+        }
+        Ok(true)
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        Err("alleen op Windows".into())
+    }
+}
+
 /// Check whether the "Open PDF Printer" virtual printer is installed.
 /// Also returns `true` for the legacy "Open PDF Studio" name so users on
 /// an older installation see "installed" until they reinstall.
@@ -2116,6 +2151,7 @@ pub fn run(opts: StartupOpts) {
             virtual_printer_jobs,
             virtual_printer_delete_job,
             virtual_printer_catch_enabled,
+            virtual_printer_enable_catch,
             open_pdf_in_default_viewer,
             get_printer_spool_dir,
             list_printer_spool,

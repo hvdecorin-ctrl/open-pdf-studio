@@ -72,6 +72,25 @@ export default function VirtualPrinterTab() {
     setBusy(false);
   }
 
+  // Switch an existing printer from the Save-dialog port (PORTPROMPT) to the
+  // silent collection port. No UAC — changing a printer's port is allowed for
+  // the current user (unlike installing the printer).
+  async function handleEnableCatch() {
+    setStatus(t('virtualPrinter.installing'));
+    setBusy(true);
+    try {
+      const { invoke } = await import('../../../core/platform.js');
+      await invoke('virtual_printer_enable_catch');
+      import('../../stores/printQueueStore.js').then(m => m.startPrintQueueWatcher()).catch(() => {});
+      await checkStatus();
+    } catch (err) {
+      setStatus(t('virtualPrinter.installationFailed'));
+      setStatusColor('#c62828');
+      showMessage(t('virtualPrinter.failedToInstall') + '\n' + (err.message || err));
+    }
+    setBusy(false);
+  }
+
   async function handleRemove() {
     setStatus(t('virtualPrinter.removing'));
     setBusy(true);
@@ -107,7 +126,7 @@ export default function VirtualPrinterTab() {
           </button>
         )}
         {showReconfigure() && (
-          <button type="button" class="pref-btn pref-btn-primary" style="width:100%;" onClick={handleInstall} disabled={busy()}>
+          <button type="button" class="pref-btn pref-btn-primary" style="width:100%;" onClick={handleEnableCatch} disabled={busy()}>
             {t('virtualPrinter.enableCatch') || 'PDF-opvang inschakelen (geen opslaan-venster)'}
           </button>
         )}
