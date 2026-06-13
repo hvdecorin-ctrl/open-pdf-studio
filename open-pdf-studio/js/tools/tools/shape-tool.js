@@ -49,6 +49,11 @@ export const shapeTool = {
     if (isClick && tool === 'textbox') {
       endX = state.startX + 150;
       endY = state.startY + 30;
+    } else if (isClick && tool === 'mask') {
+      // Maskeer: a single click PLACES a default-size cover (the user thinks
+      // "plaatsen", not "drag a rectangle"); dragging still sets a custom size.
+      endX = state.startX + 200;
+      endY = state.startY + 140;
     } else if (isClick && tool === 'callout') {
       // Click places arrow tip; box appears offset above-right
       endX = state.startX + 80;
