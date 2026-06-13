@@ -1,5 +1,5 @@
-import { Show } from 'solid-js';
-import { panelVisible, panelCollapsed, setPanelCollapsed, annotProps, sectionVis, updateAnnotProp, cycleSelectNext, nativePanelHidden } from '../../stores/propertiesStore.js';
+import { Show, onMount } from 'solid-js';
+import { panelVisible, panelCollapsed, setPanelCollapsed, annotProps, sectionVis, updateAnnotProp, cycleSelectNext, nativePanelHidden, hydrateCollapsedSections } from '../../stores/propertiesStore.js';
 import { useTranslation } from '../../../i18n/useTranslation.js';
 import PanelHeader from './PanelHeader.jsx';
 import DocInfoView from './DocInfoView.jsx';
@@ -24,6 +24,9 @@ import WallSection from './WallSection.jsx';
 
 export default function PropertiesPanel() {
   const { t } = useTranslation('properties');
+
+  // Restore remembered section-collapse state once (preferences are loaded by now).
+  onMount(hydrateCollapsedSections);
 
   function expandPanel() {
     setPanelCollapsed(false);

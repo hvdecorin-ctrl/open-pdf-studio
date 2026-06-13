@@ -1,5 +1,6 @@
 import { state, getActiveDocument } from '../core/state.js';
 import { redrawAnnotations, redrawContinuous } from '../annotations/rendering.js';
+import { hasFill } from '../annotations/fill-utils.js';
 import { showProperties } from '../ui/panels/properties-panel.js';
 import { recordAdd, recordModify, execute } from '../core/undo-manager.js';
 import { cloneAnnotation } from '../annotations/factory.js';
@@ -90,8 +91,7 @@ export function startTextEditing(annotation) {
     'font-size': `${(annotation.fontSize || 14) * scale}px`,
     'font-family': cssFontFamily,
     color: annotation.textColor || annotation.color || '#000000',
-    'background-color': annotation.fillColor && annotation.fillColor !== 'transparent'
-      ? annotation.fillColor : '#ffffff',
+    'background-color': hasFill(annotation.fillColor) ? annotation.fillColor : '#ffffff',
     border: `${(annotation.lineWidth ?? 1) * scale}px solid ${annotation.strokeColor || '#000000'}`,
     padding: `${editPadding}px`,
     'box-sizing': 'border-box',

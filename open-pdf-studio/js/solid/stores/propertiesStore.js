@@ -27,8 +27,19 @@ const [panelCollapsed, setPanelCollapsed] = createSignal(false);
 // Panel mode: 'none' | 'annotation' | 'multi' | 'textEdit'
 const [panelMode, setPanelMode] = createSignal('none');
 
-// Collapsed sections tracking
+// Collapsed sections tracking. Persisted in preferences so that once the user
+// collapses a section it STAYS collapsed (default-off) across selections and
+// app restarts, until they expand it again. The signal drives reactive UI;
+// preferences is the durable store. Seeded lazily via hydrateCollapsedSections()
+// on panel mount (preferences load after this module evaluates).
 const [collapsedSections, setCollapsedSections] = createSignal({});
+
+// Re-seed the collapsed-section state from saved preferences. Called when the
+// properties panel mounts, by which point preferences have been loaded.
+export function hydrateCollapsedSections() {
+  const saved = state.preferences && state.preferences.collapsedPropSections;
+  if (saved && typeof saved === 'object') setCollapsedSections({ ...saved });
+}
 
 // Annotation properties store
 const [annotProps, setAnnotProps] = createStore({
@@ -1150,9 +1161,14 @@ export async function applyStyleType(typeId) {
   redraw();
 }
 
-// Toggle section collapse
+// Toggle section collapse. Persists the new state so the choice is remembered
+// across selections and restarts (the section stays collapsed by default until
+// the user expands it again).
 export function toggleSection(name) {
-  setCollapsedSections(prev => ({ ...prev, [name]: !prev[name] }));
+  const next = { ...collapsedSections(), [name]: !collapsedSections()[name] };
+  setCollapsedSections(next);
+  if (state.preferences) state.preferences.collapsedPropSections = next;
+  import('../../core/preferences.js').then(m => m.savePreferences && m.savePreferences()).catch(() => {});
 }
 
 // Add a reply to current annotation

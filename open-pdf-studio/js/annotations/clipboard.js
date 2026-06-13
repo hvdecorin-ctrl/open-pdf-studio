@@ -10,6 +10,11 @@ import { recordAdd, recordBulkAdd } from '../core/undo-manager.js';
 // Copy annotation to internal clipboard
 export function copyAnnotation(annotation) {
   state.clipboardAnnotation = cloneAnnotation(annotation);
+  state.clipboardAnnotations = null;
+  // Reset the paste cascade so the first paste lands at source+20 and each
+  // subsequent paste steps a further +20 (instead of every paste stacking on
+  // the exact same spot, which made repeated Ctrl+V look like it did nothing).
+  state._pasteSeq = 0;
 
   // Also copy image data to system clipboard so other apps can paste it
   if ((annotation.type === 'image' || annotation.type === 'signature' || annotation.type === 'stamp') && annotation.imageData) {
@@ -147,17 +152,20 @@ export function pasteAnnotation() {
 
   const newAnnotation = cloneAnnotation(state.clipboardAnnotation);
 
-  // Offset position slightly so it's visible
-  if (newAnnotation.x !== undefined) newAnnotation.x += 20;
-  if (newAnnotation.y !== undefined) newAnnotation.y += 20;
-  if (newAnnotation.startX !== undefined) newAnnotation.startX += 20;
-  if (newAnnotation.startY !== undefined) newAnnotation.startY += 20;
-  if (newAnnotation.endX !== undefined) newAnnotation.endX += 20;
-  if (newAnnotation.endY !== undefined) newAnnotation.endY += 20;
-  if (newAnnotation.centerX !== undefined) newAnnotation.centerX += 20;
-  if (newAnnotation.centerY !== undefined) newAnnotation.centerY += 20;
+  // Cascade each paste by an extra +20 so repeated Ctrl+V steps down-right
+  // instead of stacking every copy on the same spot.
+  state._pasteSeq = (state._pasteSeq || 0) + 1;
+  const off = 20 * state._pasteSeq;
+  if (newAnnotation.x !== undefined) newAnnotation.x += off;
+  if (newAnnotation.y !== undefined) newAnnotation.y += off;
+  if (newAnnotation.startX !== undefined) newAnnotation.startX += off;
+  if (newAnnotation.startY !== undefined) newAnnotation.startY += off;
+  if (newAnnotation.endX !== undefined) newAnnotation.endX += off;
+  if (newAnnotation.endY !== undefined) newAnnotation.endY += off;
+  if (newAnnotation.centerX !== undefined) newAnnotation.centerX += off;
+  if (newAnnotation.centerY !== undefined) newAnnotation.centerY += off;
   if (newAnnotation.path) {
-    newAnnotation.path = newAnnotation.path.map(p => ({ x: p.x + 20, y: p.y + 20 }));
+    newAnnotation.path = newAnnotation.path.map(p => ({ x: p.x + off, y: p.y + off }));
   }
 
   // Update page, id, and timestamps
@@ -205,6 +213,7 @@ export function copyAnnotations(annotations) {
   if (!annotations || annotations.length === 0) return;
   state.clipboardAnnotations = annotations.map(a => cloneAnnotation(a));
   state.clipboardAnnotation = state.clipboardAnnotations[0]; // backward compat
+  state._pasteSeq = 0; // reset paste cascade (see copyAnnotation)
   updateStatusMessage(`${annotations.length} annotations copied`);
 }
 
@@ -218,21 +227,24 @@ export function pasteAnnotations() {
     return;
   }
 
+  // Cascade each paste batch by an extra +20 (see pasteAnnotation).
+  state._pasteSeq = (state._pasteSeq || 0) + 1;
+  const off = 20 * state._pasteSeq;
   const newAnnotations = [];
   for (const source of state.clipboardAnnotations) {
     const newAnn = cloneAnnotation(source);
 
     // Offset position
-    if (newAnn.x !== undefined) newAnn.x += 20;
-    if (newAnn.y !== undefined) newAnn.y += 20;
-    if (newAnn.startX !== undefined) newAnn.startX += 20;
-    if (newAnn.startY !== undefined) newAnn.startY += 20;
-    if (newAnn.endX !== undefined) newAnn.endX += 20;
-    if (newAnn.endY !== undefined) newAnn.endY += 20;
-    if (newAnn.centerX !== undefined) newAnn.centerX += 20;
-    if (newAnn.centerY !== undefined) newAnn.centerY += 20;
+    if (newAnn.x !== undefined) newAnn.x += off;
+    if (newAnn.y !== undefined) newAnn.y += off;
+    if (newAnn.startX !== undefined) newAnn.startX += off;
+    if (newAnn.startY !== undefined) newAnn.startY += off;
+    if (newAnn.endX !== undefined) newAnn.endX += off;
+    if (newAnn.endY !== undefined) newAnn.endY += off;
+    if (newAnn.centerX !== undefined) newAnn.centerX += off;
+    if (newAnn.centerY !== undefined) newAnn.centerY += off;
     if (newAnn.path) {
-      newAnn.path = newAnn.path.map(p => ({ x: p.x + 20, y: p.y + 20 }));
+      newAnn.path = newAnn.path.map(p => ({ x: p.x + off, y: p.y + off }));
     }
 
     newAnn.id = Date.now().toString(36) + Math.random().toString(36).substr(2, 9);

@@ -1,6 +1,7 @@
 import { state, getPageRotation, getActiveDocument } from '../core/state.js';
 import { showLoading, hideLoading } from '../ui/chrome/dialogs.js';
 import { hexToColorArray } from '../utils/colors.js';
+import { hasFill } from '../annotations/fill-utils.js';
 import { markDocumentSaved, updateWindowTitle } from '../ui/chrome/tabs.js';
 import { isTauri, invoke, readBinaryFile, writeBinaryFile, saveFileDialog, unlockFile, lockFile } from '../core/platform.js';
 import { getCachedPdfBytes, setCachedPdfBytes, hidePdfABar } from './loader.js';
@@ -259,7 +260,7 @@ export async function savePDF(saveAsPath = null) {
             annDictObj.BS = buildBorderStyle(context, borderWidth, ann.borderStyle);
 
             // Add interior color (fill) if specified
-            if (ann.fillColor && ann.fillColor !== 'none') {
+            if (hasFill(ann.fillColor)) {
               annDictObj.IC = hexToColorArray(ann.fillColor);
             }
             // Maskeer round-trips via the subtype key; other viewers see a
@@ -315,7 +316,7 @@ export async function savePDF(saveAsPath = null) {
 
             annDictObj.BS = buildBorderStyle(context, borderWidth, ann.borderStyle);
 
-            if (ann.fillColor && ann.fillColor !== 'none') {
+            if (hasFill(ann.fillColor)) {
               annDictObj.IC = hexToColorArray(ann.fillColor);
             }
 
@@ -377,7 +378,7 @@ export async function savePDF(saveAsPath = null) {
               lineDict.LE = [PDFName.of(mapHead(ann.startHead)), PDFName.of(mapHead(ann.endHead))];
 
               // Interior color for closed arrowheads
-              if (ann.fillColor) {
+              if (hasFill(ann.fillColor)) {
                 lineDict.IC = hexToColorArray(ann.fillColor);
               }
             }
@@ -599,7 +600,7 @@ export async function savePDF(saveAsPath = null) {
 
             polygonDict.BS = buildBorderStyle(context, borderWidth, ann.borderStyle);
 
-            if (ann.fillColor && ann.fillColor !== 'none') {
+            if (hasFill(ann.fillColor)) {
               polygonDict.IC = hexToColorArray(ann.fillColor);
             }
 
@@ -796,7 +797,7 @@ export async function savePDF(saveAsPath = null) {
                 ftStreamContent += `1 0 0 1 ${-ftW / 2} ${-ftH / 2} cm\n`;
                 // In rotated mode, draw at local 0,0
                 ftStreamContent += `${ftBorderWidth} w\n${ftDashOp}${sr} ${sg} ${sb} RG\n`;
-                if (ann.fillColor && ann.fillColor !== 'none') {
+                if (hasFill(ann.fillColor)) {
                   const [fr, fg, fb] = hexToRgb(ann.fillColor);
                   ftStreamContent += `${fr} ${fg} ${fb} rg\n0 0 ${ftW} ${ftH} re B\n`;
                 } else {
@@ -805,7 +806,7 @@ export async function savePDF(saveAsPath = null) {
               } else {
                 // Draw at absolute text box position
                 ftStreamContent += `${ftBorderWidth} w\n${ftDashOp}${sr} ${sg} ${sb} RG\n`;
-                if (ann.fillColor && ann.fillColor !== 'none') {
+                if (hasFill(ann.fillColor)) {
                   const [fr, fg, fb] = hexToRgb(ann.fillColor);
                   ftStreamContent += `${fr} ${fg} ${fb} rg\n${tbX1} ${tbY1} ${ftW} ${ftH} re B\n`;
                 } else {
@@ -1384,7 +1385,7 @@ export async function savePDF(saveAsPath = null) {
               OPS_Subtype: PDFString.of('measureArea'),
               F: computeAnnotFlags(ann)
             };
-            if (ann.fillColor && ann.fillColor !== 'none') {
+            if (hasFill(ann.fillColor)) {
               maDict.IC = hexToColorArray(ann.fillColor);
             }
             annotDict = context.obj(maDict);

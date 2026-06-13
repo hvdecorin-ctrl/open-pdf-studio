@@ -47,9 +47,15 @@ export function handlePointerDown(e) {
     state._ctrlCopiesCreated = false;
   }
 
-  // Finish inline text editing
+  // Finish inline text editing. A left-click while editing is the user
+  // clicking AWAY to commit the text — consume that click so the SAME gesture
+  // doesn't also place a brand-new textbox/shape (the old behaviour dropped a
+  // fresh textbox every time you clicked away, so editing never "ended").
+  // Middle/right buttons fall through so panning and the 2D-cursor gesture
+  // keep working while a textbox is open.
   if (state.isEditingText) {
     finishTextEditing();
+    if (e.button === 0) return;
   }
 
   const coords = resolvePointerCoords(e);

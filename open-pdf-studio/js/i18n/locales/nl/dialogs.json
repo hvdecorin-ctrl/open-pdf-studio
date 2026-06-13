@@ -307,5 +307,28 @@
     "setAsDefault": "Als standaard instellen",
     "dontAskAgain": "Niet meer vragen",
     "notNow": "Niet nu"
+  },
+  "feedback": {
+    "title": "Feedback versturen",
+    "email": "E-mail",
+    "emailPlaceholder": "jouw@email.com",
+    "fullName": "Volledige naam",
+    "fullNamePlaceholder": "Je naam (optioneel)",
+    "categoryBug": "Bug",
+    "categoryFeature": "Functie",
+    "categoryGeneral": "Algemeen",
+    "messagePlaceholder": "Vertel ons wat je bezighoudt... (minimaal 10 tekens)",
+    "attachImages": "Afbeeldingen bijvoegen",
+    "imageLimit": "Max. 3 afbeeldingen, 1 MB totaal",
+    "sentiment": "Hoe voel je je?",
+    "sentimentFrustrated": "Gefrustreerd",
+    "sentimentNeutral": "Neutraal",
+    "sentimentHappy": "Tevreden",
+    "submit": "Feedback versturen",
+    "submitting": "Versturen...",
+    "successTitle": "Bedankt!",
+    "successMessage": "Je feedback is succesvol verzonden.",
+    "sendAnother": "Nog een versturen",
+    "errorGeneric": "Feedback versturen mislukt. Probeer het opnieuw."
   }
 }

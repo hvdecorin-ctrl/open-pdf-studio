@@ -1017,6 +1017,8 @@ async function _buildCreateProps(type, page, props) {
     case 'wall':
     case 'box':
     case 'mask':
+    case 'redaction':
+    case 'viewport':
     case 'circle':
     case 'highlight':
     case 'cloud':
@@ -1044,6 +1046,20 @@ async function _buildCreateProps(type, page, props) {
         strokeColor: prefs.polylineStrokeColor || '#000000',
         lineWidth: prefs.polylineLineWidth || 1,
         opacity: (prefs.polylineOpacity || 100) / 100,
+      } };
+    }
+
+    case 'cloudPolyline': {
+      if (!_validPoints(p.points, 2)) {
+        return { error: "type 'cloudPolyline' requires props.points: [{x,y}, ...] (>= 2)" };
+      }
+      return { base: {
+        type, page,
+        points: p.points.map(pt => ({ ...pt })),
+        color: prefs.cloudStrokeColor || prefs.polylineStrokeColor || '#000000',
+        strokeColor: prefs.cloudStrokeColor || prefs.polylineStrokeColor || '#000000',
+        lineWidth: prefs.cloudLineWidth || prefs.polylineLineWidth || 1,
+        opacity: (prefs.cloudOpacity || 100) / 100,
       } };
     }
 
@@ -1141,7 +1157,7 @@ async function _buildCreateProps(type, page, props) {
         text: typeof p.text === 'string' ? p.text : '',
         color: prefs.calloutStrokeColor || '#000000',
         strokeColor: prefs.calloutStrokeColor || '#000000',
-        fillColor: prefs.calloutFillNone ? 'transparent' : (prefs.calloutFillColor || '#ffffff'),
+        fillColor: prefs.calloutFillNone ? 'none' : (prefs.calloutFillColor || '#ffffff'),
         textColor: '#000000',
         fontSize: prefs.calloutFontSize || 12,
         fontFamily: 'Arial',
@@ -1224,6 +1240,7 @@ async function _buildCreateProps(type, page, props) {
     }
 
     case 'stamp':
+    case 'signature':
     case 'image': {
       // Test/automation path: rect + optional SVG payload, passthrough.
       const bad = needRect();

@@ -211,7 +211,7 @@ export function setAsDefaultStyle(annotation) {
   if (m.color) prefs[p + m.color] = annotation.color || annotation.fillColor || prefs[p + m.color];
   if (m.fill) {
     prefs[p + m.fill] = annotation.fillColor || prefs[p + m.fill];
-    if (m.fillNone) prefs[p + m.fillNone] = !annotation.fillColor || annotation.fillColor === 'transparent' || annotation.fillColor === null;
+    if (m.fillNone) prefs[p + m.fillNone] = !annotation.fillColor || annotation.fillColor === 'transparent' || annotation.fillColor === 'none' || annotation.fillColor === null;
   }
   if (m.width) prefs[p + m.width] = annotation.lineWidth ?? prefs[p + m.width];
   if (m.borderStyle && annotation.borderStyle) prefs[p + m.borderStyle] = annotation.borderStyle;

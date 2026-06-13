@@ -19,6 +19,7 @@ import { spatialIndex } from './spatial-index.js';
 import { invalidateScaleRegionCache, pixelsPerUnitFor, getRegionScaleFactor } from './scale-region.js';
 import { drawSnapIndicator } from '../tools/snap-engine.js';
 import { getTemplate } from '../symbols/registry.js';
+import { hasFill } from './fill-utils.js';
 
 // Re-export everything that external code needs
 export { drawPolygonShape, drawCloudShape, buildPolygonPath, buildCloudPath } from './rendering/shapes.js';
@@ -218,8 +219,8 @@ export function drawAnnotation(ctx, annotation) {
   ctx.fillStyle = fillColor;
   let lw = annotation.lineWidth ?? 3;
   // Ensure a minimum visible stroke when there's no fill, so the annotation stays visible
-  const hasFill = annotation.fillColor && annotation.fillColor !== 'transparent';
-  if (lw === 0 && !hasFill) lw = 0.5;
+  const annHasFill = hasFill(annotation.fillColor);
+  if (lw === 0 && !annHasFill) lw = 0.5;
   lw = thinLw(lw);
   ctx.lineWidth = lw;
   ctx.globalAlpha = baseOpacity;
@@ -712,7 +713,7 @@ export function drawAnnotation(ctx, annotation) {
       }
 
       // Draw fill
-      if (annotation.fillColor && annotation.fillColor !== 'transparent') {
+      if (hasFill(annotation.fillColor)) {
         ctx.fillStyle = annotation.fillColor;
         ctx.fillRect(annotation.x, annotation.y, tbWidth, tbHeight);
       }
@@ -803,7 +804,7 @@ export function drawAnnotation(ctx, annotation) {
       }
 
       // Draw fill
-      if (annotation.fillColor && annotation.fillColor !== 'transparent') {
+      if (hasFill(annotation.fillColor)) {
         ctx.fillStyle = annotation.fillColor;
         ctx.fillRect(annotation.x, annotation.y, coWidth, coHeight);
       }
@@ -1951,6 +1952,12 @@ export function redrawAnnotations(lightweight = false) {
     _draw2DCursor(annotationCtx, _renderDoc.cursor2D.x, _renderDoc.cursor2D.y, effectiveScale);
   }
 
+  // Rubber-band selection marquee (state-driven so it can't be cleared by the
+  // next redraw frame; gated to the page the drag started on).
+  if (state.isRubberBanding && (state.rubberBandPage == null || state.rubberBandPage === curPage)) {
+    drawRubberBand(annotationCtx, effectiveScale);
+  }
+
   // Restore context
   annotationCtx.restore();
   if (textHighlightCtx) textHighlightCtx.restore();
@@ -1971,6 +1978,40 @@ export function redrawAnnotations(lightweight = false) {
 }
 
 // Render annotations for a specific page (continuous mode)
+// Rubber-band selection marquee. Drawn as part of the render/overlay pass —
+// driven purely by state — so it survives every redraw frame. (It used to be
+// hand-painted in select-tool AFTER calling redraw(), which raced the redraw
+// and left the marquee visible on some gestures but not others.) The render
+// context is already scaled to app/PDF space, so coords are app-space and
+// stroke widths/dashes are divided by effectiveScale to stay screen-constant.
+function drawRubberBand(ctx, effectiveScale) {
+  if (!state.isRubberBanding) return;
+  const sx = state.rubberBandStartX, sy = state.rubberBandStartY;
+  const ex = state.rubberBandEndX, ey = state.rubberBandEndY;
+  if (sx == null || sy == null || ex == null || ey == null) return;
+  const x = Math.min(sx, ex), y = Math.min(sy, ey);
+  const w = Math.abs(ex - sx), h = Math.abs(ey - sy);
+  if (w < 0.5 && h < 0.5) return;
+  const isCrossing = state.rubberBandMode === 'crossing';
+  ctx.save();
+  ctx.lineWidth = 1 / effectiveScale;
+  if (isCrossing) {
+    // drag-left → crossing (green, dashed)
+    ctx.strokeStyle = '#10b981';
+    ctx.fillStyle = 'rgba(16, 185, 129, 0.15)';
+    ctx.setLineDash([4 / effectiveScale, 4 / effectiveScale]);
+  } else {
+    // drag-right → window (blue, solid)
+    ctx.strokeStyle = '#3b82f6';
+    ctx.fillStyle = 'rgba(59, 130, 246, 0.15)';
+    ctx.setLineDash([]);
+  }
+  ctx.fillRect(x, y, w, h);
+  ctx.strokeRect(x, y, w, h);
+  ctx.setLineDash([]);
+  ctx.restore();
+}
+
 export function renderAnnotationsForPage(ctx, pageNum, width, height, overrideDpr) {
   ctx.clearRect(0, 0, width, height);
 
@@ -1998,6 +2039,11 @@ export function renderAnnotationsForPage(ctx, pageNum, width, height, overrideDp
 
   // Draw watermarks in front of content
   renderWatermarksInFront(ctx, pageNum, width / effectiveScale, height / effectiveScale);
+
+  // Rubber-band selection marquee on the page the drag started on (continuous).
+  if (state.isRubberBanding && state.rubberBandPage === pageNum) {
+    drawRubberBand(ctx, effectiveScale);
+  }
 
   // Restore context
   ctx.restore();

@@ -215,6 +215,9 @@ export const selectTool = {
       state.isRubberBanding = true;
       state.rubberBandStartX = x;
       state.rubberBandStartY = y;
+      state.rubberBandEndX = x;
+      state.rubberBandEndY = y;
+      state.rubberBandPage = ctx.pageNum;
       state.rubberBandMode = 'window'; // updated live during pointermove
       state.rubberBandModifier = (e.shiftKey)
         ? 'add'
@@ -240,34 +243,19 @@ export const selectTool = {
   onPointerMove(ctx, e) {
     const { x, y, state, canvas, canvasCtx } = ctx;
 
-    // Rubber band drawing
+    // Rubber band: update the live end-point and let the render overlay pass
+    // (rendering.js drawRubberBand) paint the marquee. Drawing it there —
+    // driven by state, as the last step of every frame — means it survives
+    // each redraw, instead of being hand-painted right after redraw() where
+    // the following frame could erase it (the marquee then showed on some
+    // gestures but not others).
     if (state.isRubberBanding) {
-      // AutoCAD-style: drag right (endX >= startX) → window (blue, solid),
-      // drag left (endX < startX) → crossing (green, dashed).
-      const isCrossing = x < state.rubberBandStartX;
-      state.rubberBandMode = isCrossing ? 'crossing' : 'window';
+      // AutoCAD-style: drag right → window (blue, solid),
+      // drag left → crossing (green, dashed).
+      state.rubberBandMode = x < state.rubberBandStartX ? 'crossing' : 'window';
+      state.rubberBandEndX = x;
+      state.rubberBandEndY = y;
       ctx.redraw();
-      const sc = getEffectiveScale();
-      canvasCtx.save();
-      applyToolTransform(canvasCtx);
-      if (isCrossing) {
-        canvasCtx.strokeStyle = '#10b981'; // green
-        canvasCtx.fillStyle = 'rgba(16, 185, 129, 0.15)';
-        canvasCtx.setLineDash([4 / sc, 4 / sc]);
-      } else {
-        canvasCtx.strokeStyle = '#3b82f6'; // blue
-        canvasCtx.fillStyle = 'rgba(59, 130, 246, 0.15)';
-        canvasCtx.setLineDash([]);
-      }
-      canvasCtx.lineWidth = 1 / sc;
-      const rbX = Math.min(state.rubberBandStartX, x);
-      const rbY = Math.min(state.rubberBandStartY, y);
-      const rbW = Math.abs(x - state.rubberBandStartX);
-      const rbH = Math.abs(y - state.rubberBandStartY);
-      canvasCtx.fillRect(rbX, rbY, rbW, rbH);
-      canvasCtx.strokeRect(rbX, rbY, rbW, rbH);
-      canvasCtx.setLineDash([]);
-      canvasCtx.restore();
       return;
     }
 

@@ -403,7 +403,7 @@ fn handle_tools_list() -> Value {
                     "properties": {
                         "type": {
                             "type": "string",
-                            "enum": ["line", "arrow", "box", "circle", "highlight", "cloud", "polygon", "polyline", "spline", "draw", "filledArea", "textbox", "callout", "comment", "measureDistance", "measureArea", "measurePerimeter", "scaleRegion"]
+                            "enum": ["line", "arrow", "wall", "box", "mask", "redaction", "viewport", "circle", "highlight", "cloud", "polygon", "polyline", "cloudPolyline", "spline", "draw", "filledArea", "textbox", "callout", "comment", "stamp", "signature", "image", "parametricSymbol", "measureDistance", "measureArea", "measurePerimeter", "scaleRegion"]
                         },
                         "page":  { "type": "integer", "minimum": 1, "description": "1-based target page. Defaults to the current page." },
                         "props": { "type": "object", "description": "Geometry + style properties for the annotation." }

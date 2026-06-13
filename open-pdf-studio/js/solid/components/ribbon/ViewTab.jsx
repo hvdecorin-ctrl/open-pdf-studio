@@ -14,6 +14,7 @@ import { toggleLeftPanel } from '../../../ui/panels/left-panel.js';
 import { toggleAnnotationsListPanel } from '../../../ui/panels/annotations-list.js';
 import { togglePropertiesPanel } from '../../../ui/panels/properties-panel.js';
 import { panelVisible, panelCollapsed } from '../../stores/propertiesStore.js';
+import { collapsed as leftPanelCollapsed } from '../../stores/leftPanelStore.js';
 import { state, noPdf } from '../../../core/state.js';
 import { useTranslation } from '../../../i18n/useTranslation.js';
 import { openDialog } from '../../stores/dialogStore.js';
@@ -53,7 +54,7 @@ export default function ViewTab() {
 
         <RibbonGroup label={t('view.panels')}>
           <RibbonButton id="ribbon-nav-panel" title={t('view.navigationPanel')} icon={navigationIcon} label={t('view.navigation')}
-            disabled={noPdf()} onClick={() => toggleLeftPanel()} />
+            disabled={noPdf()} active={!leftPanelCollapsed()} onClick={() => toggleLeftPanel()} />
           <RibbonButton id="ribbon-properties-panel" title={t('view.propertiesPanel')} icon={propertiesIcon} label={t('view.propertiesLabel')}
             disabled={noPdf()}
             active={panelVisible() && !panelCollapsed()}
