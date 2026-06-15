@@ -439,8 +439,9 @@ fn print_pdf(path: String, printer: String) -> Result<bool, String> {
     {
         use windows_sys::Win32::Graphics::Gdi::{
             CreateDCW, DeleteDC, StretchDIBits, GetDeviceCaps, SetStretchBltMode,
-            BITMAPINFO, BITMAPINFOHEADER,
+            ResetDCW, DEVMODEW, BITMAPINFO, BITMAPINFOHEADER,
             BI_RGB, DIB_RGB_COLORS, SRCCOPY, HORZRES, VERTRES, LOGPIXELSX, HALFTONE,
+            DM_ORIENTATION, DMORIENT_PORTRAIT, DMORIENT_LANDSCAPE,
         };
         // The StartDoc/EndDoc print-job family lives under Storage::Xps in
         // windows-sys (print spooler document API), not under Graphics::Gdi.
@@ -477,8 +478,17 @@ fn print_pdf(path: String, printer: String) -> Result<bool, String> {
             }
 
             let dpi = GetDeviceCaps(hdc, LOGPIXELSX as i32).max(96);
-            let dev_w = GetDeviceCaps(hdc, HORZRES as i32);
-            let dev_h = GetDeviceCaps(hdc, VERTRES as i32);
+
+            // Reusable DEVMODE used to flip the printer DC orientation per page,
+            // so a landscape drawing prints on landscape paper instead of being
+            // rotated 90° by the driver to fit the default (portrait) orientation.
+            let mut devmode: DEVMODEW = std::mem::zeroed();
+            devmode.dmSize = std::mem::size_of::<DEVMODEW>() as u16;
+            devmode.dmFields = DM_ORIENTATION;
+            {
+                let n = printer_w.len().min(31);
+                devmode.dmDeviceName[..n].copy_from_slice(&printer_w[..n]);
+            }
 
             let doc_name = to_wide(
                 p.file_name().and_then(|n| n.to_str()).unwrap_or("Document"),
@@ -512,6 +522,16 @@ fn print_pdf(path: String, printer: String) -> Result<bool, String> {
                 for px in rgba.chunks_exact_mut(4) {
                     px.swap(0, 2);
                 }
+
+                // Match paper orientation to THIS page (done between pages,
+                // before StartPage) so the driver prints it upright: a landscape
+                // drawing goes on landscape paper, no 90° auto-rotation.
+                // dmOrientation is i16; the DMORIENT_* consts are u32 in windows-sys.
+                devmode.Anonymous1.Anonymous1.dmOrientation =
+                    (if w > h { DMORIENT_LANDSCAPE } else { DMORIENT_PORTRAIT }) as i16;
+                ResetDCW(hdc, &devmode);
+                let dev_w = GetDeviceCaps(hdc, HORZRES as i32);
+                let dev_h = GetDeviceCaps(hdc, VERTRES as i32);
 
                 // Fit page into the printable area, preserve aspect, centre.
                 let sx = dev_w as f64 / w as f64;

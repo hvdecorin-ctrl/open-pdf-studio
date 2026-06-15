@@ -171,6 +171,56 @@ export function computeTextboxContentHeight(annotation) {
   return padding * 2 + totalLines * lineHeight;
 }
 
+// Compute the wrapped text layout for a textbox/callout, mirroring
+// drawTextboxContent's wrapping (same font fallback chain + canvas measureText,
+// same padding/lineHeight/ascent). Used by the PDF saver to build a FreeText
+// /AP appearance stream whose line breaks + vertical placement match what OPDS
+// draws on screen — so other viewers show the same thing (no overflow).
+// Returns { lines:[{text,width}], fontSize, lineHeight, padding, ascent, maxWidth }.
+export function layoutTextboxForExport(annotation) {
+  const text = annotation.text || '';
+  const width = annotation.width || 150;
+  const fontSize = annotation.fontSize || 14;
+  const lineSpacing = annotation.lineSpacing || DEFAULT_LINE_SPACING;
+  const lineHeight = fontSize * lineSpacing;
+  const padding = annotation.lineWidth ?? 0;
+  const maxWidth = Math.max(1, width - padding * 2);
+
+  const rawFontFamily = annotation.fontFamily || 'Arial';
+  const cssQuote = s => `"${s.replace(/"/g, '\\"')}"`;
+  const expanded = rawFontFamily.replace(/([a-z])([A-Z])/g, '$1 $2');
+  const chain = [];
+  if (expanded !== rawFontFamily) chain.push(cssQuote(expanded));
+  chain.push(/[\s"',]/.test(rawFontFamily) ? cssQuote(rawFontFamily) : rawFontFamily);
+  chain.push('sans-serif');
+  const fontFamily = chain.join(', ');
+  const fontStyle = (annotation.fontItalic ? 'italic ' : '') + (annotation.fontBold ? 'bold ' : '');
+
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+  ctx.font = `${fontStyle}${fontSize}px ${fontFamily}`;
+  const sample = ctx.measureText('Mg');
+  const ascent = sample.fontBoundingBoxAscent || sample.actualBoundingBoxAscent || (fontSize * 0.8);
+
+  const lines = [];
+  for (const para of text.split('\n')) {
+    if (para === '') { lines.push({ text: '', width: 0 }); continue; }
+    const words = para.split(' ');
+    let line = '';
+    for (let i = 0; i < words.length; i++) {
+      const candidate = line ? line + ' ' + words[i] : words[i];
+      if (ctx.measureText(candidate).width > maxWidth && line) {
+        lines.push({ text: line, width: ctx.measureText(line).width });
+        line = words[i];
+      } else {
+        line = candidate;
+      }
+    }
+    if (line !== '') lines.push({ text: line, width: ctx.measureText(line).width });
+  }
+  return { lines, fontSize, lineHeight, padding, ascent, maxWidth };
+}
+
 // Draw textbox content with word wrap
 export function drawTextboxContent(ctx, annotation, padding) {
   if (!annotation.text) return;

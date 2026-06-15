@@ -53,6 +53,19 @@ export default function TitleBar() {
   };
   const hasDialogs = () => getDialogs().length > 0;
 
+  // Export the whole document as a rasterised PDF (each page flattened to an
+  // image) and open it in a new tab. Renders identically in every viewer /
+  // printer — sidesteps annotation appearance-stream differences.
+  const handleExportRaster = async () => {
+    const d = doc();
+    if (!d?.pdfDoc) return;
+    const total = d.pdfDoc.numPages;
+    const pages = [];
+    for (let i = 1; i <= total; i++) pages.push(i);
+    const { exportAsRasterPdf } = await import('../../pdf/exporter.js');
+    await exportAsRasterPdf({ dpi: 300, pages });
+  };
+
   return (
     <div class={`title-bar${hasDialogs() ? ' dialogs-open' : ''}`} data-tauri-drag-region>
       <div class="title-bar-left">
@@ -91,6 +104,16 @@ export default function TitleBar() {
             <svg viewBox="0 0 24 24" fill="currentColor">
               <path d="M19,6V4a4,4,0,0,0-4-4H9A4,4,0,0,0,5,4V6a5.006,5.006,0,0,0-5,5v5a5.006,5.006,0,0,0,5,5,3,3,0,0,0,3,3h8a3,3,0,0,0,3-3,5.006,5.006,0,0,0,5-5V11A5.006,5.006,0,0,0,19,6ZM7,4A2,2,0,0,1,9,2h6a2,2,0,0,1,2,2V6H7ZM17,21a1,1,0,0,1-1,1H8a1,1,0,0,1-1-1V17a1,1,0,0,1,1-1h8a1,1,0,0,1,1,1Zm5-5a3,3,0,0,1-3,3V17a3,3,0,0,0-3-3H8a3,3,0,0,0-3,3v2a3,3,0,0,1-3-3V11A3,3,0,0,1,5,8H19a3,3,0,0,1,3,3Z"/>
               <path d="M18,10H16a1,1,0,0,0,0,2h2a1,1,0,0,0,0-2Z"/>
+            </svg>
+          </button>
+
+          <button class="quick-access-btn" title="Exporteer als raster-PDF (opent in nieuw tabblad)" disabled={!hasPdf()}
+            onClick={handleExportRaster}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
+              <path d="M14 2v6h6"/>
+              <rect x="7.5" y="12.5" width="9" height="6"/>
+              <path d="M7.5 17l2.2-1.8 1.8 1.4 2.3-2 2.7 2.4"/>
             </svg>
           </button>
 

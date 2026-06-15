@@ -2,6 +2,7 @@ import { state, getPageRotation, getActiveDocument } from '../core/state.js';
 import { showLoading, hideLoading } from '../ui/chrome/dialogs.js';
 import { hexToColorArray } from '../utils/colors.js';
 import { hasFill } from '../annotations/fill-utils.js';
+import { layoutTextboxForExport } from '../annotations/rendering/shapes.js';
 import { markDocumentSaved, updateWindowTitle } from '../ui/chrome/tabs.js';
 import { isTauri, invoke, readBinaryFile, writeBinaryFile, saveFileDialog, unlockFile, lockFile } from '../core/platform.js';
 import { getCachedPdfBytes, setCachedPdfBytes, hidePdfABar } from './loader.js';
@@ -884,6 +885,24 @@ export async function savePDF(saveAsPath = null) {
 
               // Draw text box fill + stroke (absolute coords)
               const ftDashOp = ann.borderStyle === 'dashed' ? '[8 4] 0 d\n' : ann.borderStyle === 'dotted' ? '[2 2] 0 d\n' : '';
+              // A border is drawn ONLY when the textbox actually has one. Without
+              // this the AP always stroked the rect — with `0 w` (hairline) and a
+              // black fallback colour when strokeColor was 'none' — so other
+              // viewers showed a spurious black box around every borderless label.
+              const ftHasBorder = ftBorderWidth > 0 && ann.strokeColor && ann.strokeColor !== 'none' && ann.strokeColor !== 'transparent';
+              const ftFill = hasFill(ann.fillColor);
+              // Rect paint operator: B=fill+stroke, f=fill only, S=stroke only, n=neither.
+              const ftRectOp = (ftFill && ftHasBorder) ? 'B' : ftFill ? 'f' : ftHasBorder ? 'S' : 'n';
+              const emitFtBox = (bx, by) => {
+                if (ftFill) {
+                  const [fr, fg, fb] = hexToRgb(ann.fillColor);
+                  ftStreamContent += `${fr} ${fg} ${fb} rg\n`;
+                }
+                if (ftHasBorder) {
+                  ftStreamContent += `${ftBorderWidth} w\n${ftDashOp}${sr} ${sg} ${sb} RG\n`;
+                }
+                ftStreamContent += `${bx} ${by} ${ftW} ${ftH} re ${ftRectOp}\n`;
+              };
               // For non-callout with rotation, wrap in transform
               const needsRotationInAP = ftRotation !== 0 && !isStandardRotation;
               if (needsRotationInAP) {
@@ -896,51 +915,43 @@ export async function savePDF(saveAsPath = null) {
                 ftStreamContent += `1 0 0 1 ${bboxCX} ${bboxCY} cm\n`;
                 ftStreamContent += `${cosR} ${sinR} ${-sinR} ${cosR} 0 0 cm\n`;
                 ftStreamContent += `1 0 0 1 ${-ftW / 2} ${-ftH / 2} cm\n`;
-                // In rotated mode, draw at local 0,0
-                ftStreamContent += `${ftBorderWidth} w\n${ftDashOp}${sr} ${sg} ${sb} RG\n`;
-                if (hasFill(ann.fillColor)) {
-                  const [fr, fg, fb] = hexToRgb(ann.fillColor);
-                  ftStreamContent += `${fr} ${fg} ${fb} rg\n0 0 ${ftW} ${ftH} re B\n`;
-                } else {
-                  ftStreamContent += `0 0 ${ftW} ${ftH} re S\n`;
-                }
+                emitFtBox(0, 0);
               } else {
-                // Draw at absolute text box position
-                ftStreamContent += `${ftBorderWidth} w\n${ftDashOp}${sr} ${sg} ${sb} RG\n`;
-                if (hasFill(ann.fillColor)) {
-                  const [fr, fg, fb] = hexToRgb(ann.fillColor);
-                  ftStreamContent += `${fr} ${fg} ${fb} rg\n${tbX1} ${tbY1} ${ftW} ${ftH} re B\n`;
-                } else {
-                  ftStreamContent += `${tbX1} ${tbY1} ${ftW} ${ftH} re S\n`;
-                }
+                emitFtBox(tbX1, tbY1);
                 // Clip text to text box area
                 ftStreamContent += `${tbX1} ${tbY1} ${ftW} ${ftH} re W n\n`;
               }
 
-              // Render text
+              // Render text — word-wrapped to the box width to match OPDS's own
+              // on-screen layout (same font chain, wrap points, line height and
+              // baseline), so other viewers break + place lines identically and
+              // long labels no longer overflow the box.
               if (ann.text) {
                 const ftFontSize = ann.fontSize || 14;
                 const [tr, tg, tb] = ann.textColor ? hexToRgb(ann.textColor) : [0, 0, 0];
                 const pdfFont = mapFontToPdfName(ann.fontFamily, ann.fontBold, ann.fontItalic);
-                const padding = ftBorderWidth + 2;
-                const lineHeight = ftFontSize * 1.2;
-                // Text position in absolute coords (or local 0,0 for rotated)
-                const textBaseX = needsRotationInAP ? padding : tbX1 + padding;
-                const textBaseY = needsRotationInAP ? (ftH - padding - ftFontSize) : (tbY2 - padding - ftFontSize);
+                const layout = layoutTextboxForExport(ann);
+                const pad = layout.padding;
+                const lineHeight = layout.lineHeight;
+                const align = ann.textAlign || 'left';
+                // Frame: local 0,0 bottom-left when rotated, else absolute coords.
+                const boxLeft = needsRotationInAP ? 0 : tbX1;
+                const boxTop = needsRotationInAP ? ftH : tbY2;
+                const bottomLimit = needsRotationInAP ? 0 : tbY1;
+                const halfLeading = (lineHeight - ftFontSize) / 2;
+                let textY = boxTop - pad - halfLeading - layout.ascent;
 
                 ftStreamContent += 'BT\n';
-                ftStreamContent += `0 0 0 rg 0 Tc 0 Tw 100 Tz 0 Tr\n`;
+                ftStreamContent += `${ann.textColor ? `${tr} ${tg} ${tb}` : '0 0 0'} rg 0 Tc 0 Tw 100 Tz 0 Tr\n`;
                 ftStreamContent += `/${pdfFont} ${ftFontSize} Tf\n`;
-                if (ann.textColor) {
-                  ftStreamContent += `${tr} ${tg} ${tb} rg\n`;
-                }
-                const lines = ann.text.split('\n');
-                let textY = textBaseY;
-                for (const line of lines) {
-                  if (needsRotationInAP ? textY < 0 : textY < tbY1) break;
-                  const escaped = line.replace(/\\/g, '\\\\').replace(/\(/g, '\\(').replace(/\)/g, '\\)');
-                  ftStreamContent += `${textBaseX} ${textY} Td\n(${escaped}) Tj\n`;
-                  ftStreamContent += `${-textBaseX} ${-textY} Td\n`;
+                for (const ln of layout.lines) {
+                  if (textY < bottomLimit) break;
+                  let textX = boxLeft + pad;
+                  if (align === 'center') textX = boxLeft + pad + (layout.maxWidth - ln.width) / 2;
+                  else if (align === 'right') textX = boxLeft + ftW - pad - ln.width;
+                  const escaped = ln.text.replace(/\\/g, '\\\\').replace(/\(/g, '\\(').replace(/\)/g, '\\)');
+                  ftStreamContent += `${textX} ${textY} Td\n(${escaped}) Tj\n`;
+                  ftStreamContent += `${-textX} ${-textY} Td\n`;
                   textY -= lineHeight;
                 }
                 ftStreamContent += 'ET\n';

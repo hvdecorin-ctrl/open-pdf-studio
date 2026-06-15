@@ -238,9 +238,22 @@ export async function exportAsRasterPdf({ dpi = 300, pages }) {
 
     const pdfBytes = await newPdf.save();
     await writeBinaryFile(outputPath, pdfBytes);
+
+    // Open the rasterised result in a new tab. Each page is now a flat image,
+    // so it renders identically in every viewer/printer — the reliable way to
+    // share/print annotated drawings without appearance-stream mismatches.
+    try {
+      const { createTab } = await import('../ui/chrome/tabs.js');
+      const { loadPDF } = await import('./loader.js');
+      const { index } = createTab(outputPath);
+      await loadPDF(outputPath, index);
+    } catch (e) {
+      console.error('Could not open raster PDF in a new tab:', e);
+    }
   } finally {
     hideLoading();
   }
+  return outputPath;
 }
 
 /**
