@@ -58,7 +58,7 @@ export async function openPrintQueueWindow() {
   try {
     const win = new W(label, {
       url: 'index.html?view=printqueue',
-      title: 'PDF-opvang — Open PDF Studio',
+      title: 'Open PDF Printer',
       width: 640,
       height: 540,
       minWidth: 420,

@@ -1746,6 +1746,38 @@ export async function savePDF(saveAsPath = null) {
             psDict.BS = buildBorderStyle(context, borderWidth, ann.borderStyle);
             if (ann.rotation) psDict.OPS_Rotation = ann.rotation;
             annotDict = context.obj(psDict);
+            // Embed a raster appearance stream (/AP) of the symbol so OTHER PDF
+            // viewers — which can't read the OPS_* private keys — render the
+            // actual symbol geometry instead of just the empty /Square box. The
+            // raster reuses the exact on-screen draw path, so it looks the same.
+            try {
+              const { renderParametricSymbolToPng } = await import('../annotations/rendering.js');
+              const png = renderParametricSymbolToPng(ann, 4);
+              if (png && png.dataUrl) {
+                const base64 = png.dataUrl.split(',')[1];
+                const bytes = Uint8Array.from(atob(base64), c => c.charCodeAt(0));
+                const embeddedImage = await pdfDocLib.embedPng(bytes);
+                const rectW = Math.abs(psx2 - psx1);
+                const rectH = Math.abs(psy2 - psy1);
+                const alpha = opacity != null ? opacity : 1;
+                const resources = { XObject: context.obj({ Img: embeddedImage.ref }) };
+                let apContent;
+                if (alpha < 1) {
+                  const gsRef = context.register(context.obj({ Type: 'ExtGState', ca: alpha, CA: alpha }));
+                  resources.ExtGState = context.obj({ GS0: gsRef });
+                  apContent = `q\n/GS0 gs\n${rectW} 0 0 ${rectH} 0 0 cm\n/Img Do\nQ\n`;
+                } else {
+                  apContent = `q\n${rectW} 0 0 ${rectH} 0 0 cm\n/Img Do\nQ\n`;
+                }
+                const apStream = context.stream(apContent, {
+                  Type: 'XObject', Subtype: 'Form', BBox: [0, 0, rectW, rectH],
+                  Resources: context.obj(resources),
+                });
+                annotDict.set(PDFName.of('AP'), context.obj({ N: context.register(apStream) }));
+              }
+            } catch (apErr) {
+              console.warn('[saver] parametricSymbol /AP embed failed:', apErr);
+            }
             break;
           }
 

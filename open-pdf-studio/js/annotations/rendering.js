@@ -203,6 +203,42 @@ function drawTextboxLeader(ctx, annotation, leader, strokeColor, lineWidth) {
 }
 
 // Draw single annotation
+// Render a single parametric symbol to a standalone PNG data URL, reusing the
+// EXACT live drawAnnotation() path (same templates, command-walker, hatch, text
+// and rotation) so the raster matches the on-screen rendering. Used by the PDF
+// saver to embed an appearance stream (/AP) for the NL/IFC symbols, so they look
+// the same in other PDF viewers instead of showing an empty box. The canvas
+// covers the rotation-expanded bbox (the same box the saver writes as the
+// annotation Rect), so a rotated symbol never clips.
+export function renderParametricSymbolToPng(annotation, pxPerUnit = 4) {
+  try {
+    const w = Math.max(1, annotation.width || 1);
+    const h = Math.max(1, annotation.height || 1);
+    const rot = ((annotation.rotation || 0) * Math.PI) / 180;
+    const cosA = Math.abs(Math.cos(rot)), sinA = Math.abs(Math.sin(rot));
+    const aabbW = w * cosA + h * sinA;   // rotation-expanded bbox = saver Rect
+    const aabbH = w * sinA + h * cosA;
+    // Cap so a huge symbol can't allocate an enormous canvas.
+    const px = Math.max(0.5, Math.min(pxPerUnit, 4000 / Math.max(aabbW, aabbH)));
+    const cw = Math.max(1, Math.round(aabbW * px));
+    const ch = Math.max(1, Math.round(aabbH * px));
+    const canvas = document.createElement('canvas');
+    canvas.width = cw; canvas.height = ch;
+    const ctx = canvas.getContext('2d');
+    // Map the expanded-bbox app-region onto the canvas (app-units → pixels).
+    const cx = annotation.x + w / 2, cy = annotation.y + h / 2;
+    ctx.scale(cw / aabbW, ch / aabbH);
+    ctx.translate(-(cx - aabbW / 2), -(cy - aabbH / 2));
+    // Full opacity here; the saver applies annotation opacity via the AP's
+    // ExtGState (same as image stamps) so it isn't applied twice.
+    drawAnnotation(ctx, { ...annotation, opacity: 1, hidden: false });
+    return { dataUrl: canvas.toDataURL('image/png') };
+  } catch (e) {
+    console.warn('[render] renderParametricSymbolToPng failed:', e);
+    return null;
+  }
+}
+
 export function drawAnnotation(ctx, annotation) {
   // Skip hidden annotations
   if (annotation.hidden) return;
