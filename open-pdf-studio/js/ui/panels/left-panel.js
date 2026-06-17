@@ -308,6 +308,16 @@ export function resumeThumbnails() {
   startProcessor();
 }
 
+// True when the thumbnail pipeline is quiet enough that a low-priority page
+// prefetch won't contend with VISIBLE-thumbnail generation — the exact
+// contention that got the old prefetchAdjacentPages removed. Safe to prefetch
+// when: not paused for active navigation, AND no visible (priority) thumbnails
+// are still pending. Background (off-screen) thumbnails are low priority and
+// fine to yield to a prefetch.
+export function isThumbnailPipelineIdle() {
+  return !_thumbnailsPaused && priorityPages.size === 0;
+}
+
 // Start the thumbnail processor. The previous 250ms delay added a visible
 // lag on small documents — once paused-state is honored, the very first
 // thumbnail no longer competes with the active-page render, so a tiny

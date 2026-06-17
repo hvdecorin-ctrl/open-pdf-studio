@@ -7,13 +7,14 @@ import { redrawAnnotations, renderAnnotationsForPage } from '../annotations/rend
 import { ensureAnnotationsForPage, hidePdfABar } from './loader.js';
 import { updateAllStatus } from '../ui/chrome/status-bar.js';
 import { hideProperties } from '../ui/panels/properties-panel.js';
-import { updateActiveThumbnail, pauseThumbnails, resumeThumbnails } from '../ui/panels/left-panel.js';
+import { updateActiveThumbnail, pauseThumbnails, resumeThumbnails, isThumbnailPipelineIdle } from '../ui/panels/left-panel.js';
 import { createSinglePageTextLayer, clearSinglePageTextLayer, createTextLayer, clearTextLayers, createTextLayerFromRust } from '../text/text-layer.js';
 import { createSinglePageLinkLayer, clearSinglePageLinkLayer, createLinkLayer, clearLinkLayers } from './link-layer.js';
 import { createSinglePageFormLayer, clearSinglePageFormLayer, createFormLayer, clearFormLayers, hideFormFieldsBar } from './form-layer.js';
 import { clearPdfVectorCache, prefetchPdfVectorGeometry } from '../tools/pdf-snap-extractor.js';
 import { clearDetectionCache } from '../tools/pdf-element-detector.js';
 import { onPageRendered, clearHighlights } from '../search/find-bar.js';
+import { showPagePlaceholder, hidePagePlaceholderWhenReady } from './page-transition.js';
 // Hi-DPI support: render canvases at device pixel ratio for sharp text
 export function getCanvasDPR() { return window.devicePixelRatio || 1; }
 
@@ -1090,6 +1091,80 @@ export async function setViewMode(mode) {
   }
 }
 
+// ─── Adjacent-page prefetch (idle-gated) ────────────────────────────────────
+// The original prefetchAdjacentPages was removed (see the renderPage() note)
+// because it ran unconditionally and starved visible-thumbnail generation —
+// Rust backend contention that froze the app on large files. This version only
+// fires after a navigation settles AND the pipeline is genuinely idle, and it
+// aborts the instant the user navigates again. It primes the NEXT page's vector
+// draw-commands into the same cache renderPage() reads (vr.hasCachedCommands),
+// so sequential paging becomes a cache hit instead of a cold Rust extract.
+let _prefetchTimer = null;
+const PREFETCH_DELAY_MS = 600;       // settle window after a navigation
+const PREFETCH_RETRY_MS = 400;       // re-poll cadence while waiting for idle
+const PREFETCH_MAX_WAIT_MS = 4000;   // give up after this — never busy-loop
+
+export function schedulePrefetch(centerPage) {
+  if (_prefetchTimer) clearTimeout(_prefetchTimer);
+  _prefetchTimer = setTimeout(() => { _prefetchTimer = null; _runPrefetch(centerPage, 0); }, PREFETCH_DELAY_MS);
+}
+
+// The active doc IFF the user is still parked on `centerPage` (else navigation
+// moved on and this prefetch is stale).
+function _prefetchDocIfStill(centerPage) {
+  const doc = getActiveDocument();
+  return doc && doc.pdfDoc && doc.currentPage === centerPage ? doc : null;
+}
+
+async function _runPrefetch(centerPage, waited) {
+  const doc = _prefetchDocIfStill(centerPage);
+  if (!doc) return; // user navigated — the new nav scheduled its own prefetch
+  // Don't compete with a foreground render or with visible-thumbnail work.
+  // Re-poll for a bounded window (timer-based, never a busy loop), then give up.
+  if ((window.__pdfRenderInFlight || 0) > 0 || !isThumbnailPipelineIdle()) {
+    if (waited >= PREFETCH_MAX_WAIT_MS) return;
+    _prefetchTimer = setTimeout(
+      () => { _prefetchTimer = null; _runPrefetch(centerPage, waited + PREFETCH_RETRY_MS); },
+      PREFETCH_RETRY_MS,
+    );
+    return;
+  }
+  // Forward first (normal reading direction), then backward.
+  const targets = [];
+  if (centerPage + 1 <= doc.pdfDoc.numPages) targets.push(centerPage + 1);
+  if (centerPage - 1 >= 1) targets.push(centerPage - 1);
+  for (const pn of targets) {
+    if (!_prefetchDocIfStill(centerPage)) return; // user moved — stop starting new IPC
+    if (!isThumbnailPipelineIdle()) return;       // visible thumbnails resumed — yield
+    try { await _prefetchOnePage(doc, pn, centerPage); }
+    catch { /* best-effort: a failed prefetch just means the next nav renders cold */ }
+  }
+}
+
+// Cache-only mirror of renderPage()'s cold vector path: analyze → extract →
+// prepareImages. Never touches #pdf-canvas or the viewport singleton.
+async function _prefetchOnePage(doc, pageNum, centerPage) {
+  if (!isTauri() || !doc.filePath) return;
+  if (state.renderEngineOverride != null) return; // user forced a raster engine
+  const rotation = getPageRotation(pageNum);
+  const vr = await import('./vector-renderer.js');
+  if (vr.hasCachedCommands(doc.filePath, pageNum, rotation)) return; // already primed
+  const ptcMod = await import('./page-type-cache.js');
+  let pageType = ptcMod.getCachedPageType(doc.filePath, pageNum - 1);
+  if (!pageType) {
+    pageType = await invoke('analyze_page_type', { path: doc.filePath, pageIndex: pageNum - 1 });
+    ptcMod.cachePageType(doc.filePath, pageNum - 1, pageType);
+  }
+  if (pageType !== 'vector') return; // raster pages aren't command-cached
+  if (!_prefetchDocIfStill(centerPage)) return;
+  const cmdData = await invoke('extract_draw_commands', { path: doc.filePath, pageIndex: pageNum - 1, rotation });
+  const cmdBytes = cmdData instanceof Uint8Array ? cmdData : new Uint8Array(cmdData);
+  vr.cacheCommands(doc.filePath, pageNum, cmdBytes, rotation);
+  if (!_prefetchDocIfStill(centerPage)) return;
+  await vr.prepareImages(doc.filePath, pageNum, rotation);
+  console.log(`[prefetch] primed page ${pageNum}`);
+}
+
 // Go to specific page
 export async function goToPage(pageNum) {
   const doc = getActiveDocument();
@@ -1102,11 +1177,26 @@ export async function goToPage(pageNum) {
   hideProperties();
 
   if (doc?.viewMode === 'single') {
-    await renderPage(pageNum);
+    // Instant feedback: blit the page's cached thumbnail as a placeholder over
+    // the canvas so the switch feels immediate even while the (possibly cold)
+    // render runs. Hidden one frame after renderPage() resolves, so the crisp
+    // page has painted underneath. No-op if the thumbnail isn't cached yet.
+    const _phGen = showPagePlaceholder(pageNum);
+    try {
+      await renderPage(pageNum);
+    } finally {
+      // Keep the placeholder up until the real page content has painted (raster
+      // bitmaps fill asynchronously after renderPage resolves) — avoids a blank
+      // flash between hiding the thumbnail and the bitmap landing.
+      hidePagePlaceholderWhenReady(_phGen);
+    }
     const pdfContainer = document.getElementById('pdf-container');
     if (pdfContainer) {
       pdfContainer.scrollTop = 0;
     }
+    // Prime the neighbouring pages while the backend is idle so the next
+    // sequential nav is a cache hit (skips the cold Rust extract).
+    schedulePrefetch(pageNum);
   } else {
     // Scroll to page in continuous mode
     const pageWrapper = document.querySelector(`.page-wrapper[data-page="${pageNum}"]`);
