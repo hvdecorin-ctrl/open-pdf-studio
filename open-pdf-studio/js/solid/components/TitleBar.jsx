@@ -3,7 +3,6 @@ import { state } from '../../core/state.js';
 import { useTranslation } from '../../i18n/useTranslation.js';
 import { openDialog, getDialogs } from '../stores/dialogStore.js';
 import { isTauri } from '../../core/platform.js';
-import AccountDropdown from './AccountDropdown.jsx';
 import OpenAecAccount from './OpenAecAccount.jsx';
 
 async function handleClose() {
@@ -166,7 +165,6 @@ export default function TitleBar() {
 
       <div class="window-controls">
         <OpenAecAccount />
-        <AccountDropdown />
         <button class="send-feedback-btn" onClick={() => openDialog('feedback')}>
           {tCommon('sendFeedback')}
         </button>

@@ -514,7 +514,7 @@ async function overlayAnnotationsOnDataURL(dataURL, pageNum, width, height, scal
 // Rust backend, then PDF.js. Reusing the cache avoids re-parsing the PDF
 // content stream + IPC + JPEG encode + base64 round-trip.
 async function renderThumbnailToDataURL(pdfDoc, pageNum) {
-  if (!pdfDoc || pageNum > pdfDoc.numPages) return null;
+  if (!pdfDoc || !Number.isInteger(pageNum) || pageNum < 1 || pageNum > pdfDoc.numPages) return null;
   const _th0 = performance.now();
 
   const doc = getActiveDocument();

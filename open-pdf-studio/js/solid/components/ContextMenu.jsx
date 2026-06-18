@@ -814,42 +814,6 @@ function TextSelectionMenuContent() {
         clearTextSelection();
       }} />
 
-      <Separator />
-
-      <Submenu icon={`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M12 2a4 4 0 0 0-4 4v2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8a2 2 0 0 0-2-2h-2V6a4 4 0 0 0-4-4z"/><circle cx="9" cy="13" r="1"/><circle cx="15" cy="13" r="1"/><path d="M9 17h6"/></svg>`} label="AI Assistant">
-        <MenuItem label={t('textSelection.aiSummarize') || 'Summarize'} onClick={async () => {
-          const text = getSelectedText();
-          if (!text) return;
-          const { requireSignIn, sendAction, setAiPanelVisible } = await import('../stores/aiStore.js');
-          if (!(await requireSignIn())) return;
-          setAiPanelVisible(true);
-          sendAction('summarize', text);
-        }} />
-        <MenuItem label={t('textSelection.aiExplain') || 'Explain'} onClick={async () => {
-          const text = getSelectedText();
-          if (!text) return;
-          const { requireSignIn, sendAction, setAiPanelVisible } = await import('../stores/aiStore.js');
-          if (!(await requireSignIn())) return;
-          setAiPanelVisible(true);
-          sendAction('explain', text);
-        }} />
-        <MenuItem label={t('textSelection.aiTranslate') || 'Translate'} onClick={async () => {
-          const text = getSelectedText();
-          if (!text) return;
-          const { requireSignIn, sendAction, setAiPanelVisible } = await import('../stores/aiStore.js');
-          if (!(await requireSignIn())) return;
-          setAiPanelVisible(true);
-          sendAction('translate', text, { language: navigator.language.split('-')[0] });
-        }} />
-        <MenuItem label={t('textSelection.aiRewrite') || 'Rewrite'} onClick={async () => {
-          const text = getSelectedText();
-          if (!text) return;
-          const { requireSignIn, sendAction, setAiPanelVisible } = await import('../stores/aiStore.js');
-          if (!(await requireSignIn())) return;
-          setAiPanelVisible(true);
-          sendAction('rewrite', text);
-        }} />
-      </Submenu>
     </>
   );
 }

@@ -24,8 +24,8 @@ import { DockedToolPalette, FloatingToolPalette, DockTargets, PaletteContextMenu
 import { DockedExtPalette, FloatingExtPalette, ExtDockTargets } from './components/ExtensionToolPalette.jsx';
 import { DockedSymbolPalette, FloatingSymbolPalette, SymbolSettingsDialog } from './components/SymbolPalette.jsx';
 import SchedulePanel from './components/SchedulePanel.jsx';
-import AIPanel from './components/AIPanel.jsx';
 import MiniLog from './components/MiniLog.jsx';
+import AssistantPanel from './components/AssistantPanel.jsx';
 import { getRegisteredPalettes } from '../plugins/palette-registry.js';
 import { leftOrder, rightOrder } from './stores/paletteOrder.js';
 import { useTranslation } from '../i18n/useTranslation.js';
@@ -131,7 +131,7 @@ function DesktopApp() {
       <PaletteContextMenu />
       <SymbolSettingsDialog />
       <SchedulePanel />
-      <ErrorBoundary fallback={null}><AIPanel /></ErrorBoundary>
+      <AssistantPanel />
       {/* MiniLog floating engine-log overlay removed per user request. */}
       <LoadingOverlay />
       <TypeLengthHUD />

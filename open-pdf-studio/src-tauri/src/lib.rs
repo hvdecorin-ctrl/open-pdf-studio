@@ -4,7 +4,6 @@
 #![recursion_limit = "256"]
 
 mod accounts;
-mod auth;
 pub mod mcp_app_bridge;
 pub mod mcp_server;
 pub mod pdfium_renderer;
@@ -2201,12 +2200,6 @@ pub fn run(opts: StartupOpts) {
             allow_fs_scope,
             mcp_app_bridge::app_response,
             mcp_app_bridge::mcp_bridge_ready,
-            auth::auth_is_configured,
-            auth::auth_login,
-            auth::auth_logout,
-            auth::auth_current_user,
-            auth::auth_get_access_token,
-            auth::auth_userinfo,
             accounts::accounts_sign_in,
             accounts::accounts_get_user,
             accounts::accounts_sign_out,

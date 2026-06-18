@@ -41,11 +41,6 @@ image = { version = "0.25", default-features = false, features = ["jpeg", "png"]
 pdfium-render = { version = "0.9", features = ["thread_safe", "image_025"] }
 clap = { version = "4", features = ["derive"] }
 
-# OIDC sign-in (Impertio Accounts): Authorization Code + PKCE with a
-# loopback redirect on 127.0.0.1:53683.
-oauth2 = { version = "4", default-features = false, features = ["reqwest", "rustls-tls"] }
-tiny_http = "0.12"
-
 # OpenAEC Accounts ("Sign in with OpenAEC", accounts.rs): PKCE + OS-keyring
 # token storage + multipart uploads to the Accounts API.
 keyring = { version = "3", features = ["windows-native"] }

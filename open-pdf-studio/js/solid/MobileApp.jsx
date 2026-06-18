@@ -13,7 +13,6 @@ import { getRecentFiles, addRecentFile, clearRecentFiles } from '../mobile/recen
 import { LANGUAGES } from '../i18n/config.js';
 import { changeLanguage } from '../i18n/useTranslation.js';
 import LoadingOverlay from './components/LoadingOverlay.jsx';
-import AIPanel from './components/AIPanel.jsx';
 
 export default function MobileApp() {
   const { t } = useTranslation('common');
@@ -604,7 +603,6 @@ export default function MobileApp() {
         <MobilePreferences onClose={() => setPrefsOpen(false)} onThemeChange={(theme) => setDarkMode(theme === 'dark')} />
       </Show>
 
-      <AIPanel />
       <LoadingOverlay />
     </div>
   );

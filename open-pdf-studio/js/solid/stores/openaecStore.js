@@ -5,8 +5,6 @@
 // Accounts API all live at the Rust side; the webview only ever sees the
 // user profile (sub/name/email). Mirrors the Open Calc Studio integration —
 // same contract: openaec-accounts/docs/integrations/open-pdf-studio.md.
-//
-// NOT the same thing as aiStore.js (Impertio account for AI features).
 
 import { createSignal } from 'solid-js';
 import { isTauri } from '../../core/platform.js';
@@ -61,6 +59,26 @@ export async function openaecSignOut() {
 /** Authenticated Accounts API call, e.g. openaecFetch('/me/apps'). */
 export function openaecFetch(path, method, body) {
   return _invoke('accounts_fetch', { path, method, body });
+}
+
+/** Upload a file (e.g. the current PDF) to OpenAEC cloud storage (/me/files). */
+export function openaecUploadFile(fileName, bytes) {
+  return _invoke('accounts_upload_file', { fileName, content: Array.from(bytes) });
+}
+
+/** List the user's cloud files (/me/files). */
+export function openaecListFiles() {
+  return _invoke('accounts_fetch', { path: '/me/files', method: 'GET' });
+}
+
+/** Download a cloud file by id; resolves with base64-encoded bytes. */
+export function openaecDownloadFile(id) {
+  return _invoke('accounts_download_file', { id });
+}
+
+/** OpenAEC AI completion (POST /me/ai/complete) → { text, credits }. */
+export function openaecAiComplete(prompt, system) {
+  return openaecFetch('/me/ai/complete', 'POST', { prompt, system, app: 'open-pdf-studio' });
 }
 
 // Restore session once at module load (fire-and-forget).

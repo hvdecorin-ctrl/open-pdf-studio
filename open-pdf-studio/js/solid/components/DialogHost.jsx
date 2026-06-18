@@ -30,7 +30,6 @@ import WhatsNewDialog from './dialogs/WhatsNewDialog.jsx';
 import ShortcutsDialog from './dialogs/ShortcutsDialog.jsx';
 import ExtensionsDialog from './dialogs/ExtensionsDialog.jsx';
 import ConfirmDialog from './dialogs/ConfirmDialog.jsx';
-import AITranslateDialog from './dialogs/AITranslateDialog.jsx';
 import ViewportScaleDialog from './dialogs/ViewportScaleDialog.jsx';
 import ScaleRegionDialog from './dialogs/ScaleRegionDialog.jsx';
 import TitleBlockDialog from './dialogs/TitleBlockDialog.jsx';
@@ -75,7 +74,6 @@ const DIALOG_MAP = {
   'extensions': ExtensionsDialog,
   'confirm': ConfirmDialog,
   'title-block-edit': TitleBlockDialog,
-  'ai-translate': AITranslateDialog,
   'viewport-scale': ViewportScaleDialog,
   'scale-region': ScaleRegionDialog,
   'compare': CompareDialog,

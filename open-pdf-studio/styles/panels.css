@@ -51,8 +51,8 @@
 /* Annotations Popup Menu */
 .annotations-menu {
   position: fixed;
-  background: #ffffff;
-  border: 1px solid #c0c0c0;
+  background: var(--theme-surface, #ffffff);
+  border: 1px solid var(--theme-border, #c0c0c0);
   box-shadow: 2px 2px 8px rgba(0, 0, 0, 0.2);
   min-width: 160px;
   padding: 2px 0;
@@ -65,7 +65,7 @@
   padding: 4px 12px 2px;
   font-size: 10px;
   font-weight: 600;
-  color: #888;
+  color: var(--theme-text-secondary, #888);
   text-transform: uppercase;
   letter-spacing: 0.5px;
 }
@@ -75,13 +75,13 @@
   align-items: center;
   padding: 4px 12px 4px 8px;
   cursor: pointer;
-  color: #333;
+  color: var(--theme-text, #333);
   gap: 4px;
   position: relative;
 }
 
 .annotations-menu-item:hover {
-  background: #e5f3ff;
+  background: var(--theme-hover, rgba(127, 127, 127, 0.2));
 }
 
 .annotations-menu-item.disabled {
@@ -96,7 +96,7 @@
 .annotations-menu-check {
   width: 16px;
   text-align: center;
-  color: #333;
+  color: var(--theme-text, #333);
   font-weight: bold;
   font-size: 12px;
 }
@@ -155,8 +155,8 @@
   position: absolute;
   top: -2px;
   left: 100%;
-  background: #ffffff;
-  border: 1px solid #c0c0c0;
+  background: var(--theme-surface, #ffffff);
+  border: 1px solid var(--theme-border, #c0c0c0);
   box-shadow: 2px 2px 8px rgba(0, 0, 0, 0.2);
   min-width: 200px;
   padding: 2px 0;

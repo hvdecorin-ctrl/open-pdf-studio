@@ -18,7 +18,7 @@ import { switchRibbonTab as switchToTab } from '../bridge.js';
 import { openFindBar, closeFindBar, onFindNext } from '../search/find-bar.js';
 import { closeActiveTab } from '../ui/chrome/tabs.js';
 import { hideProperties, showProperties, showMultiSelectionProperties, togglePropertiesPanel } from '../ui/panels/properties-panel.js';
-import { openDialog, aiPanelVisible, setAiPanelVisible, aiIsAuthenticated, aiRequireSignIn } from '../bridge.js';
+import { openDialog } from '../bridge.js';
 import { getTool } from './tool-registry.js';
 import { tryStartGMove, isGMoveModeActive } from './g-move-mode.js';
 import { tryStartGRotate, isGRotateModeActive } from './g-rotate-mode.js';
@@ -437,11 +437,6 @@ export async function handleKeydown(e) {
       hideProperties();
       redraw();
     }
-  } else if (ctrl && shift && e.key === 'A') {
-    e.preventDefault();
-    if (!(await aiRequireSignIn())) return;
-    setAiPanelVisible(!aiPanelVisible());
-
   } else if (ctrl && !shift && e.key === 'c') {
     // Copy selected annotations (if none selected, let native copy handle text selection)
     const _copyDoc = getActiveDocument();
@@ -505,6 +500,12 @@ export async function handleKeydown(e) {
   // ESC key - exit fullscreen, deselect, or close dialogs, or switch back to hand tool
   else if (e.key === 'Escape') {
     e.preventDefault();
+    // End an in-progress text edit (commit the typed text) and return to the
+    // select tool — Esc as an alternative to right-click / clicking away.
+    if (state.isEditingText) {
+      import('./text-editing.js').then(m => { m.finishTextEditing(); setTool('select'); });
+      return;
+    }
     // Cancel an in-progress grip-stretch / resize: restore the original
     // annotation snapshot and exit resize mode without recording undo.
     if (state.isResizing && state.originalAnnotation) {

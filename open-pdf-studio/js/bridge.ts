@@ -246,21 +246,3 @@ export {
   setEmptyMessage as setTagEmptyMessage,
 } from './solid/stores/panels/tagsStore.js';
 
-// ============= AI ASSISTANT =============
-export {
-  aiPanelVisible,
-  setAiPanelVisible,
-  isAuthenticated as aiIsAuthenticated,
-  user as aiUser,
-  info as aiInfo,
-  usage as aiUsage,
-  subscription as aiSubscription,
-  messages as aiMessages,
-  isLoading as aiIsLoading,
-  sendAction as aiSendAction,
-  sendChat as aiSendChat,
-  clearChat as aiClearChat,
-  login as aiLogin,
-  logout as aiLogout,
-  requireSignIn as aiRequireSignIn,
-} from './solid/stores/aiStore.js';
