@@ -36,6 +36,7 @@ export function registerAllTools() {
   registerTool('box', shapeTool);
   registerTool('mask', shapeTool);
   registerTool('circle', shapeTool);
+  registerTool('ellipse', shapeTool);
   registerTool('highlight', shapeTool);
   registerTool('cloud', shapeTool);
   registerTool('polygon', shapeTool);

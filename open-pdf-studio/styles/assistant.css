@@ -158,3 +158,19 @@
 }
 .chat-send:hover { background: #b45309; }
 .chat-send:disabled { background: var(--theme-border, #d4d4d4); cursor: not-allowed; }
+
+/* Claude (Anthropic) API-key row — toggled via the key button in the header. */
+.chat-keyrow { display: flex; gap: 6px; padding: 8px 12px; border-bottom: 1px solid var(--theme-border, #d4d4d4); background: var(--theme-surface, #f5f5f5); }
+.chat-keyinput {
+  flex: 1;
+  border: 1px solid var(--theme-border, #d4d4d4);
+  border-radius: 6px;
+  padding: 6px 8px;
+  font-size: 12px;
+  background: var(--theme-bg, #fff);
+  color: var(--theme-text, #1e1e1e);
+  outline: none;
+}
+.chat-keyinput:focus { border-color: #d97706; }
+.chat-keysave { border: none; background: #d97706; color: #fff; border-radius: 6px; padding: 6px 12px; font-size: 12px; cursor: pointer; flex-shrink: 0; }
+.chat-keysave:hover { background: #b45309; }

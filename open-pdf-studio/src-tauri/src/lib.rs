@@ -4,6 +4,7 @@
 #![recursion_limit = "256"]
 
 mod accounts;
+mod email;
 pub mod mcp_app_bridge;
 pub mod mcp_server;
 pub mod pdfium_renderer;
@@ -2069,10 +2070,13 @@ pub fn run(opts: StartupOpts) {
                 .resource_dir()
                 .map_err(|e| format!("Cannot resolve resource_dir: {}", e))?;
 
-            pdfium_renderer::init_pdfium(&resource_dir)
-                .map_err(|e| format!("PDFium initialisation failed: {}", e))?;
-
-            log::info!("PDFium initialised from {:?}", resource_dir);
+            // Non-fatal: if PDFium can't load (e.g. libpdfium.so missing from a
+            // Linux bundle), the app still starts and the UI loads — rendering
+            // reports an error instead of aborting at startup.
+            match pdfium_renderer::init_pdfium(&resource_dir) {
+                Ok(()) => log::info!("PDFium initialised from {:?}", resource_dir),
+                Err(e) => log::error!("PDFium initialisation failed (rendering disabled): {}", e),
+            }
 
             // Windows-only: pre-warm shell32.dll + comdlg32.dll + the
             // IFileOpenDialog COM factory in a background thread so the
@@ -2206,6 +2210,7 @@ pub fn run(opts: StartupOpts) {
             accounts::accounts_fetch,
             accounts::accounts_upload_file,
             accounts::accounts_download_file,
+            email::email_pdf,
             window_mgmt::spawn_window_with_pdf,
             window_mgmt::try_dock_pdf_at_screen,
             window_mgmt::close_window_by_label,

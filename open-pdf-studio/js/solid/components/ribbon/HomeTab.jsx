@@ -22,6 +22,8 @@ import { useTranslation } from '../../../i18n/useTranslation.js';
 const newDocIcon = `<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-3-3v6m5 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>`;
 // IFC-report export icon (box with outgoing arrow)
 const ifcExportIcon = `<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8.5 12 4l8 4.5v7L12 20l-8-4.5z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 11v9M4 8.5 12 11l8-2.5"/></svg>`;
+// E-mail icon (envelope)
+const emailIcon = `<svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l9 6 9-6M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>`;
 
 export default function HomeTab() {
   const { t } = useTranslation('ribbon');
@@ -38,6 +40,12 @@ export default function HomeTab() {
             onClick={async () => {
               const m = await import('../../../pdf/ifc-export.js');
               m.exportIfcReport();
+            }} />
+          <RibbonButton id="btn-home-email" title="Verzenden per e-mail (PDF als bijlage)"
+            icon={emailIcon} label="E-mail" disabled={noPdf()}
+            onClick={async () => {
+              const m = await import('../../../pdf/email-pdf.js');
+              m.emailCurrentPdf();
             }} />
         </RibbonGroup>
 

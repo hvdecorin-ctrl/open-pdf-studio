@@ -229,8 +229,10 @@ export function findAnnotationAt(x, y) {
         // Transform click point by inverse rotation if annotation is rotated
         const circleCenter = { x: findCircX + findCircW / 2, y: findCircY + findCircH / 2 };
         const circleLocal = transformPointByInverseRotation(x, y, circleCenter.x, circleCenter.y, ann.rotation);
-        // If has fill color or hatch pattern, check if inside the ellipse
-        if (ann.fillColor || (ann.hatchPattern && ann.hatchPattern !== 'none')) {
+        // Hittable across the WHOLE ellipse area (interior + border), regardless
+        // of fill — so circles/ellipses can be selected and Ctrl+copied by
+        // clicking anywhere inside, not just the thin stroke.
+        {
           const ellCX = findCircX + findCircW / 2;
           const ellCY = findCircY + findCircH / 2;
           const ellRX = Math.abs(findCircW / 2);
@@ -238,7 +240,7 @@ export function findAnnotationAt(x, y) {
           const normDist = Math.pow((circleLocal.x - ellCX) / ellRX, 2) + Math.pow((circleLocal.y - ellCY) / ellRY, 2);
           if (normDist <= 1) return ann;
         }
-        // Also check near the border (stroke)
+        // Also check near the border (stroke) so the thin outline stays grabbable.
         if (isPointNearEllipse(circleLocal.x, circleLocal.y, findCircX, findCircY, findCircW, findCircH, tol)) return ann;
         break;
       case 'box':

@@ -15,7 +15,7 @@ import { recordBulkModify } from '../../../core/undo-manager.js';
 import { alignLeft } from '../../../annotations/alignment.js';
 import {
   handIcon, selectCommentsIcon, findIcon,
-  lineIcon, arrowIcon, drawIcon, rectIcon, polylineIcon, textboxIcon, noteIcon, ellipseIcon,
+  lineIcon, arrowIcon, drawIcon, rectIcon, polylineIcon, textboxIcon, noteIcon, ellipseIcon, circleIcon,
   calloutIcon, cloudIcon,
   measureDistanceIcon, measureAngleIcon, measurePerimeterIcon,
   alignLeftIcon, alignTopIcon, alignBottomIcon,
@@ -144,10 +144,10 @@ export default function DrawingTab() {
           {/* Row 2 */}
           <RibbonButton size="small" id="dr-spline" title={t('comment.splineTitle')} icon={splineIcon}
             disabled={ro()} active={state.currentTool === 'spline'} onClick={() => setTool('spline')} />
-          <RibbonButton size="small" id="dr-circle" title={t('comment.ellipse')} icon={ellipseIcon}
+          <RibbonButton size="small" id="dr-circle" title={t('format.circle') || 'Cirkel'} icon={circleIcon}
             disabled={ro()} active={state.currentTool === 'circle'} onClick={() => setTool('circle')} />
-          <RibbonButton size="small" id="dr-ellipse" title={t('comment.ellipse')} icon={ellipseIcon}
-            disabled={ro()} active={state.currentTool === 'circle'} onClick={() => setTool('circle')} />
+          <RibbonButton size="small" id="dr-ellipse" title={t('comment.ellipse') || 'Ellips'} icon={ellipseIcon}
+            disabled={ro()} active={state.currentTool === 'ellipse'} onClick={() => setTool('ellipse')} />
           <RibbonButton size="small" id="dr-pattern-rect" title={cs} icon={placeholderIcon} disabled={true} />
           <RibbonButton size="small" id="dr-l-shape" title={cs} icon={placeholderIcon} disabled={true} />
           <RibbonButton size="small" id="dr-image" title={t('drawing.image')} icon={imageIcon}

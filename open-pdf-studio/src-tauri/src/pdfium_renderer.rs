@@ -69,6 +69,12 @@ impl PdfiumDocumentHandle {
     /// Construct a handle from raw PDF bytes. Returns Err on parse failure
     /// (corrupt PDF / unsupported encryption / etc).
     pub fn load_from_bytes(bytes: Arc<Vec<u8>>) -> Result<Self, String> {
+        // Guard against an uninitialised PDFium (init_pdfium is now non-fatal,
+        // so the library may be absent on a misbuilt bundle) — return an error
+        // instead of letting pdfium() panic on the first render.
+        if PDFIUM.get().is_none() {
+            return Err("PDFium is not available — rendering is disabled on this build.".into());
+        }
         // Safety: the document borrows from `bytes` and from `PDFIUM`. Both
         // live for 'static: `_bytes` is kept alive in the same struct, and
         // PDFIUM is a OnceLock<Pdfium> that is never dropped.

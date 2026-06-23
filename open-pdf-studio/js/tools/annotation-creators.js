@@ -144,6 +144,25 @@ export function buildAnnotationProps(tool, startX, startY, endX, endY, e) {
       };
     }
 
+    case 'ellipse': {
+      // Free oval (no 1:1 constraint). Stored as a 'circle'-type annotation so
+      // rendering/editing/saving all work unchanged; just fainter by default so
+      // it reads as a lighter ellipse next to the solid circle.
+      const b = bbox(startX, startY, endX, endY);
+      return {
+        type: 'circle',
+        page: getActiveDocument()?.currentPage || 1,
+        ...b,
+        color: prefs.circleStrokeColor,
+        strokeColor: prefs.circleStrokeColor,
+        fillColor: prefs.circleFillNone ? null : prefs.circleFillColor,
+        lineWidth: prefs.circleBorderWidth,
+        borderStyle: prefs.circleBorderStyle,
+        opacity: (prefs.circleOpacity / 100) * 0.5,
+        ...o
+      };
+    }
+
     case 'box': {
       const b = bbox(startX, startY, endX, endY);
       return {

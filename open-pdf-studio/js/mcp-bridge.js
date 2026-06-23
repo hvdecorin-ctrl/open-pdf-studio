@@ -262,6 +262,7 @@ function makeMouseInit(x, y, opts = {}) {
     altKey: !!opts.altKey,
     metaKey: !!opts.metaKey,
     relatedTarget: opts.relatedTarget ?? null,
+    detail: opts.detail ?? 0,
   };
 }
 
@@ -324,10 +325,14 @@ async function handleMouseClick(params) {
   const buttonName = (params?.button ?? 'left');
   const button = buttonIndexFor(buttonName);
   const buttonsMask = buttonsMaskFor(buttonName);
+  const double = !!params?.double;
   const mods = {
     shiftKey: !!params?.shift,
     ctrlKey: !!params?.ctrl,
     altKey: !!params?.alt,
+    // detail===2 lets the app's double-click handlers fire (e.g. select-tool
+    // entering text-edit mode on a textbox/callout).
+    detail: double ? 2 : 1,
   };
   const target = targetAt(x, y);
 
@@ -342,9 +347,13 @@ async function handleMouseClick(params) {
       makeMouseInit(x, y, { button, buttons: 0 })));
   } else {
     target.dispatchEvent(new MouseEvent('click',
-      makeMouseInit(x, y, { button, buttons: 0 })));
+      makeMouseInit(x, y, { button, buttons: 0, detail: double ? 2 : 1 })));
+    if (double) {
+      target.dispatchEvent(new MouseEvent('dblclick',
+        makeMouseInit(x, y, { button, buttons: 0, detail: 2 })));
+    }
   }
-  return { ok: true, x, y, button: buttonName, target: describeTarget(target) };
+  return { ok: true, x, y, button: buttonName, double, target: describeTarget(target) };
 }
 
 async function handleMouseDrag(params) {
@@ -484,8 +493,11 @@ async function handleType(params) {
   }
 
   let typed = 0;
+  let lastTarget = document.body;
+  let lastEditable = false;
   for (const ch of text) {
     const target = document.activeElement ?? document.body;
+    lastTarget = target;
     const init = makeKeyInit(ch, {});
     target.dispatchEvent(new KeyboardEvent('keydown', init));
 
@@ -495,6 +507,7 @@ async function handleType(params) {
     const tag = target.tagName ? target.tagName.toLowerCase() : '';
     const isEditable = (tag === 'input' || tag === 'textarea' ||
                        target.isContentEditable === true);
+    lastEditable = isEditable;
     if (isEditable) {
       try {
         target.dispatchEvent(new InputEvent('beforeinput', {
@@ -527,7 +540,7 @@ async function handleType(params) {
     target.dispatchEvent(new KeyboardEvent('keyup', init));
     typed++;
   }
-  return { ok: true, typed };
+  return { ok: true, typed, target: describeTarget(lastTarget), editable: lastEditable };
 }
 
 async function handleGetViewportState() {

@@ -22,9 +22,15 @@ export const shapeTool = {
 
     // Snap cursor position for shape preview
     const snap = ctx.snap(x, y);
-    const previewX = snap.snapped ? snap.x : x;
-    const previewY = snap.snapped ? snap.y : y;
+    let previewX = snap.snapped ? snap.x : x;
+    let previewY = snap.snapped ? snap.y : y;
     state.lastSnapResult = snap.snapped ? snap : null;
+    // Circle tool: constrain the drag to a 1:1 square so it previews a true circle.
+    if (state.currentTool === 'circle') {
+      const sq = _squareEnd(state.startX, state.startY, previewX, previewY);
+      previewX = sq.x; previewY = sq.y;
+      state.lastSnapResult = null;
+    }
     ctx.drawShapePreview(previewX, previewY, e);
   },
 
@@ -69,6 +75,12 @@ export const shapeTool = {
       return false;
     }
 
+    // Circle tool: square the bbox so the committed shape is a true circle.
+    if (tool === 'circle') {
+      const sq = _squareEnd(state.startX, state.startY, endX, endY);
+      endX = sq.x; endY = sq.y;
+    }
+
     const ann = ctx.createAnnotationFromTool(tool, state.startX, state.startY, endX, endY, e);
     if (ann) {
       const doc = state.documents[state.activeDocumentIndex];
@@ -91,6 +103,14 @@ export const shapeTool = {
     return true;
   },
 };
+
+/** Constrain (ex,ey) so |dx| == |dy| relative to (sx,sy) — yields a square
+ *  bounding box (a true circle) while preserving the drag direction. */
+function _squareEnd(sx, sy, ex, ey) {
+  const dx = ex - sx, dy = ey - sy;
+  const s = Math.max(Math.abs(dx), Math.abs(dy));
+  return { x: sx + (dx < 0 ? -s : s), y: sy + (dy < 0 ? -s : s) };
+}
 
 function _drawHoverSnap(ctx, x, y) {
   const snap = ctx.snap(x, y);
