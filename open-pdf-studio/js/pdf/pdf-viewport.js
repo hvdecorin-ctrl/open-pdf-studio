@@ -532,21 +532,11 @@ function _render() {
   const displayPageW = isRotated90 ? viewport.pageH : viewport.pageW;
   const displayPageH = isRotated90 ? viewport.pageW : viewport.pageH;
 
-  // White page background — SAME transform as vector commands, multiplied by dpr.
-  // For vector content we keep the PDF user-space (Y-flipped) transform; for raster
-  // we'll draw on top in screen space.
-  _ctx.save();
-  _ctx.setTransform(viewport.zoom * dpr, 0, 0, viewport.zoom * dpr, viewport.offsetX * dpr, viewport.offsetY * dpr);
-  _ctx.transform(1, 0, 0, -1, 0, viewport.pageH);
-  _ctx.translate(-viewport.originX, -viewport.originY); // MediaBox origin offset
-  _ctx.fillStyle = '#ffffff';
-  _ctx.fillRect(viewport.originX, viewport.originY, viewport.pageW, viewport.pageH);
-  _ctx.restore();
-
-  // RASTER BITMAP — whole-page raster from PDFium, drawn in screen space at
-  // (offsetX, offsetY) sized to the post-rotation page extent. The bitmap is
-  // already rendered with rotation applied, so we don't apply any per-axis
-  // transform here — identity scale, identity rotation, just stretch-to-fit.
+  // White page background. For RASTER we fill in screen space at the SAME
+  // post-rotation extent as the bitmap (so a 90°/270° page has no uncovered
+  // white band — the old user-space rect used the un-swapped pageW/pageH and
+  // left a white strip after rotation). For VECTOR we keep the PDF user-space
+  // (Y-flipped) transform that matches the vector commands drawn on top.
   if (viewport.currentBitmap) {
     _ctx.save();
     _ctx.setTransform(1, 0, 0, 1, 0, 0); // identity (device-pixel space)
@@ -554,7 +544,17 @@ function _render() {
     const destY = viewport.offsetY * dpr;
     const destW = displayPageW * viewport.zoom * dpr;
     const destH = displayPageH * viewport.zoom * dpr;
+    _ctx.fillStyle = '#ffffff';
+    _ctx.fillRect(destX, destY, destW, destH);
     _ctx.drawImage(viewport.currentBitmap, destX, destY, destW, destH);
+    _ctx.restore();
+  } else {
+    _ctx.save();
+    _ctx.setTransform(viewport.zoom * dpr, 0, 0, viewport.zoom * dpr, viewport.offsetX * dpr, viewport.offsetY * dpr);
+    _ctx.transform(1, 0, 0, -1, 0, viewport.pageH);
+    _ctx.translate(-viewport.originX, -viewport.originY); // MediaBox origin offset
+    _ctx.fillStyle = '#ffffff';
+    _ctx.fillRect(viewport.originX, viewport.originY, viewport.pageW, viewport.pageH);
     _ctx.restore();
   }
 
@@ -757,9 +757,14 @@ export function fitToViewport() {
   const dpr = _getDpr();
   const cssW = _canvas.width / dpr;
   const cssH = _canvas.height / dpr;
-  const newZoom = computeFitZoom('page', viewport.pageW, viewport.pageH, cssW, cssH, 0);
-  const scaledW = viewport.pageW * newZoom;
-  const scaledH = viewport.pageH * newZoom;
+  // Fit on the POST-ROTATION extent so a 90°/270° (e.g. landscape) page is
+  // sized and centred correctly instead of using the un-swapped dimensions.
+  const _rot90 = (viewport.rotation === 90 || viewport.rotation === 270);
+  const fitW = _rot90 ? viewport.pageH : viewport.pageW;
+  const fitH = _rot90 ? viewport.pageW : viewport.pageH;
+  const newZoom = computeFitZoom('page', fitW, fitH, cssW, cssH, 0);
+  const scaledW = fitW * newZoom;
+  const scaledH = fitH * newZoom;
   const newOffsetX = (cssW - scaledW) / 2;
   const newOffsetY = (cssH - scaledH) / 2;
 

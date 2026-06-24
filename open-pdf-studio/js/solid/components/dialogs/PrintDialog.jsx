@@ -3,7 +3,7 @@ import Dialog from '../Dialog.jsx';
 import { closeDialog } from '../../stores/dialogStore.js';
 import { state, getActiveDocument, getPageRotation } from '../../../core/state.js';
 import { invoke } from '../../../core/platform.js';
-import { parsePageRange } from '../../../pdf/exporter.js';
+import { parsePageRange, renderPageOffscreen } from '../../../pdf/exporter.js';
 import { useTranslation } from '../../../i18n/useTranslation.js';
 import { loadPrinters, printerList as cachedPrinters, defaultPrinterName } from '../../stores/printerStore.js';
 import { runPrintJob } from '../../../pdf/print-job.js';

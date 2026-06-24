@@ -35,6 +35,17 @@ export function handlePointerDown(e) {
   // Dismiss context menu on any canvas click (left or right)
   hideMenu();
 
+  // Reclaim focus from a non-canvas text input (assistant chat, a properties
+  // field, the OpenAEC controls, etc.) when the user clicks the page. Without
+  // this the keydown lands on that input and handleKeydown's "typing in an
+  // input" guard silently swallows Ctrl+Z / Ctrl+C / Ctrl+V for annotations.
+  const _ae = document.activeElement;
+  if (_ae && typeof _ae.matches === 'function'
+      && _ae.matches('input, textarea')
+      && !_ae.classList.contains('inline-text-editor')) {
+    _ae.blur();
+  }
+
   // Safety: reset stuck drag/resize state
   if (state.isDragging || state.isResizing) {
     console.warn('[dispatcher] pointerdown with stuck state — resetting');
