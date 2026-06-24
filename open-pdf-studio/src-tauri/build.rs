@@ -15,5 +15,12 @@ fn main() {
         let _ = std::fs::copy(&src, &dst);
     }
 
+    // Windows: link Simple MAPI for MAPISendMail (src/email.rs). The in-source
+    // #[link(name = "mapi32")] is not reliably honoured across every rustc/SDK
+    // setup (CI left __imp_MAPISendMail unresolved), so force the link here.
+    if target.contains("windows") {
+        println!("cargo:rustc-link-lib=mapi32");
+    }
+
     tauri_build::build();
 }
