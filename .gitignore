@@ -51,3 +51,16 @@ PROMPTS.md
 # Render regression test harness
 test pdf-bestanden/render-regression-runs/
 scripts/.venv-test/
+
+# Tauri/Cargo target redirections
+target/
+target_tauri_dev/
+target_tauri_release/
+open-pdf-studio/src-tauri/target_tauri_dev/
+open-pdf-studio/src-tauri/target_tauri_release/
+
+# Installer files
+*.exe
+*.zip
+*.msi
+
