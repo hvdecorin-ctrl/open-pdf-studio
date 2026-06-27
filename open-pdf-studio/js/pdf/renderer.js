@@ -1079,14 +1079,17 @@ export async function setViewMode(mode) {
   if (doc) doc.viewMode = mode;
   const singleContainer = document.getElementById('canvas-container');
   const continuousContainer = document.getElementById('continuous-container');
+  const container = document.getElementById('pdf-container');
 
   if (mode === 'single') {
     singleContainer.style.display = 'inline-block';
     continuousContainer.style.display = 'none';
+    if (container) container.style.overflow = 'hidden';
     await renderPage(doc.currentPage);
   } else if (mode === 'continuous') {
     singleContainer.style.display = 'none';
     continuousContainer.style.display = 'flex';
+    if (container) container.style.overflow = 'auto';
     await renderContinuous();
   }
 }
