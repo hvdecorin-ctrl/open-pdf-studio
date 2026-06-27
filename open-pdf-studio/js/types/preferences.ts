@@ -169,6 +169,7 @@ export interface Preferences {
   // Behavior
   autoSelectAfterCreate: boolean;
   confirmBeforeDelete: boolean;
+  enableScrollZoom: boolean;
 
   // Startup
   restoreLastSession: boolean;

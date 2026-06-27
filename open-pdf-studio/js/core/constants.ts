@@ -236,6 +236,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   // Behavior
   autoSelectAfterCreate: true,
   confirmBeforeDelete: true,
+  enableScrollZoom: false,
 
   // Startup
   restoreLastSession: false,

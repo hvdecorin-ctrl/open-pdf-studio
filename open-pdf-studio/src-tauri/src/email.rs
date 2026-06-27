@@ -46,16 +46,14 @@ fn email_impl(path: &str, subject: &str) -> Result<(), String> {
         file_count: u32,
         files: *const MapiFileDesc,
     }
-    #[link(name = "mapi32")]
-    extern "system" {
-        fn MAPISendMail(
-            session: usize,
-            ui_param: usize,
-            message: *const MapiMessage,
-            flags: u32,
-            reserved: u32,
-        ) -> u32;
-    }
+    type FnMAPISendMail = unsafe extern "system" fn(
+        session: usize,
+        ui_param: usize,
+        message: *const MapiMessage,
+        flags: u32,
+        reserved: u32,
+    ) -> u32;
+
     const MAPI_LOGON_UI: u32 = 0x0000_0001;
     const MAPI_DIALOG: u32 = 0x0000_0008;
     const SUCCESS_SUCCESS: u32 = 0;
@@ -92,7 +90,11 @@ fn email_impl(path: &str, subject: &str) -> Result<(), String> {
         files: &file,
     };
 
-    let r = unsafe { MAPISendMail(0, 0, &message, MAPI_LOGON_UI | MAPI_DIALOG, 0) };
+    let r = unsafe {
+        let lib = libloading::Library::new("mapi32.dll").map_err(|e| e.to_string())?;
+        let mapi_send_mail: libloading::Symbol<FnMAPISendMail> = lib.get(b"MAPISendMail\0").map_err(|e| e.to_string())?;
+        mapi_send_mail(0, 0, &message, MAPI_LOGON_UI | MAPI_DIALOG, 0)
+    };
     if r == SUCCESS_SUCCESS || r == MAPI_USER_ABORT {
         Ok(())
     } else {

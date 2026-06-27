@@ -128,6 +128,16 @@ export default function BehaviorTab(props) {
       </fieldset>
 
       <fieldset class="pref-fieldset">
+        <legend>{t('behavior.navigation') || 'Navigation'}</legend>
+        <div class="pref-row pref-checkbox-row">
+          <label class="pref-checkbox-label">
+            <input type="checkbox" checked={p.enableScrollZoom[0]()} onChange={e => p.enableScrollZoom[1](e.target.checked)} />
+            <span>{t('behavior.enableScrollZoom') || 'Use mouse wheel to zoom (without holding Ctrl)'}</span>
+          </label>
+        </div>
+      </fieldset>
+
+      <fieldset class="pref-fieldset">
         <legend>{t('behavior.creation')}</legend>
         <div class="pref-row pref-checkbox-row">
           <label class="pref-checkbox-label">

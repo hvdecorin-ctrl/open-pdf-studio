@@ -39,12 +39,8 @@ export function setupWheelZoom() {
     const activeDoc = getActiveDocument();
     if (!activeDoc?.pdfDoc) return;
 
-    // Ctrl+wheel = zoom — handled FIRST, before tool delegation, so the
-    // user can always zoom regardless of the active tool (line, pencil,
-    // select, polygon, etc.). Previously the wheel was delegated to the
-    // tool first; if any tool's onWheel preventDefault'd (even by accident
-    // mid-arc/polyline construction), ctrl+wheel zoom silently broke.
-    if (e.ctrlKey || e.metaKey) {
+    const isZoomEvent = e.ctrlKey || e.metaKey || state.preferences.enableScrollZoom;
+    if (isZoomEvent) {
       e.preventDefault();
       // Starting a zoom gesture: kill any in-flight pan momentum so the page
       // doesn't keep gliding mid-zoom (would tear the cursor anchor away).
