@@ -1,6 +1,12 @@
 import { Show } from 'solid-js';
 import { state, getActiveDocument } from '../../core/state.js';
 import { useTranslation, localizeNumber } from '../../i18n/useTranslation.js';
+import { singlePageIcon, continuousIcon } from '../data/ribbonIcons.js';
+
+async function handleSetViewMode(mode) {
+  const { setViewMode } = await import('../../pdf/renderer.js');
+  await setViewMode(mode);
+}
 
 // All page navigation goes through goToPage() so the side effects
 // (active thumbnail update, hide properties, fire events) happen in one
@@ -191,6 +197,25 @@ export default function StatusBar() {
               <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
               </svg>
+            </button>
+          </div>
+
+          <div class="status-view-modes" style={{ display: 'flex', 'align-items': 'center', gap: '2px', 'margin-left': '8px', 'padding-left': '8px', 'border-left': '1px solid var(--theme-status-separator)' }}>
+            <button 
+              class={`status-nav-btn ${ (state.documents[state.activeDocumentIndex]?.viewMode || 'single') === 'single' ? 'active' : '' }`}
+              tabIndex={-1} 
+              title={t('view.singlePage') || 'Single Page'} 
+              onClick={() => handleSetViewMode('single')}
+            >
+              <span class="btn-icon" style={{ display: 'flex', 'align-items': 'center' }} innerHTML={singlePageIcon} />
+            </button>
+            <button 
+              class={`status-nav-btn ${ (state.documents[state.activeDocumentIndex]?.viewMode || 'single') === 'continuous' ? 'active' : '' }`}
+              tabIndex={-1} 
+              title={t('view.continuousTitle') || 'Continuous'} 
+              onClick={() => handleSetViewMode('continuous')}
+            >
+              <span class="btn-icon" style={{ display: 'flex', 'align-items': 'center' }} innerHTML={continuousIcon} />
             </button>
           </div>
         </div>

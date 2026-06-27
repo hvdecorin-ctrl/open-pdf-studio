@@ -1360,6 +1360,11 @@ async function _applyZoom(fitInputs, newZoom) {
 export async function fitWidth() {
   const fit = await _getFitInputs();
   if (!fit) return;
+  if (fit.mode === 'vector') {
+    const m = await import('./pdf-viewport.js');
+    m.fitToViewport('width');
+    return;
+  }
   const { computeFitZoom } = await import('./pdf-viewport.js');
   const newZoom = computeFitZoom('width', fit.pageW, fit.pageH, fit.canvasW, fit.canvasH, 0);
   await _applyZoom(fit, newZoom);
@@ -1368,6 +1373,11 @@ export async function fitWidth() {
 export async function fitPage() {
   const fit = await _getFitInputs();
   if (!fit) return;
+  if (fit.mode === 'vector') {
+    const m = await import('./pdf-viewport.js');
+    m.fitToViewport('page');
+    return;
+  }
   const { computeFitZoom } = await import('./pdf-viewport.js');
   const newZoom = computeFitZoom('page', fit.pageW, fit.pageH, fit.canvasW, fit.canvasH, 0);
   await _applyZoom(fit, newZoom);

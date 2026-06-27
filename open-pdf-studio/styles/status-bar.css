@@ -168,3 +168,12 @@
   -webkit-appearance: none;
   margin: 0;
 }
+
+.status-nav-btn.active {
+  background: var(--theme-status-nav-hover);
+  border: 1px solid var(--theme-status-separator);
+}
+
+.status-nav-btn.active svg {
+  stroke: var(--theme-status-text-value);
+}

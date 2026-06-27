@@ -751,7 +751,7 @@ export function computeFitZoom(mode, pageW, pageH, canvasW, canvasH, padding = 0
   }
 }
 
-export function fitToViewport() {
+export function fitToViewport(mode = 'page') {
   if (!_canvas || !viewport.pageW) return;
   // CSS-pixel viewport (backing store is dpr-scaled)
   const dpr = _getDpr();
@@ -762,7 +762,7 @@ export function fitToViewport() {
   const _rot90 = (viewport.rotation === 90 || viewport.rotation === 270);
   const fitW = _rot90 ? viewport.pageH : viewport.pageW;
   const fitH = _rot90 ? viewport.pageW : viewport.pageH;
-  const newZoom = computeFitZoom('page', fitW, fitH, cssW, cssH, 0);
+  const newZoom = computeFitZoom(mode, fitW, fitH, cssW, cssH, 0);
   const scaledW = fitW * newZoom;
   const scaledH = fitH * newZoom;
   const newOffsetX = (cssW - scaledW) / 2;

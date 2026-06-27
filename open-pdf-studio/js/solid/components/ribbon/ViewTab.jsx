@@ -31,8 +31,8 @@ export default function ViewTab() {
             disabled={noPdf()} active={(state.documents[state.activeDocumentIndex]?.viewMode || 'single') === 'single'}
             onClick={() => setViewMode('single')} />
           <RibbonButton id="continuous" title={t('view.continuousTitle')} icon={continuousIcon} label={t('view.continuous')}
-            active={(state.documents[state.activeDocumentIndex]?.viewMode || 'single') === 'continuous'}
-            disabled={true} style={{ opacity: '0.4', cursor: 'default' }} />
+            disabled={noPdf()} active={(state.documents[state.activeDocumentIndex]?.viewMode || 'single') === 'continuous'}
+            onClick={() => setViewMode('continuous')} />
         </RibbonGroup>
 
         <RibbonGroup label={t('view.display') || 'Display'}>
