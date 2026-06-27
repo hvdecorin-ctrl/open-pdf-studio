@@ -1,11 +1,16 @@
 import { Show } from 'solid-js';
 import { state, getActiveDocument } from '../../core/state.js';
 import { useTranslation, localizeNumber } from '../../i18n/useTranslation.js';
-import { singlePageIcon, continuousIcon } from '../data/ribbonIcons.js';
+import { singlePageIcon, continuousIcon, fitPageIcon } from '../data/ribbonIcons.js';
 
 async function handleSetViewMode(mode) {
   const { setViewMode } = await import('../../pdf/renderer.js');
   await setViewMode(mode);
+}
+
+async function handleFitPage() {
+  const { fitPage } = await import('../../pdf/renderer.js');
+  await fitPage();
 }
 
 // All page navigation goes through goToPage() so the side effects
@@ -156,6 +161,10 @@ export default function StatusBar() {
 
       <Show when={!!state.documents[state.activeDocumentIndex]?.pdfDoc}>
         <div class="status-bar-center">
+          <button class="status-nav-btn" tabIndex={-1} title={t('home.fitPage') || 'Fit Page'} onClick={handleFitPage}>
+            <span class="btn-icon" style={{ display: 'flex', 'align-items': 'center' }} innerHTML={fitPageIcon} />
+          </button>
+
           <button class="status-nav-btn" tabIndex={-1} title={t('firstPage')} onClick={goFirst}>
             <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 19l-7-7 7-7M18 19l-7-7 7-7"/>

@@ -134,8 +134,6 @@ export default function HomeTab() {
         {/* Edit group moved to the "PDF bewerken & samenvoegen" tab. */}
 
         <RibbonGroup label={t('home.navigate')}>
-          <RibbonButton size="large" id="fit-page-navigate" title={t('home.fitPage')} icon={fitPageIcon} label={t('home.fitPageLabel')}
-            disabled={noPdf()} onClick={() => fitPage()} />
           <RibbonButtonStack>
             <RibbonButton size="medium" id="first-page" title={t('home.firstPage')} icon={firstPageIcon} label={t('home.first')}
               disabled={noPdf() || (state.documents[state.activeDocumentIndex]?.currentPage || 1) === 1} onClick={() => goToPage(1)} />
